@@ -861,32 +861,24 @@ gradeOf lost =
     Words.gradeOf lost
 
 
-{-| The engine's call as the three-equity line marks it, from its band:
-for the doubler, a positive band is a double (a pass where passing pays
-them at least as much as a take); for the responder, a positive band is a
-take. Borderline on a take is read as the take: the responder picks
-whatever pays the doubler less, and at the line they are equal.
+{-| The call as the three-equity line marks it, read off the equities
+(`Replay.cubeCall`, the twin of the server's rule) and never off the band:
+band 0 is "too close to call", not "no double", and a double by 0.003 is
+still a double. A take question marks the responder's own answer, take
+exactly when DT <= DP (`Replay.takes`).
 -}
 optimalOf : String -> CubeReveal -> Replay.Optimal
 optimalOf kind cube =
     case kind of
         "take" ->
-            if cube.band >= 0 then
+            if Replay.takes cube.doubleTake cube.doublePass then
                 Replay.DoubleTake
 
             else
                 Replay.DoublePass
 
         _ ->
-            if cube.band > 0 then
-                if cube.doublePass <= cube.doubleTake then
-                    Replay.DoublePass
-
-                else
-                    Replay.DoubleTake
-
-            else
-                Replay.NoDouble
+            Replay.cubeCall cube.noDouble cube.doubleTake cube.doublePass
 
 
 {-| The two answers a player gives, as at the table: the aggressive one is

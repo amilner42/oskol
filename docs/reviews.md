@@ -116,7 +116,14 @@ game or a room talks to it.
   the Crawford game, not the other side's cube), but it grades "no
   double" on the opening roll too; the report drops that one, and guards
   the rest the same way, so a page never shows a verdict on a double
-  that could not have been offered. The read path never builds it -- `GET .../reviews` is the index
+  that could not have been offered. The cube's `optimal` is the call
+  read off its three equities (`puzzles.cube_call`: double iff
+  `min(DT, DP) > ND`, take iff `DT <= DP`), never the engine's
+  `optimal_action` label; a report rendered before that carries the
+  label instead, and the page reads neither -- `Replay.cubeCall` works
+  the call out from the equities, so old rows need no re-render. (On
+  prod, 2026-10-02, the label and the equities agreed on all 1612 cube
+  verdicts.) The read path never builds it -- `GET .../reviews` is the index
   alone (game number, status, turn count: a few hundred bytes, from a query
   that touches neither body), and `GET .../reviews/<n>` sends that one
   game's stored `report` verbatim. Statuses: `done`, `pending`, `failed`,

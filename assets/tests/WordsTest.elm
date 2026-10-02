@@ -4,14 +4,10 @@ module WordsTest exposing (suite)
 
 `ReplayTest` renders the replay on the real record of seed room 000011
 but asserts nothing about the prose. This is where the sentences are
-pinned: every grade a move can have, every call the engine can make on a cube, from both sides
-of it, and the too-good rule that the Gleam twin (`oskol/puzzles.too_good`)
-has to agree with.
-
-The cube's call is a type now, so the strings the engine writes are read
-in exactly one place. The last group is the old substring matching turned
-into a parser test: the three words the engine actually writes, and a word
-from some later engine, which must fall back rather than be guessed at.
+pinned: every grade a move can have, every call on a cube, from both sides
+of it, the too-good rule, and what a call too close to call says at, above
+and below each line. The rule itself is held to the Gleam twin
+(`oskol/puzzles.cube_call`) in `CubeCallTest`.
 
 -}
 
@@ -34,7 +30,8 @@ suite =
         , responderSentences
         , cubeQuestions
         , tooGoodRule
-        , theEnginesWords
+        , tooCloseToCall
+        , theCallsWords
         , puzzleVerdicts
         ]
 
@@ -136,13 +133,22 @@ cube optimal noDouble doubleTake doublePass =
     }
 
 
-{-| The same, with the doubler's winning chances set.
+{-| The same, with the doubler's winning chances set, and equities that
+make that call by a clear margin (the call is read off them).
 -}
 winning : Optimal -> Float -> Replay.CubeReview
 winning optimal win =
     let
         c =
-            cube optimal 0.4 0.5 1.0
+            case optimal of
+                NoDouble ->
+                    cube optimal 0.4 0.35 1.0
+
+                DoublePass ->
+                    cube optimal 0.4 1.3 1.0
+
+                _ ->
+                    cube optimal 0.4 0.5 1.0
     in
     { c | probs = Just (probs win 0.2 0.1) }
 
@@ -382,14 +388,15 @@ withDoubler v c =
     { c | doubler = v }
 
 
-{-| Too good: the engine says no double, and playing on is worth more
-than the point a pass hands over.
+{-| Too good: playing on is worth more than the point a pass hands over,
+and doubled, the gammons make a take cost the doubler's opponent more
+than a pass (D/T above D/P).
 -}
 tooGoodCube : Replay.Verdict -> Replay.CubeReview
 tooGoodCube v =
     let
         c =
-            cube NoDouble 1.2 0.9 1.0
+            cube NoDouble 1.2 1.4 1.0
     in
     { c | probs = Just (probs 0.85 0.5 0.02), doubler = v }
 
@@ -524,58 +531,134 @@ cubeQuestions =
 
 tooGoodRule : Test
 tooGoodRule =
-    describe "too good to double"
-        [ test "no double, and playing on is worth more than a pass" <|
+    describe "too good to double: ND > DP, and always a no double"
+        [ test "playing on is worth more than a pass" <|
             \_ ->
-                Expect.equal True (Words.tooGood NoDouble 1.2 1.0)
-        , test "no double, and playing on is worth exactly the pass" <|
+                Expect.equal ( True, NoDouble ) ( Replay.tooGood 1.2 1.0, Replay.cubeCall 1.2 1.4 1.0 )
+        , test "on the line, playing on is worth exactly the pass: not too good" <|
             \_ ->
-                Expect.equal True (Words.tooGood NoDouble 1.0 1.0)
-        , test "no double, but not worth more than a pass" <|
+                Expect.equal False (Replay.tooGood 1.0 1.0)
+        , test "below the line" <|
             \_ ->
-                Expect.equal False (Words.tooGood NoDouble 0.4 1.0)
-        , test "a double the engine wants is never too good, whatever the equities" <|
-            \_ ->
-                Expect.equal
-                    [ False, False, False ]
-                    [ Words.tooGood DoubleTake 1.2 1.0
-                    , Words.tooGood DoublePass 1.2 1.0
-                    , Words.tooGood (OtherCall "Beaver") 1.2 1.0
-                    ]
+                Expect.equal False (Replay.tooGood 0.4 1.0)
         ]
 
 
-theEnginesWords : Test
-theEnginesWords =
-    describe "the engine's word, read once"
-        [ test "the three the engine writes" <|
+{-| The sentence near each line, from the doubler's side and the
+responder's: inside 0.02 it is too close to call and says by how much;
+at 0.021 the call is a call and says so in its usual words.
+-}
+tooCloseToCall : Test
+tooCloseToCall =
+    let
+        at nd dt dp =
+            let
+                c =
+                    cube (Replay.cubeCall nd dt dp) nd dt dp
+            in
+            { c | probs = Just (probs 0.52 0.14 0.12) }
+    in
+    describe "too close to call"
+        [ test "the reported position: a double by 0.003 is never \"not a double\"" <|
+            \_ ->
+                Expect.equal
+                    [ "Too close to call: doubling gains just 0.003, so either is fine. If doubled, Black takes."
+                    , "Too close to call: doubling gains just 0.003, so either is fine. If doubled, Black takes."
+                    ]
+                    [ Words.doubleWhy "White" "Black" (at 0.221 0.224 1.0)
+                    , Words.noDoubleWhy "White" "Black" (at 0.221 0.224 1.0)
+                    ]
+        , test "double/take, just above the line" <|
+            \_ ->
+                Words.doubleWhy "White" "Black" (at 0.5 0.519 1.0)
+                    |> Expect.equal "Too close to call: doubling gains just 0.019, so either is fine. If doubled, Black takes."
+        , test "no double, just below the line" <|
+            \_ ->
+                Words.doubleWhy "White" "Black" (at 0.5 0.497 1.0)
+                    |> Expect.equal "Too close to call: waiting gains just 0.003, so either is fine. If doubled, Black takes."
+        , test "on the double line" <|
+            \_ ->
+                Words.noDoubleWhy "White" "Black" (at 0.5 0.5 1.0)
+                    |> Expect.equal "Too close to call: doubling and waiting are worth the same, so either is fine. If doubled, Black takes."
+        , test "double/pass against waiting, just above the line" <|
+            \_ ->
+                Words.doubleWhy "White" "Black" (at 0.997 1.4 1.0)
+                    |> Expect.equal "Too close to call: doubling gains just 0.003, so either is fine. If doubled, Black passes."
+        , test "too good, just over the line" <|
+            \_ ->
+                Words.noDoubleWhy "White" "Black" (at 1.003 1.4 1.0)
+                    |> Expect.equal "Too close to call: waiting gains just 0.003, so either is fine. If doubled, Black passes."
+        , test "0.021 is a call: a double/take in its usual words" <|
+            \_ ->
+                Words.doubleWhy "White" "Black" (at 0.5 0.521 1.0)
+                    |> Expect.equal "At this score the cube is worth turning for White even at 52.0% to win."
+        , test "0.021 is a call: a no double in its usual words, never too close" <|
+            \_ ->
+                Words.noDoubleWhy "White" "Black" (at 0.521 0.5 1.0)
+                    |> Expect.equal "The game is close here: not a double yet."
+        , test "0.021 is a call: double/pass" <|
+            \_ ->
+                Words.doubleWhy "White" "Black" (at 0.979 1.4 1.0)
+                    |> Expect.equal "Black should pass even though the game is close (52.0% to win for White): counting White's gammons and the score, a take would cost more than the point a pass gives up."
+        , test "0.021 is a call: too good" <|
+            \_ ->
+                Words.noDoubleWhy "White" "Black" (at 1.021 1.4 1.0)
+                    |> Expect.equal "White is winning here by too much to double: better to play on for the gammon than to let Black pass for a point."
+        , test "the take: just a take" <|
+            \_ ->
+                Words.answerWhy "Black" (at 0.3 0.997 1.0)
+                    |> Expect.equal "Too close to call: taking gains just 0.003, so either is fine."
+        , test "the take: just a pass" <|
+            \_ ->
+                Words.answerWhy "Black" (at 0.3 1.003 1.0)
+                    |> Expect.equal "Too close to call: passing gains just 0.003, so either is fine."
+        , test "the take: on the line" <|
+            \_ ->
+                Words.answerWhy "Black" (at 0.3 1.0 1.0)
+                    |> Expect.equal "Too close to call: taking and passing are worth the same, so either is fine."
+        , test "the take: 0.019 either way is still too close" <|
+            \_ ->
+                Expect.equal
+                    [ "Too close to call: taking gains just 0.019, so either is fine."
+                    , "Too close to call: passing gains just 0.019, so either is fine."
+                    ]
+                    [ Words.answerWhy "Black" (at 0.3 0.981 1.0)
+                    , Words.answerWhy "Black" (at 0.3 1.019 1.0)
+                    ]
+        , test "the take: 0.021 is a call" <|
+            \_ ->
+                Expect.equal
+                    [ "Black is behind here but has enough to play on for double the stake."
+                    , "Black should pass even though the game is close (48.0% to win): counting the gammons and the score, a take would cost more than the point a pass gives up."
+                    ]
+                    [ Words.answerWhy "Black" (at 0.3 0.979 1.0)
+                    , Words.answerWhy "Black" (at 0.3 1.021 1.0)
+                    ]
+        , test "the puzzle reveal says the same of either answer" <|
+            \_ ->
+                Words.eitherIsRight |> Expect.equal "Too close to call: either answer is right."
+        ]
+
+
+theCallsWords : Test
+theCallsWords =
+    describe "the call, read off the equities"
+        [ test "the three calls" <|
             \_ ->
                 Expect.equal
                     [ NoDouble, DoubleTake, DoublePass ]
-                    (List.map Replay.optimalFromEngine [ "No Double", "Double/Take", "Double/Pass" ])
-        , test "case does not matter" <|
+                    [ Replay.cubeCall 0.3 0.25 1.0, Replay.cubeCall 0.5 0.7 1.0, Replay.cubeCall 0.8 1.4 1.0 ]
+        , test "the reported position is a double/take" <|
             \_ ->
-                Expect.equal
-                    [ NoDouble, DoubleTake, DoublePass ]
-                    (List.map Replay.optimalFromEngine [ "no double", "double/take", "double/pass" ])
-        , test "too good is not a call: the engine writes no double and the equities say the rest" <|
-            \_ ->
-                Expect.equal
-                    ( NoDouble, True )
-                    ( Replay.optimalFromEngine "No Double"
-                    , Words.tooGood (Replay.optimalFromEngine "No Double") 1.2 1.0
-                    )
-        , test "a word from a later engine is kept, not guessed at" <|
-            \_ ->
-                Expect.equal (OtherCall "Too Good") (Replay.optimalFromEngine "Too Good")
+                Expect.equal DoubleTake (Replay.cubeCall 0.221 0.224 1.0)
         , test "an unknown word still gets a sentence rather than a crash" <|
             \_ ->
                 Expect.equal
                     "P1 correctly doubled. P1 is winning here by enough to double."
-                    (Words.doubleInWords "P1" "P2" (winning (Replay.optimalFromEngine "Beaver") 0.6))
+                    (Words.doubleInWords "P1" "P2" (winning (OtherCall "Beaver") 0.6))
         , test "an unknown word marks none of the three equities" <|
             \_ ->
-                Words.cubeLine (winning (Replay.optimalFromEngine "Beaver") 0.6)
+                Words.cubeLine (winning (OtherCall "Beaver") 0.6)
                     |> Query.fromHtml
                     |> Query.findAll [ Selector.class "is-pick" ]
                     |> Query.count (Expect.equal 0)

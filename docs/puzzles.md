@@ -146,9 +146,17 @@ path builds one and nothing re-asks the engine to recover one.
   responder's is `DP - DT` (positive means take, because the responder picks
   whatever pays the doubler less), bands at 0.08 and 0.02 either side of
   zero. The right side passes, the wrong side misses, and when the engine's
-  band is zero (too close to call) either side passes: the wrong side gives
-  up under 0.02, which is not a mistake. What the wrong side gave up is the
-  margin itself (`grade.cube_cost`). The reveal carries `band`
+  band is zero (too close to call, under 0.02 either way: about the 4-ply
+  cube equities' own error) either side passes, costs nothing and reads
+  "best" -- the same verdict, mark and words whichever was picked. Outside
+  band 0, what the wrong side gave up is the margin itself
+  (`grade.cube_cost`). **The call itself** (no double, double/take,
+  double/pass, too good) is read off the same three equities, never off
+  the engine's `optimal_action` label: double iff `min(DT, DP) > ND`, take
+  iff `DT <= DP`, too good iff `ND > DP` (`puzzles.cube_call`,
+  `puzzles.too_good`; the Elm twin `Replay.cubeCall` is held to it by
+  `CubeCallTest` on fixtures the server writes). The stored answer's
+  `optimal` and `too_good` are that rule's. The reveal carries `band`
   (`grade.band_name`: best, ok, doubtful, bad, very_bad, unknown) and `cost`
   beside the verdict, and shows the engine's pick among the three equities
   and the chances, nothing more. `hold` is legacy: grading no longer produces
@@ -465,14 +473,17 @@ link can put nothing within reach. The board is the table's own
 are fetched as the path reaches them), UNDO and PLAY are its own band; a
 cube question is two buttons, as at the table (DOUBLE / NO DOUBLE, TAKE /
 PASS). The reveal opens on the verdict line (`#pz-verdict`): RIGHT ("That
-is the play." / "Within 0.02 of the best. Not a mistake."), or a miss by its
+is the play." / "Within 0.02 of the best. Not a mistake." / on a cube
+in band 0, "Too close to call: either answer is right."), or a miss by its
 band in the replay's mark and colour (?! DUBIOUS, ? BAD, ?? VERY BAD) with
 "Gives up 0.04 — a dubious mistake, so it comes back." (no "so it comes
 back" without a schedule). The sentence names the badge's own band
 (`Words.aMistake`: dubious, bad, very bad), as the replay's cube verdict
 does, so the two never disagree. Then the replay's words and table (`Words`, with
 `doubleWhy`/`noDoubleWhy`/`answerWhy` for a position nobody has acted on
-yet) with "you" marked (a play outside the five the engine described is
+yet; inside 0.02 they say "Too close to call: doubling gains just 0.003,
+so either is fine. If doubled, Black takes." or, for a take, "Too close to
+call: passing gains just 0.010, so either is fine.") with "you" marked (a play outside the five the engine described is
 the row "your play", which needs no badge) and a candidate tappable onto
 the board; the cube's
 scale marks the engine's band over `cubeLine`. The attempt's key is minted

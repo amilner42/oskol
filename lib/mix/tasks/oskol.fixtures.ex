@@ -117,6 +117,23 @@ defmodule Mix.Tasks.Oskol.Fixtures do
     )
 
     Mix.shell().info("wrote assets/tests/AnalysisFixtures.elm (#{length(analyses)} answers)")
+
+    calls = Enum.map(:oskol@puzzles@fixture.cube_calls(), fn {name, json} -> {name, json} end)
+
+    File.write!(
+      "assets/tests/CubeCallFixtures.elm",
+      elm_module(calls, "CubeCallFixtures", cube_call_doc())
+    )
+
+    Mix.shell().info("wrote assets/tests/CubeCallFixtures.elm (#{length(calls)} cube calls)")
+  end
+
+  defp cube_call_doc do
+    """
+    Each entry is three equities and the cube call the server makes of them
+    (`oskol/puzzles.cube_call`, `too_good`, `takes`), at, above and below
+    each line: what the Elm twin in `Games.Backgammon.Replay` must agree with.
+    """
   end
 
   defp analysis_doc do

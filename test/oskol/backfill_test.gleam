@@ -74,7 +74,6 @@ fn cube(probs: Option(report.Probs)) -> report.CubeReview {
   report.CubeReview(
     action: "no_double",
     response: None,
-    optimal: "No Double",
     no_double: 0.3,
     double_take: 0.2,
     double_pass: 1.0,

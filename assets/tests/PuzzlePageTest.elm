@@ -239,6 +239,12 @@ decoding =
                                                         "close" ->
                                                             "pass"
 
+                                                        "close_yes" ->
+                                                            "pass"
+
+                                                        "close_no" ->
+                                                            "pass"
+
                                                         verdict ->
                                                             verdict
                                                     )
@@ -588,14 +594,49 @@ revealing =
                     |> rendered
                     |> Query.find [ id "pz-verdict" ]
                     |> Query.has [ text "?! DUBIOUS", text "Gives up 0.07 — a dubious mistake, so it comes back." ]
-        , test "right but not the best: within 0.02, not a mistake" <|
+        , test "a take too close to call: right, and said to be either way" <|
             \_ ->
                 page { hasNext = False } "take"
                     |> step (PickedBand 1)
                     |> revealed (reveal "take_close")
                     |> rendered
-                    |> Query.find [ id "pz-verdict" ]
-                    |> Query.has [ attribute (Html.Attributes.attribute "data-verdict" "pass"), text "RIGHT", text "Within 0.02 of the best. Not a mistake." ]
+                    |> Expect.all
+                        [ Query.find [ id "pz-verdict" ] >> Query.has [ attribute (Html.Attributes.attribute "data-verdict" "pass"), text "RIGHT", text "Too close to call: either answer is right." ]
+                        , Query.find [ id "pz-reveal" ] >> Query.has [ text "Too close to call: passing gains just 0.010, so either is fine." ]
+                        ]
+        , test "a double too close to call reads the same whichever side was picked" <|
+            \_ ->
+                let
+                    verdictOf name band =
+                        page { hasNext = False } "double"
+                            |> step (PickedBand band)
+                            |> revealed (reveal name)
+                            |> rendered
+                            |> Query.find [ id "pz-verdict" ]
+                in
+                Expect.all
+                    (List.concatMap
+                        (\( name, band ) ->
+                            [ \_ ->
+                                verdictOf name band
+                                    |> Query.has
+                                        [ attribute (Html.Attributes.attribute "data-verdict" "pass")
+                                        , attribute (Html.Attributes.attribute "data-band" "")
+                                        , text "RIGHT"
+                                        , text "Too close to call: either answer is right."
+                                        ]
+                            , \_ ->
+                                page { hasNext = False } "double"
+                                    |> step (PickedBand band)
+                                    |> revealed (reveal name)
+                                    |> rendered
+                                    |> Query.find [ id "pz-reveal" ]
+                                    |> Query.has [ text "Too close to call: doubling gains just 0.003, so either is fine. If doubled, Black takes." ]
+                            ]
+                        )
+                        [ ( "double_close_yes", 1 ), ( "double_close_no", -1 ) ]
+                    )
+                    ()
         , test "an attempt stored as close before dubious became a miss still reads as one" <|
             \_ ->
                 afterBody (String.replace "\"verdict\":\"fail\"" "\"verdict\":\"hold\"" (reveal "move_dubious"))

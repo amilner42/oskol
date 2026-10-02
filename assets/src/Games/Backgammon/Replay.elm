@@ -38,7 +38,11 @@ module Games.Backgammon.Replay exposing
     , lastStep
     , mistakeLabel
     , moveAt
-    , optimalFromEngine
+    , cubeCall
+    , doubleMargin
+    , takeMargin
+    , takes
+    , tooGood
     , playerNamed
     , responseFromEngine
     , recordDecoder
@@ -482,44 +486,73 @@ type alias Probs =
     }
 
 
-{-| The engine's call on a cube decision. It writes it in words ("No
-Double", "Double/Take"); everything downstream branches on this type
-instead, so no sentence reads the engine's prose for meaning.
+{-| The call on a cube decision, read off the three equities the page
+shows beside it (`cubeCall`). Every sentence branches on this type.
 
-The twin is Gleam's `oskol/puzzles.Optimal`, and `optimalFromEngine`
-below is `optimal_from_engine`: the same words, read the same way, so
-the replay and a puzzle never disagree about what the engine said.
+The twin is Gleam's `oskol/puzzles.Optimal`, and the rule below is
+`oskol/puzzles.cube_call`: the same equities, read the same way, so the
+replay, a puzzle and the analysis board never disagree, and the words
+never contradict the numbers next to them. The engine's own label
+(`optimal_action`) is not read at all. `CubeCallTest` holds the two
+rules to each other on cases the Gleam side writes.
 
 -}
 type Optimal
     = NoDouble
     | DoubleTake
     | DoublePass
-      -- A word from a later engine that this one does not know.
+      -- A stored name this version does not know.
     | OtherCall String
 
 
-{-| The engine's `optimal_action` as the call it means. "no" wins over
-"pass" wins over "take", as in the Gleam twin, and a word with none of
-them is kept as it came rather than guessed at.
+{-| What doubling gains the doubler over waiting: the opponent answers
+with whichever of take and pass pays the doubler less. Positive is a
+double. The twin of `puzzles.double_margin`.
 -}
-optimalFromEngine : String -> Optimal
-optimalFromEngine word =
-    let
-        lower =
-            String.toLower word
-    in
-    if String.contains "no" lower then
-        NoDouble
+doubleMargin : Float -> Float -> Float -> Float
+doubleMargin noDouble doubleTake doublePass =
+    min doubleTake doublePass - noDouble
 
-    else if String.contains "pass" lower then
-        DoublePass
 
-    else if String.contains "take" lower then
-        DoubleTake
+{-| What taking saves the responder over passing, in the doubler's
+equity: zero or more is a take. The twin of `puzzles.take_margin`.
+-}
+takeMargin : Float -> Float -> Float
+takeMargin doubleTake doublePass =
+    doublePass - doubleTake
+
+
+{-| The opponent takes when a take costs them no more than the point a
+pass hands over: DT <= DP.
+-}
+takes : Float -> Float -> Bool
+takes doubleTake doublePass =
+    doubleTake <= doublePass
+
+
+{-| The call: double iff min(DT, DP) > ND, and then take iff DT <= DP.
+The twin of `puzzles.cube_call`.
+-}
+cubeCall : Float -> Float -> Float -> Optimal
+cubeCall noDouble doubleTake doublePass =
+    if doubleMargin noDouble doubleTake doublePass > 0 then
+        if takes doubleTake doublePass then
+            DoubleTake
+
+        else
+            DoublePass
 
     else
-        OtherCall word
+        NoDouble
+
+
+{-| Too good to double: playing on is worth more than the point a pass
+would hand over, ND > DP -- always a no double by `cubeCall`. The twin of
+`puzzles.too_good`.
+-}
+tooGood : Float -> Float -> Bool
+tooGood noDouble doublePass =
+    noDouble > doublePass
 
 
 {-| What the responder did with a double that was offered.
@@ -541,7 +574,7 @@ responseFromEngine word =
 type alias CubeReview =
     { action : String
     , response : Maybe Response
-    , optimal : Optimal
+    , optimal : Optimal -- the call the line inks: `cubeCall` of the three below (a take question inks the take or the pass, `takes`)
     , noDouble : Float
     , doubleTake : Float
     , doublePass : Float
@@ -737,7 +770,9 @@ cubeDecoder =
     D.succeed CubeReview
         |> field "action" D.string
         |> andMap (D.oneOf [ D.field "response" (D.nullable (D.map responseFromEngine D.string)), D.succeed Nothing ])
-        |> andMap (D.field "optimal" (D.map optimalFromEngine D.string))
+        -- the call from the equities, never the report's `optimal`: one
+        -- written before the call was Oskol's carries the engine's label
+        |> andMap (D.map3 cubeCall (D.at [ "equities", "no_double" ] D.float) (D.at [ "equities", "double_take" ] D.float) (D.at [ "equities", "double_pass" ] D.float))
         |> andMap (D.at [ "equities", "no_double" ] D.float)
         |> andMap (D.at [ "equities", "double_take" ] D.float)
         |> andMap (D.at [ "equities", "double_pass" ] D.float)

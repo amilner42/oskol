@@ -9,6 +9,7 @@ module Games.Backgammon.Words exposing
     , cubeVerdict
     , doubleInWords
     , doubleWhy
+    , eitherIsRight
     , givesUp
     , gradeMark
     , gradeOf
@@ -23,7 +24,8 @@ module Games.Backgammon.Words exposing
     , signed
     , spoken
     , standing
-    , tooGood
+    , tooCloseToDouble
+    , tooCloseToTake
     , verdictTag
     )
 
@@ -37,15 +39,17 @@ page: no model, no record, no message. The pieces that need the replay's
 own state (which step is open, which line the reader tapped) stay in
 `Page/Replay.elm`.
 
-The cube's call arrives as a `Replay.Optimal`, never as the engine's
-prose: every sentence branches on the type, so "No Double" is read once,
-in the decoder, and nowhere else.
+The cube's call arrives as a `Replay.Optimal`, read off the three
+equities (`Replay.cubeCall`, the twin of Gleam's `oskol/puzzles.cube_call`)
+and never off the engine's own label, so a sentence cannot contradict the
+numbers printed under it. Too good, the take and the margins are the same
+rule's (`Replay.tooGood`, `Replay.takes`, `Replay.doubleMargin`).
 
-**`tooGood` has a twin in Gleam**: `oskol/puzzles.too_good`, on the same
-three inputs in the same order (the call, the no-double equity, the
-double-pass equity), because a puzzle's stored answer carries the flag
-and the replay works it out from the report. Change one and change the
-other, or the same position will be read two ways.
+Inside 0.02 a cube decision is **too close to call** (`tooCloseToDouble`,
+`tooCloseToTake`): the sentence says so, which side gains and by how much,
+and that either is fine -- the band a puzzle grades either answer right in
+(`grade.band_of`), and about the size of the 4-ply cube equities' own
+error, so a firmer word there would be the engine's noise.
 
 -}
 
@@ -127,16 +131,73 @@ aMistake grade =
             "a small mistake"
 
 
-{-| Too good to double: the engine says "no double" for that too, but
-its equities give it away, since playing on is worth more than the point
-a pass would hand over.
+{-| Under this, a margin is too close to call: the puzzles' band 0
+(`grade.plain_margin`), with the same hair of room for rounded floats.
+-}
+closeEdge : Float
+closeEdge =
+    0.02 - 0.000001
 
-The twin of Gleam's `oskol/puzzles.too_good`; keep the two in step.
+
+{-| The doubler's side, when it is too close to call: which way it leans
+and by how much, that either is fine, and what the opponent does if
+doubled. `Nothing` outside 0.02, where the call is a call.
+
+    "Too close to call: doubling gains just 0.003, so either is fine. If doubled, Black takes."
 
 -}
-tooGood : Optimal -> Float -> Float -> Bool
-tooGood optimal noDouble doublePass =
-    optimal == NoDouble && noDouble >= doublePass
+tooCloseToDouble : String -> Replay.CubeReview -> Maybe String
+tooCloseToDouble opp cube =
+    let
+        margin =
+            Replay.doubleMargin cube.noDouble cube.doubleTake cube.doublePass
+
+        ifDoubled =
+            if Replay.takes cube.doubleTake cube.doublePass then
+                opp ++ " takes."
+
+            else
+                opp ++ " passes."
+    in
+    if abs margin < closeEdge then
+        Just ("Too close to call: " ++ leans "doubling" "waiting" margin ++ ", so either is fine. If doubled, " ++ ifDoubled)
+
+    else
+        Nothing
+
+
+{-| The responder's side, when it is too close to call. `Nothing` outside
+0.02.
+
+    "Too close to call: passing gains just 0.010, so either is fine."
+
+-}
+tooCloseToTake : Replay.CubeReview -> Maybe String
+tooCloseToTake cube =
+    let
+        margin =
+            Replay.takeMargin cube.doubleTake cube.doublePass
+    in
+    if abs margin < closeEdge then
+        Just ("Too close to call: " ++ leans "taking" "passing" margin ++ ", so either is fine.")
+
+    else
+        Nothing
+
+
+{-| Which of two answers a margin leans to, and by how much: "doubling
+gains just 0.003". A margin that rounds to nothing is said as one.
+-}
+leans : String -> String -> Float -> String
+leans yes no margin =
+    if abs margin < 0.0005 then
+        yes ++ " and " ++ no ++ " are worth the same"
+
+    else if margin > 0 then
+        yes ++ " gains just " ++ Replay.formatEquity margin
+
+    else
+        no ++ " gains just " ++ Replay.formatEquity (abs margin)
 
 
 {-| A double the engine agrees with. Ahead, that is the chances; behind,
@@ -169,7 +230,17 @@ doubleWhy who opp cube =
         win =
             cube.probs |> Maybe.map .win |> Maybe.withDefault 0.5
     in
-    if tooGood cube.optimal cube.noDouble cube.doublePass then
+    case tooCloseToDouble opp cube of
+        Just close ->
+            close
+
+        Nothing ->
+            doubleWhyCalled who opp win cube
+
+
+doubleWhyCalled : String -> String -> Float -> Replay.CubeReview -> String
+doubleWhyCalled who opp win cube =
+    if Replay.tooGood cube.noDouble cube.doublePass then
         who ++ " is winning here by too much: " ++ opp ++ " can pass for a single point, when playing on for the gammon is worth more."
 
     else
@@ -234,7 +305,17 @@ noDoubleWhy who opp cube =
         win =
             cube.probs |> Maybe.map .win |> Maybe.withDefault 0.5
     in
-    if tooGood cube.optimal cube.noDouble cube.doublePass then
+    case tooCloseToDouble opp cube of
+        Just close ->
+            close
+
+        Nothing ->
+            noDoubleWhyCalled who opp win cube
+
+
+noDoubleWhyCalled : String -> String -> Float -> Replay.CubeReview -> String
+noDoubleWhyCalled who opp win cube =
+    if Replay.tooGood cube.noDouble cube.doublePass then
         who ++ " is winning here by too much to double: better to play on for the gammon than to let " ++ opp ++ " pass for a point."
 
     else
@@ -283,12 +364,22 @@ answerWhy : String -> Replay.CubeReview -> String
 answerWhy taker cube =
     let
         shouldPass =
-            cube.optimal == DoublePass || tooGood cube.optimal cube.noDouble cube.doublePass
+            not (Replay.takes cube.doubleTake cube.doublePass)
 
         -- the taker's own chances: the doubler's, the other way round
         win =
             cube.probs |> Maybe.map (\p -> 1 - p.win) |> Maybe.withDefault 0.5
     in
+    case tooCloseToTake cube of
+        Just close ->
+            close
+
+        Nothing ->
+            answerWhyCalled taker shouldPass win
+
+
+answerWhyCalled : String -> Bool -> Float -> String
+answerWhyCalled taker shouldPass win =
     if shouldPass then
         if win < 0.45 then
             taker ++ " is losing here by too much to take: a pass gives up one point rather than risking two or more."
@@ -549,6 +640,14 @@ gave up under 0.02: right, and not a mistake.
 nearlyBest : String
 nearlyBest =
     "Within 0.02 of the best. Not a mistake."
+
+
+{-| What a puzzle's reveal says of either answer to a cube the engine
+calls too close (band 0): the same words whichever side was picked.
+-}
+eitherIsRight : String
+eitherIsRight =
+    "Too close to call: either answer is right."
 
 
 {-| The site's bands on what a play gives up: XG's, the ones the engine

@@ -22,6 +22,7 @@
 import backgammon/analysis
 import gleam/bit_array
 import gleam/dynamic/decode.{type Decoder}
+import gleam/float
 import gleam/int
 import gleam/json.{type Json}
 import gleam/list
@@ -135,12 +136,12 @@ pub type Candidate {
   )
 }
 
-/// The engine's call on a cube decision.
+/// The call on a cube decision (`cube_call`).
 pub type Optimal {
   NoDouble
   DoubleTake
   DoublePass
-  /// A word from a later engine that this one does not know.
+  /// A stored name this version does not know.
   OtherCall(String)
 }
 
@@ -153,20 +154,59 @@ pub fn optimal_name(optimal: Optimal) -> String {
   }
 }
 
-/// The engine's `optimal_action`, which it writes in words ("No Double",
-/// "Double/Take"), as the call it means.
-pub fn optimal_from_engine(word: String) -> Optimal {
-  let lower = string.lowercase(word)
+// ---------- The cube call ----------
+//
+// **The one rule** for a cube decision, read off the three equities a page
+// shows beside it (all of them the doubler's payoff). The engine's own
+// label (`optimal_action`) decides nothing, so the words can never
+// contradict the numbers next to them. The twin is
+// `Games.Backgammon.Replay.cubeCall` in Elm, held to this one by the
+// fixtures `mix oskol.fixtures payloads` writes from `fixture.cube_calls`.
+
+/// What doubling gains the doubler over waiting: the opponent answers with
+/// whichever of take and pass pays the doubler less. Positive is a double.
+/// The same margin a `Double` puzzle is graded on (`grade.engine_band`).
+pub fn double_margin(
+  no_double: Float,
+  double_take: Float,
+  double_pass: Float,
+) -> Float {
+  float.min(double_take, double_pass) -. no_double
+}
+
+/// What taking saves the responder over passing, in the doubler's equity:
+/// zero or more is a take. The margin a `Take` puzzle is graded on.
+pub fn take_margin(double_take: Float, double_pass: Float) -> Float {
+  double_pass -. double_take
+}
+
+/// The opponent takes when a take costs them no more than the point a pass
+/// hands over: DT <= DP.
+pub fn takes(double_take: Float, double_pass: Float) -> Bool {
+  double_take <=. double_pass
+}
+
+/// The call: double iff min(DT, DP) > ND, and then take iff DT <= DP.
+pub fn cube_call(
+  no_double: Float,
+  double_take: Float,
+  double_pass: Float,
+) -> Optimal {
   case
-    string.contains(lower, "no"),
-    string.contains(lower, "pass"),
-    string.contains(lower, "take")
+    double_margin(no_double, double_take, double_pass) >. 0.0,
+    takes(double_take, double_pass)
   {
-    True, _, _ -> NoDouble
-    _, True, _ -> DoublePass
-    _, _, True -> DoubleTake
-    _, _, _ -> OtherCall(word)
+    False, _ -> NoDouble
+    True, True -> DoubleTake
+    True, False -> DoublePass
   }
+}
+
+/// Too good to double: playing on is worth more than the point a pass would
+/// hand over, ND > DP. Always a no double by `cube_call`, since then
+/// min(DT, DP) <= DP < ND.
+pub fn too_good(no_double: Float, double_pass: Float) -> Bool {
+  no_double >. double_pass
 }
 
 /// What the engine says the answer is.
@@ -196,9 +236,10 @@ pub type Answer {
     /// The chances the cube was judged on, before the roll. None for an
     /// engine answer written before the report kept them.
     probs: Option(Probs),
+    /// `cube_call` of the three equities above.
     optimal: Optimal,
-    /// Too good to double: the engine says no double, and playing on is
-    /// worth more than the point a pass would hand over.
+    /// `too_good` of them: playing on is worth more than the point a pass
+    /// would hand over.
     too_good: Bool,
   )
 }
@@ -657,11 +698,4 @@ pub fn complete(answer: Answer) -> Bool {
 
 pub fn is_mistake(equity_lost: Float) -> Bool {
   equity_lost >=. mistake_threshold -. 0.000001
-}
-
-/// Too good to double: the engine's call is "no double" and playing on is
-/// worth more than the point a pass would hand over. The same rule the
-/// replay reads (`Page/Replay.elm`, `tooGood`).
-pub fn too_good(optimal: Optimal, no_double: Float, double_pass: Float) -> Bool {
-  optimal == NoDouble && no_double >=. double_pass
 }

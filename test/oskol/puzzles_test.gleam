@@ -173,7 +173,6 @@ fn a_cube(
   report.CubeReview(
     action: action,
     response: response,
-    optimal: "Double/Take",
     no_double: 0.42,
     double_take: 0.61,
     double_pass: 1.0,
@@ -633,7 +632,6 @@ pub fn too_good_is_read_off_the_equities_test() {
   let cube =
     report.CubeReview(
       ..a_cube("no_double", None, 0.2, None),
-      optimal: "No Double",
       no_double: 1.4,
       double_pass: 1.0,
     )
