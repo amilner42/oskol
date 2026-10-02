@@ -39,6 +39,7 @@ defmodule Oskol.Analysis.Asker do
   require Logger
 
   alias Oskol.Gleam.CtxBuilder
+  alias Oskol.Limiter
   alias Oskol.Reviews
 
   @table __MODULE__
@@ -87,7 +88,7 @@ defmodule Oskol.Analysis.Asker do
   Take one ask: `:asked` when it is queued or joins the same key already in
   hand, `:full` or `{:down, seconds}` when it is not taken.
   """
-  def submit({:ask, key, _ids, _kind, _question, _body} = ask) when is_binary(key) do
+  def submit({:ask, key, _ids, _kind, _question, _body, _buckets} = ask) when is_binary(key) do
     GenServer.call(__MODULE__, {:submit, ask})
   catch
     :exit, _ -> :full
@@ -116,7 +117,7 @@ defmodule Oskol.Analysis.Asker do
   end
 
   @impl true
-  def handle_call({:submit, {:ask, key, _, _, _, _} = ask}, _from, state) do
+  def handle_call({:submit, {:ask, key, _, _, _, _, _} = ask}, _from, state) do
     cond do
       pending?(key) ->
         {:reply, :asked, state}
@@ -200,6 +201,15 @@ defmodule Oskol.Analysis.Asker do
     state
   end
 
+  # The engine is fine and will not answer this one position (a 4xx: the
+  # player built something it reads differently). That key fails; nobody
+  # else is affected, and the circuit stays shut.
+  defp finished(state, key, {:rejected, status, detail}) do
+    Logger.warning("analysis ask rejected by the engine (HTTP #{status}): #{detail}")
+    fail(key, rejected_sentence())
+    state
+  end
+
   # The engine did not answer. Not asked again for a while, and every job
   # waiting for it is told so now rather than in a minute.
   defp finished(state, key, {:engine_failed, reason}) do
@@ -208,9 +218,13 @@ defmodule Oskol.Analysis.Asker do
     down = engine_down_sentence()
     fail(key, down)
 
+    # These never reached the engine: their budget is handed back.
     state.queue
     |> :queue.to_list()
-    |> Enum.each(fn {:ask, waiting, _, _, _, _} -> fail(waiting, down) end)
+    |> Enum.each(fn {:ask, waiting, _, _, _, _, buckets} ->
+      fail(waiting, down)
+      Limiter.release(buckets)
+    end)
 
     until = System.monotonic_time(:millisecond) + circuit_ms
     :ets.insert(@table, {{:meta, :circuit}, until, nil, 0})
@@ -223,7 +237,7 @@ defmodule Oskol.Analysis.Asker do
     if enabled?() and map_size(state.running) < config(:in_flight, 2) and
          not circuit_open?(state) do
       case :queue.out(state.queue) do
-        {{:value, {:ask, key, _, _, _, _} = ask}, queue} ->
+        {{:value, {:ask, key, _, _, _, _, _} = ask}, queue} ->
           task = Task.Supervisor.async_nolink(@task_supervisor, fn -> run(ask) end)
           start_next(%{state | queue: queue, running: Map.put(state.running, task.ref, key)})
 
@@ -236,14 +250,18 @@ defmodule Oskol.Analysis.Asker do
   end
 
   # One ask, in its own task: the engine, then Gleam's word on the answer.
-  defp run({:ask, _key, _ids, _kind, _question, body} = ask) do
-    case Reviews.ask(@route, body, config(:ask_timeout_ms, 60_000)) do
+  defp run({:ask, _key, _ids, _kind, _question, body, _buckets} = ask) do
+    case Reviews.ask_status(@route, body, config(:ask_timeout_ms, 60_000)) do
       {:ok, response} ->
         case :oskol@handlers@analysis.store(CtxBuilder.build(), ask, response) do
           {:ok, id} -> {:done, id}
           {:error, reason} -> {:failed, reason}
         end
 
+      {:rejected, status, detail} ->
+        {:rejected, status, detail}
+
+      # A 5xx, a timeout, no connection: the engine itself is in trouble.
       {:error, reason} ->
         {:engine_failed, reason}
     end
@@ -300,6 +318,7 @@ defmodule Oskol.Analysis.Asker do
 
   defp engine_down_sentence, do: :oskol@handlers@analysis.engine_down_sentence()
   defp failed_sentence, do: :oskol@handlers@analysis.failed_sentence()
+  defp rejected_sentence, do: :oskol@handlers@analysis.rejected_sentence()
 
   defp now_ms, do: System.system_time(:millisecond)
 

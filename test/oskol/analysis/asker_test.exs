@@ -49,7 +49,7 @@ defmodule Oskol.Analysis.AskerTest do
     end)
 
     guest_id = :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
-    %{conn: as_guest(build_conn(), guest_id)}
+    %{conn: as_guest(build_conn(), guest_id), guest_id: guest_id}
   end
 
   # ---------- Positions ----------
@@ -206,7 +206,7 @@ defmodule Oskol.Analysis.AskerTest do
   end
 
   test "an engine that fails opens the circuit: the waiting fail, the next ask is 503",
-       %{conn: conn} do
+       %{conn: conn, guest_id: guest_id} do
     Application.put_env(
       :oskol,
       Asker,
@@ -233,6 +233,57 @@ defmodule Oskol.Analysis.AskerTest do
     assert %{"code" => "engine_down", "message" => ^message, "retry_after_s" => s} = error
     assert s in 1..60
     refute_receive {:engine, _}, 100
+
+    # The one asked was charged; the one that waited never reached the
+    # engine and was handed back; the 503 was never charged.
+    assert [{_, _, 1, _}] = :ets.lookup(Limiter, "analysis:guest:#{guest_id}:hour")
+    assert [{_, _, 1, _}] = :ets.lookup(Limiter, "analysis:global:day")
+  end
+
+  test "an engine that refuses one position (a 4xx) fails that key alone, and the circuit stays shut",
+       %{conn: conn} do
+    Req.Test.stub(Oskol.Reviews, fn conn ->
+      Plug.Conn.send_resp(conn, 422, ~s({"detail":"played board is not a legal move"}))
+    end)
+
+    %{"key" => key} = conn |> ask(scored(0)) |> json_response(202)
+    :ok = Asker.await_idle()
+
+    assert %{"status" => "failed", "message" => message} =
+             conn |> status(key) |> json_response(200)
+
+    assert message == "The engine could not read this position. Check the board and try another."
+
+    # Nobody else is told the engine is asleep: the next position is asked.
+    Req.Test.stub(Oskol.Reviews, &Oskol.CompleteEngine.respond/1)
+    %{"key" => other} = conn |> ask(scored(1)) |> json_response(202)
+    :ok = Asker.await_idle()
+    assert %{"status" => "done"} = conn |> status(other) |> json_response(200)
+  end
+
+  test "a cube question is asked, kept with its chances, and revealed", %{conn: conn} do
+    double = opening() |> Map.put("ask", "double") |> Map.put("dice", nil)
+
+    %{"key" => key} = conn |> ask(double) |> json_response(202)
+    :ok = Asker.await_idle()
+
+    done = conn |> status(key) |> json_response(200)
+    assert %{"status" => "done", "puzzle" => %{"kind" => "double", "tree" => nil}} = done
+    assert %{"best" => nil, "top" => [], "n_legal" => nil, "cube" => cube} = done["reveal"]
+
+    assert %{"no_double" => 0.62, "double_take" => 1.31, "double_pass" => 1.0, "probs" => p} =
+             cube
+
+    assert p["win"] == 0.52
+
+    assert %{origin: "analysis", complete: true, kind: "double"} =
+             Repo.get_by(Puzzles.Puzzle, key: key)
+
+    # A take of the same position, asked of the other side, is its own key.
+    take = double |> Map.put("ask", "take") |> Map.put("to_play", "black")
+    assert %{"key" => take_key} = conn |> ask(take) |> json_response(202)
+    refute take_key == key
+    :ok = Asker.await_idle()
   end
 
   test "an answer the engine sends short of every play is a failure, and nothing is written",

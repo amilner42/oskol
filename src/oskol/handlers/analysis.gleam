@@ -24,6 +24,7 @@
 //// ONE, and draws its picture.
 
 import backgammon/analysis
+import gleam/bool
 import gleam/int
 import gleam/json
 import gleam/list
@@ -94,6 +95,14 @@ pub fn failed_sentence() -> String {
   failed_message
 }
 
+/// The engine read the position and refused it (a 4xx): asking again will
+/// not help, so the player is pointed back at the board.
+pub const rejected_message = "The engine could not read this position. Check the board and try another."
+
+pub fn rejected_sentence() -> String {
+  rejected_message
+}
+
 // ---------- POST /papi/analysis ----------
 
 /// What a POST comes to before anything is handed to the asker.
@@ -133,7 +142,7 @@ pub fn prepare(
         Down(seconds) -> Error(engine_down(seconds))
         Full -> Error(busy())
         Free -> {
-          use _ <- result.try(reserve(ctx, session))
+          use charged <- result.try(reserve(ctx, session))
           Ok(
             ToAsk(Ask(
               key: key,
@@ -141,6 +150,7 @@ pub fn prepare(
               kind: puzzles.kind_name(question.kind),
               question_json: json.to_string(puzzles.question_json(question)),
               request_body: request(question, turn),
+              buckets: charged,
             )),
           )
         }
@@ -150,14 +160,10 @@ pub fn prepare(
 
 /// The engine request for one set-up turn: the turn as the review's own
 /// requests write one, at the engine's default depth, with every legal
-/// play's result and the top five.
+/// play's result and the top five -- and no luck, which `store` never reads
+/// and which would cost the engine a cube evaluation on every ask.
 fn request(question: Question, turn: analysis.Turn) -> String {
-  json.to_string(analysis.turns_request(
-    [#(1, turn)],
-    question.jacoby,
-    None,
-    None,
-  ))
+  json.to_string(analysis.position_request(turn, 1, question.jacoby))
 }
 
 fn refusal(s: Setup, message: String) -> ApiError {
@@ -181,10 +187,18 @@ pub fn ask_json(
       done_body(ctx, key, keyed) |> result.map(fn(b) { #(200, b) })
     Joining(key) -> Ok(#(202, pending_body(key)))
     ToAsk(ask) ->
+      // Charged, and not taken: the ask never reaches the engine, so the
+      // budget it reserved is handed back.
       case ctx.analysis.submit(ask) {
         Asked | Free -> Ok(#(202, pending_body(ask.key)))
-        Full -> Error(busy())
-        Down(seconds) -> Error(engine_down(seconds))
+        Full -> {
+          ctx.analysis.release_ask(ask.buckets)
+          Error(busy())
+        }
+        Down(seconds) -> {
+          ctx.analysis.release_ask(ask.buckets)
+          Error(engine_down(seconds))
+        }
       }
   }
 }
@@ -243,14 +257,27 @@ pub fn buckets(budget: AskBudget, session: Session) -> List(LimitBucket) {
   ]
 }
 
-fn reserve(ctx: Ctx, session: Session) -> Result(Nil, ApiError) {
+/// Reserve one ask, and say which buckets it was charged to, so an ask that
+/// never reaches the engine can be handed back.
+fn reserve(ctx: Ctx, session: Session) -> Result(List(LimitBucket), ApiError) {
   let budget = ctx.analysis.ask_budget()
-  ctx.analysis.allow_ask(buckets(budget, session))
+  let charged = buckets(budget, session)
+  ctx.analysis.allow_ask(charged)
   |> result.map_error(limited(budget, _))
+  |> result.replace(charged)
 }
+
+/// The key the limiter names when it could not be asked at all: it fails
+/// closed for asks (the engine is what it guards), and the player is told
+/// to wait a moment.
+pub const limiter_unavailable_key = "analysis:limiter"
 
 /// The sentence for a spent budget: whose, how many, and how long.
 pub fn limited(budget: AskBudget, refused: Refused) -> ApiError {
+  use <- bool.guard(
+    refused.key == limiter_unavailable_key,
+    error.Limited(rate_limited_code, busy_message, refused.retry_after_s),
+  )
   let wait = duration(refused.retry_after_s)
   let key = refused.key
   let hourly = string.ends_with(key, ":hour")

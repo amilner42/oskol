@@ -6,7 +6,7 @@ defmodule Oskol.Gleam.Caps.Analysis do
       AnalysisCaps(log, stored, ratings, summaries, report, save, backfill_turns,
       enqueue, review, report_turn, charge, replace, grades, forget_grades,
       graded_for, graded_rooms_for, mistake_costs, ask_budget, asking, submit,
-      allow_ask)
+      allow_ask, release_ask)
       RatedGame(game_id, game_number, seat, response_json, ended_at_ms)
       GameLog(slug, format, clock, seed, seats, entries, record_generation)
       LogEntry(kind, player_id, payload_json, at_ms)
@@ -18,7 +18,7 @@ defmodule Oskol.Gleam.Caps.Analysis do
       Cursor(ended_at_ms, room_id)
       MistakeCost(puzzle_id, band, game_id, game_number, seat, equity_lost)
       AskBudget(guest_hour, guest_day, user_hour, user_day, global_day)
-      Ask(key, ids, kind, question_json, request_body)
+      Ask(key, ids, kind, question_json, request_body, buckets)
       Asker: :free | :asked | :full | {:down, retry_after_s}
       Refused(key, retry_after_s)
       LimitBucket(key, limit, window_s)   (src/oskol/caps/auth.gleam)
@@ -56,7 +56,12 @@ defmodule Oskol.Gleam.Caps.Analysis do
      &backfill_turns/3, &enqueue/1, Keyword.get(opts, :review, &review/1), &report_turn/3,
      &charge/4, &replace/3, grades, &forget_grades/2, &graded_for/2, &graded_rooms_for/3,
      &mistake_costs/1, &ask_budget/0, &Oskol.Analysis.Asker.asking/1,
-     &Oskol.Analysis.Asker.submit/1, &Oskol.Limiter.allow/1}
+     &Oskol.Analysis.Asker.submit/1, &Oskol.Limiter.allow/1, &release_ask/1}
+  end
+
+  defp release_ask(buckets) do
+    :ok = Oskol.Limiter.release(buckets)
+    nil
   end
 
   # The analysis board's budgets: numbers only. Which buckets an ask is

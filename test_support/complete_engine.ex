@@ -34,7 +34,7 @@ defmodule Oskol.CompleteEngine do
         %{
           "index" => turn["index"] || at,
           "player" => turn["player"] || 0,
-          "cube" => nil,
+          "cube" => cube(turn),
           "move" => move(turn),
           "luck" => %{"luck" => 0.0}
         }
@@ -98,6 +98,27 @@ defmodule Oskol.CompleteEngine do
   end
 
   defp move(_), do: nil
+
+  # A turn with no dice is a cube question on its own (the analysis board's
+  # "Double?" or "Take?"): the engine's verdict, a clear double and pass,
+  # with the chances it was judged on. A game's turns always roll, and their
+  # cube stays unjudged here as before.
+  defp cube(%{"dice" => dice}) when dice in [nil, []] do
+    %{
+      "action" => "no_double",
+      "optimal" => "double_pass",
+      "analysis" => %{
+        "optimal_action" => "double_pass",
+        "equity_nd" => 0.62,
+        "equity_dt" => 1.31,
+        "equity_dp" => 1.0,
+        "probs" => @probs
+      },
+      "doubler" => %{"error" => 0.38, "grade" => "very_bad"}
+    }
+  end
+
+  defp cube(_), do: nil
 
   @doc "Every legal way to play `dice` from `board`, as {board, notation}."
   def legal_plays(board, [a, b]) do

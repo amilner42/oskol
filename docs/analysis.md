@@ -205,8 +205,11 @@ lands (analysis-page-editor).
   asleep is 503, full is 429 "The engine is busy. Try again in a minute.";
   and only then is one ask reserved from every bucket (`allow_ask`),
   refused as a 429 that says whose budget and how long. The request is
-  `analysis.turns_request([#(1, turn)], jacoby, None, None)`: the engine's
-  default depth (4-ply), `all_results`, the top five.
+  `analysis.position_request(turn, 1, jacoby)`: the engine's default depth
+  (4-ply), `all_results`, the top five, and `include_luck: false` (luck is
+  a cube evaluation per turn that nothing here reads). A game's own turns
+  keep `one_turn_request`, luck and all, so the review cache's bytes are
+  unchanged.
 - **The budgets** (`buckets`; numbers from `config :oskol, :analysis_budget`):
   a guest `analysis:guest:<id>:hour` 10 and `:day` 30; an account
   `analysis:user:<id>:hour` 30 and `:day` 150 (an account is charged as
@@ -214,7 +217,12 @@ lands (analysis-page-editor).
   limiter is the sign-in one generalized (`Oskol.Limiter.allow/1`: per
   node, in memory, atomic over all buckets, fixed windows); it logs
   "analysis limited: guest|user|global" once per window. A restart resets
-  the counts: a spend guard, not billing.
+  the counts: a spend guard, not billing. A limiter that cannot be asked
+  fails **closed** for asks (429 "The engine is busy", 30 s) and open for
+  sign-in mail. An ask that was charged and never reached the engine is
+  handed back (`release_ask`, `Oskol.Limiter.release/1`): the asker full or
+  asleep when it was submitted, or a waiting job failed by the circuit. Two
+  first POSTs of one key that race past `asking` may both stay charged.
 - **`store`** keeps an answer only if it can grade any attempt: a move
   answer must hold every legal play and a board on every candidate
   (`practice/openings.answer`, the sets' own rule); a cube answer must
@@ -223,9 +231,14 @@ lands (analysis-page-editor).
 - **The asker** (`lib/oskol/analysis/asker.ex`, a GenServer over the
   `Oskol.Analysis.AskerSupervisor` task supervisor) is the line and nothing
   else: jobs keyed by the puzzle key (a second ask joins), `in_flight` 2 and
-  `waiting` 20, each task `Oskol.Reviews.ask("/backgammon/review", body,
-  ask_timeout_ms)` then Gleam's `store`. An `{:error, _}` from the engine
-  opens the circuit for `circuit_ms` (60 s), as the Grader's does: every
+  `waiting` 20, each task `Oskol.Reviews.ask_status("/backgammon/review",
+  body, ask_timeout_ms)` then Gleam's `store`. A 4xx from the engine
+  (`{:rejected, status, detail}`: it read the position and will not answer
+  it, which a player-built board can provoke) fails that key alone with
+  "The engine could not read this position. Check the board and try
+  another." and is logged; it never opens the circuit. A 5xx, a timeout or
+  no connection (`{:error, _}`) opens the circuit for `circuit_ms` (60 s),
+  as the Grader's does: every
   POST in that window is a 503 at once and the jobs waiting fail with the
   same sentence, so a sleeping desktop is asked once. A task that crashes
   or whose answer `store` refuses fails its key with "The engine could not

@@ -226,6 +226,9 @@ pub type Ask {
     kind: String,
     question_json: String,
     request_body: String,
+    /// The budget this ask was charged to, so one that never reaches the
+    /// engine (the line full, the circuit open) can be handed back.
+    buckets: List(LimitBucket),
   )
 }
 
@@ -353,6 +356,9 @@ pub type AnalysisCaps {
     /// the limiter's atomic reservation (`Oskol.Limiter.allow/1`). The
     /// refusal names the bucket that had no room and how long until it has.
     allow_ask: fn(List(LimitBucket)) -> Result(Nil, Refused),
+    /// Hand back one reserved ask from each bucket (`Oskol.Limiter.release/1`):
+    /// an ask that was charged and never reached the engine.
+    release_ask: fn(List(LimitBucket)) -> Nil,
   )
 }
 
@@ -387,5 +393,6 @@ pub fn stub() -> AnalysisCaps {
     asking: fn(_) { panic as "stub analysis.asking" },
     submit: fn(_) { panic as "stub analysis.submit" },
     allow_ask: fn(_) { panic as "stub analysis.allow_ask" },
+    release_ask: fn(_) { panic as "stub analysis.release_ask" },
   )
 }

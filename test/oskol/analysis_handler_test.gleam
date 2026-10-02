@@ -405,15 +405,74 @@ pub fn a_new_key_reserves_then_asks_what_openings_would_test() {
   assert ask.kind == "move"
   assert ask.ids == puzzles.ids(q)
   let assert Ok(turn) = openings.turn(openings.start(), #(3, 1))
-  // The same turn, at the same place a game's own grade puts it.
+  // The same turn, at the same place a game's own grade puts it, and asked
+  // the same way -- but without luck, which nothing here reads.
   assert ask.request_body
-    == json.to_string(analysis.turns_request(
-      [#(1, turn)],
-      openings.jacoby,
-      None,
-      None,
-    ))
+    == json.to_string(analysis.position_request(turn, 1, openings.jacoby))
   assert string.contains(ask.request_body, "\"all_results\":true")
+  assert string.contains(ask.request_body, "\"include_luck\":false")
+  assert ask.request_body
+    == string.replace(
+      json.to_string(analysis.turns_request(
+        [#(1, turn)],
+        openings.jacoby,
+        None,
+        None,
+      )),
+      "\"include_luck\":true",
+      "\"include_luck\":false",
+    )
+  assert list.map(ask.buckets, fn(b) { b.key })
+    == [
+      "analysis:guest:g1:hour",
+      "analysis:guest:g1:day",
+      "analysis:global:day",
+    ]
+}
+
+pub fn a_game_turn_is_still_asked_with_its_luck_test() {
+  let assert Ok(turn) = openings.turn(openings.start(), #(3, 1))
+  assert string.contains(
+    json.to_string(analysis.one_turn_request(turn, 1, True)),
+    "\"include_luck\":true",
+  )
+}
+
+pub fn a_charged_ask_the_asker_will_not_take_is_handed_back_test() {
+  list.each([analysis_caps.Full, analysis_caps.Down(30)], fn(refusal) {
+    let base = fresh_ctx()
+    let ctx =
+      Ctx(
+        ..base,
+        analysis: analysis_caps.AnalysisCaps(
+          ..base.analysis,
+          submit: fn(_) { refusal },
+          release_ask: fn(buckets: List(LimitBucket)) {
+            list.each(buckets, fn(b) { record("released", b.key) })
+          },
+        ),
+      )
+    let _ = put("released", [])
+    let assert Error(_) = handler.ask_json(ctx, guest(), body(opening(#(5, 2))))
+    assert recorded("allow") == ["allow"]
+    assert recorded("released")
+      == [
+        "analysis:guest:g1:hour",
+        "analysis:guest:g1:day",
+        "analysis:global:day",
+      ]
+  })
+}
+
+pub fn a_limiter_that_cannot_count_says_wait_a_moment_test() {
+  let err =
+    handler.limited(
+      budget(),
+      analysis_caps.Refused(handler.limiter_unavailable_key, 30),
+    )
+  assert error.status(err) == 429
+  assert error.message(err) == handler.busy_message
+  assert error.retry_after_s(err) == Some(30)
 }
 
 pub fn an_account_is_charged_as_itself_test() {

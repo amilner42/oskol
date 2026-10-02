@@ -38,11 +38,38 @@ defmodule Oskol.Limiter do
   def allow(buckets) when is_list(buckets) do
     GenServer.call(__MODULE__, {:allow, buckets}, @call_timeout)
   rescue
-    # An unavailable in-memory limiter must not turn a request into a 500.
-    # The process normally lives for the whole application.
-    _ -> {:ok, nil}
+    _ -> unavailable(buckets)
   catch
-    :exit, _ -> {:ok, nil}
+    :exit, _ -> unavailable(buckets)
+  end
+
+  # An unavailable limiter must not turn a request into a 500. Sign-in fails
+  # open: being unable to sign in is worse than a few extra mails. Engine
+  # asks fail closed: the engine is shared with every game's review, and a
+  # limiter that is not answering is not one that is counting.
+  @unavailable_retry_s 30
+
+  defp unavailable(buckets) do
+    if Enum.any?(buckets, &analysis_bucket?/1),
+      do: {:error, {:refused, "analysis:limiter", @unavailable_retry_s}},
+      else: {:ok, nil}
+  end
+
+  defp analysis_bucket?({:limit_bucket, "analysis:" <> _, _, _}), do: true
+  defp analysis_bucket?(_), do: false
+
+  @doc """
+  Hand back one use to every bucket, as `allow/1` took it: a reservation for
+  something that then never happened (an ask the asker could not take). A
+  bucket whose window has moved on, or that has nothing in it, is left
+  alone. Best effort, never raises.
+  """
+  def release(buckets) when is_list(buckets) do
+    GenServer.call(__MODULE__, {:release, buckets}, @call_timeout)
+  rescue
+    _ -> :ok
+  catch
+    :exit, _ -> :ok
   end
 
   @doc "Sign-in mail's reservation, as the auth capability takes it: a boolean."
@@ -89,6 +116,22 @@ defmodule Oskol.Limiter do
 
       {:reply, {:error, {:refused, key, max(started + window_s - now, 1)}}, state}
     end
+  end
+
+  def handle_call({:release, buckets}, _from, state) do
+    now = System.system_time(:second)
+
+    Enum.each(buckets, fn {:limit_bucket, key, _limit, window_s} ->
+      case :ets.lookup(@table, key) do
+        [{^key, started, count, stored_window_s}] when count > 0 and now - started < window_s ->
+          :ets.insert(@table, {key, started, count - 1, stored_window_s})
+
+        _ ->
+          :ok
+      end
+    end)
+
+    {:reply, :ok, state}
   end
 
   # Each entry owns its actual configured window. Do not erase a valid bucket
