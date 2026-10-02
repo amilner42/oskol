@@ -469,13 +469,23 @@ once per page load (`elm/random`) and a PLAY that lands before it waits for
 it, so a retry is the same answer. Signed in with a `schedule`, the level
 line ("Level 2 → 3 · back in 7 days"; "back tomorrow"; an early answer
 "Not due until 9 Oct — practice only, nothing moves."; KNEW IT "Marked as
-known — back in a year") and SOONER / GOT IT / KNEW IT / NEVER. A choice
-**selects, explains, then applies**: the graded one is filled when
-`amendable`; a tap only selects (outlined) and `#pz-outcome-why` says what it
-would do, in one fixed line; `#pz-apply` sends it (YES, NEVER for NEVER).
+known — back in a year") and SOONER / GOT IT / KNEW IT / NEVER. The graded
+one is filled when `amendable`. SOONER, GOT IT and KNEW IT **apply on tap**
+(since 2026-10-01; before, a tap only selected and APPLY sent it): the tap
+POSTs `/attempts/:key/outcome` at once, the choice is drawn in force
+(`applying`, pressed in, the four disabled until the answer lands, so
+nothing is sent twice) and `#pz-outcome-why` says what it does, in one
+fixed line; a tap of another replaces it (the server replaces the review
+an override names, it never stacks); a tap of the one in force sends
+nothing. A refusal says why in that line (`#pz-outcome-error`) and the
+choice before the tap stands. **NEVER alone asks first**, because it
+cannot be undone: its tap rings it (`confirmingNever`), explains, and
+lays out `#pz-never-yes` ("YES, NEVER"), which sends it; any other tap
+takes the question back, and ANOTHER / I'M DONE drop an unconfirmed one.
 GOT IT after a miss is `aria-disabled` in its column ("You missed this
 one."). Once NEVER is applied the four stay, disabled, under "Set aside".
-The reveal's height is fixed across taps. A schedule carries `patched`, true
+The reveal's height is fixed across taps (the confirm's slot is always
+laid out; `review-verdict/outcomes.js` and `test-puzzle` measure it). A schedule carries `patched`, true
 when that answer took the mistake to `deck.patched_level` from below (the
 level line then reads "Mastered. Four right in a row — back in 21 days",
 `.pz-level.is-patched`). SHARE is the table's `shareInvite` port on the
@@ -503,11 +513,12 @@ an answer with nothing new in it ends today's set. The page is told
 count ("3 practiced today"), or "Practice only" in a run of early answers --
 with, for a mistake, the `/why` line. It offers ANOTHER (`#pz-next`,
 `WantsNext`) and I'M DONE (`#pz-done`, `WantsEnd`) after every reveal --
-except the one that finishes today's set (below) -- and
-reports every reveal and override as `Out = Answered {verdict, schedule,
-grade}`, or, where ANOTHER / I'M DONE applied a pending choice on the way
-out, `Out = AnsweredThen answer (WantsNext | WantsEnd)`: Main keeps the
-answer, then goes on (`Main.puzzleOut`). An answer counts toward the day
+on the one that finishes today's set ANOTHER is the celebration (below)
+-- and reports every reveal and override as `Out = Answered {verdict,
+schedule, grade}`, or, where ANOTHER / I'M DONE was pressed while a
+choice was still on its way, `Out = AnsweredThen answer (WantsNext |
+WantsEnd)`: the page waits for it, Main keeps the answer, then goes on
+(`Main.puzzleOut`). An answer counts toward the day
 and the ring only the first time, only when it moved something
 (`Page.Puzzle.countsToday`), never in PRACTICE ANYWAY. `WantsEnd` is
 answered with `Page.Puzzle.endRun {right, total} answers next`: a pass is
@@ -526,19 +537,25 @@ target (`done == target > 0`), `Run.celebrate` says so once a run
 (`celebrated`); never for a guest (no day), PRACTICE ANYWAY or one game's
 mistakes. Main calls `Page.Puzzle.celebrate`, reads the deck once by the
 run's `slug` (`GET /papi/practice/decks/:slug`) and hands the page the
-cells and the way on (`Run.way`). The card (`#pz-today-done`) sits **under
-the reveal**, laid out hidden from its first frame: the ring at 64px
+cells and the way on (`Run.way`). **The card is the next card** (since
+2026-10-01; it used to sit under the reveal, where it was missed): the
+reveal of that answer is an ordinary one (its choices still apply) whose
+band offers ANOTHER -- even past the run's last id -- and I'M DONE.
+ANOTHER (`Celebration.shown`) puts the card (`#pz-today-done`) where the
+next puzzle would be, on the same URL, the board and reveal gone, one
+centered column at every size (`.pz-page.is-card`): the ring at 104px
 filling to a check, "Today's 5 done.", what this run moved (from its own
 schedules), the deck's grid with the squares this run stepped up
 (`Ui.Charts.gridStepping`), for a tier what mastering won back ("Mastered
-so far: 0.6 PR won back."), and KEEP
-GOING (or PRACTICE ANYWAY) beside I'M DONE in one fixed band; ANOTHER is
-not drawn on that reveal and the band under the board keeps SHARE. The
-`celebrateCard` port scrolls it into view and `celebrationInView` starts
-the motion once it is on screen; `data-settled="true"` marks the last
-keyframe. Motion is CSS only, under `prefers-reduced-motion:
-no-preference`; with reduced motion the final state is drawn and settled
-at once. On desktop (1024px and up) the column beside the board is
+so far: 0.6 PR won back."), then "Keep going?" (`#pz-today-ask`) over KEEP
+GOING (or PRACTICE ANYWAY) beside I'M DONE in one fixed band. KEEP GOING is
+`GoOn way` (the `/more` path; the run goes on to its next puzzle); I'M
+DONE is the end card. The card is laid out hidden until the deck is read
+(or 1.5 s pass); once it is both read and shown, the `celebrateCard` port
+puts the page at its top and `celebrationInView` starts the motion (about
+1.7 s); `data-settled="true"` marks the last keyframe. Motion is CSS only,
+under `prefers-reduced-motion: no-preference`; with reduced motion the
+final state is drawn and settled at once. On desktop (1024px and up) the column beside the board is
 size-contained (`.pz-page .rp-side { contain: size }`): always the board's
 height, scrolling inside, so a tall reveal never stretches the board's
 box.

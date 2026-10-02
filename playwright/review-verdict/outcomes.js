@@ -1,12 +1,13 @@
 /**
- * Screenshots of the four choices under a reveal's level line, which now
- * select, explain, then apply: nothing pending (the graded choice filled,
- * its sentence under the row, APPLY's slot empty); SOONER pending on a pass
- * (outlined, "Back to the start ...", APPLY); NEVER pending ("YES, NEVER");
- * GOT IT tapped after a miss ("You missed this one."); and SOONER applied.
+ * Screenshots of the four choices under a reveal's level line. SOONER, GOT
+ * IT and KNEW IT apply on the tap; NEVER alone asks first. At rest (the
+ * graded choice filled, its sentence under the row, the confirm's slot
+ * empty); SOONER on its way (filled, the four waiting); SOONER applied;
+ * NEVER asking ("YES, NEVER"); GOT IT tapped after a miss ("You missed
+ * this one."); and NEVER confirmed ("Set aside").
  *
  * At every size it also measures `#pz-reveal` across a tap on each of the
- * four and after APPLY, and fails if the height moves by a pixel.
+ * four, in flight and applied, and fails if the height moves by a pixel.
  *
  * The page is the real one on a real puzzle (`test-puzzle/setup.exs`); the
  * browser is a guest, so the attempt's answer is the server's own with a
@@ -36,6 +37,9 @@ const DAY = 86400000;
 const PASSED = { level_before: 2, level_after: 3, due: Date.now() + 7 * DAY, amendable: true, self_grade: false, patched: false };
 const MISSED = { level_before: 3, level_after: 0, due: Date.now() + DAY, amendable: true, self_grade: false, patched: false };
 const SOONER = { level_before: 2, level_after: 0, due: Date.now() + DAY, amendable: true, self_grade: false, patched: false };
+const KNOWN = { level_before: 2, level_after: 7, due: Date.now() + 365 * DAY, amendable: true, self_grade: false, patched: true };
+// What each override answers: the review it named, replaced.
+const OVERRIDES = { sooner: SOONER, got_it: PASSED, knew_it: KNOWN, never: SOONER };
 
 const SHAPES = {
   pass: { verdict: 'pass', band: 'best', cost: 0.0, schedule: PASSED },
@@ -76,9 +80,14 @@ async function revealed(browser, size, puzzle, shape) {
     await route.fulfill({ response, json: body });
   });
   const posts = [];
+  // Held a moment, as a real round trip is, so the choice on its way is
+  // seen (and measured) before it lands.
+  const hold = { ms: 250 };
   await context.route(/\/papi\/puzzles\/[^/]+\/attempts\/[^/]+\/outcome$/, async (route) => {
-    posts.push(JSON.parse(route.request().postData() || '{}').outcome);
-    await route.fulfill({ status: 200, json: { ok: true, schedule: SOONER } });
+    const outcome = JSON.parse(route.request().postData() || '{}').outcome;
+    posts.push(outcome);
+    await new Promise((r) => setTimeout(r, hold.ms));
+    await route.fulfill({ status: 200, json: { ok: true, schedule: OVERRIDES[outcome] || SOONER } });
   });
   const page = await context.newPage();
   await page.goto(`${BASE}/puzzles/${puzzle}`);
@@ -88,7 +97,15 @@ async function revealed(browser, size, puzzle, shape) {
   await page.waitForSelector('#pz-outcomes');
   await page.waitForTimeout(300);
   await page.locator('#pz-reveal').scrollIntoViewIfNeeded();
-  return { context, page, posts };
+  return { context, page, posts, hold };
+}
+
+// The choice has landed: in force, and the four free again.
+async function landed(page, id) {
+  await page.waitForFunction((sel) => {
+    const b = document.querySelector(sel);
+    return b && b.getAttribute('aria-pressed') === 'true' && !b.disabled && !b.classList.contains('is-busy');
+  }, `#pz-outcome-${id}`);
 }
 
 async function shot(page, size, name) {
@@ -104,42 +121,75 @@ async function shot(page, size, name) {
     for (const size of SIZES) {
       // A pass: the graded GOT IT in force, then each of the four tapped.
       {
-        const { context, page, posts } = await revealed(browser, size, puzzle, SHAPES.pass);
+        const { context, page, posts, hold } = await revealed(browser, size, puzzle, SHAPES.pass);
         const height = async () => (await page.locator('#pz-reveal').boundingBox()).height;
         const rest = await height();
-        must(!(await page.locator('#pz-apply').isVisible()), `${size.name}: nothing pending, APPLY's slot is empty`);
+        const same = async (what) => {
+          const h = await height();
+          must(h === rest, `${size.name}: ${what}, the reveal is ${h}px as it was`);
+        };
+        must(!(await page.locator('#pz-never-yes').isVisible()), `${size.name}: nothing asked, the confirm's slot is empty`);
+        must(!(await page.locator('#pz-apply').count()), `${size.name}: there is no APPLY`);
         must((await page.textContent('#pz-outcome-why')).trim() === 'As graded. Level 2 → 3 · back in 7 days.', `${size.name}: the graded choice explained`);
         await shot(page, size, 'rest');
-        for (const o of ['sooner', 'got-it', 'knew-it', 'never', 'sooner']) {
-          await page.click(`#pz-outcome-${o}`);
-          await page.waitForTimeout(60);
-          const h = await height();
-          must(h === rest, `${size.name}: ${o} tapped, the reveal is ${h}px as it was`);
-        }
-        must(posts.length === 0, `${size.name}: no tap posted anything`);
-        must((await page.textContent('#pz-outcome-why')).trim() === 'Back to the start: it comes back tomorrow. Level 2 → 0.', `${size.name}: SOONER explained`);
-        await shot(page, size, 'sooner-pending');
-        await page.click('#pz-outcome-never');
-        await page.waitForTimeout(60);
-        must((await page.textContent('#pz-apply')).trim() === 'YES, NEVER', `${size.name}: NEVER asks YES, NEVER`);
-        await shot(page, size, 'never-pending');
+
+        // SOONER: applied on the tap, filled at once, the four waiting.
         await page.click('#pz-outcome-sooner');
-        await page.click('#pz-apply');
-        await page.waitForFunction(() => document.querySelector('#pz-outcome-sooner').getAttribute('aria-pressed') === 'true');
-        must(posts.join() === 'sooner', `${size.name}: APPLY posted SOONER, once`);
+        await page.waitForSelector('#pz-outcome-sooner.is-busy');
+        must(await page.locator('.pz-outcome:disabled').count() === 4, `${size.name}: in flight, the four are disabled`);
+        must((await page.textContent('#pz-outcome-why')).trim() === 'Back to the start: it comes back tomorrow. Level 2 → 0.', `${size.name}: SOONER explained as it goes`);
+        await same('SOONER in flight');
+        await shot(page, size, 'sooner-sending');
+        await landed(page, 'sooner');
+        must(posts.join() === 'sooner', `${size.name}: the tap posted SOONER, once`);
         must((await page.textContent('#pz-level-line')).trim() === 'Level 2 → 0 · back tomorrow', `${size.name}: the level line moved`);
-        must((await height()) === rest, `${size.name}: applied, the reveal is the same height`);
+        await same('SOONER applied');
         await shot(page, size, 'sooner-applied');
+
+        // KNEW IT, then GOT IT: each replaces the one before.
+        await page.click('#pz-outcome-knew-it');
+        await landed(page, 'knew-it');
+        await same('KNEW IT applied');
+        await page.click('#pz-outcome-got-it');
+        await landed(page, 'got-it');
+        await same('GOT IT applied');
+        must(posts.join() === 'sooner,knew_it,got_it', `${size.name}: one post a tap, in order (${posts.join()})`);
+        must(await page.locator('.pz-outcome.is-on').count() === 1, `${size.name}: one choice in force`);
+
+        // The choice in force, tapped again, sends nothing.
+        await page.click('#pz-outcome-got-it');
+        await page.waitForTimeout(80);
+        must(posts.length === 3, `${size.name}: the choice in force, tapped again, posts nothing`);
+
+        // NEVER asks; another tap takes the question back; YES, NEVER sends it.
+        await page.click('#pz-outcome-never');
+        await page.waitForSelector('#pz-never-yes:not(.is-idle)');
+        must((await page.textContent('#pz-never-yes')).trim() === 'YES, NEVER', `${size.name}: NEVER asks YES, NEVER`);
+        must(posts.length === 3, `${size.name}: NEVER's tap posts nothing`);
+        await same('NEVER asking');
+        await shot(page, size, 'never-asking');
+        await page.click('#pz-outcome-got-it');
+        await page.waitForTimeout(80);
+        must(!(await page.locator('#pz-never-yes').isVisible()), `${size.name}: another tap takes NEVER's question back`);
+        must(posts.length === 3, `${size.name}: and, GOT IT being in force, posts nothing`);
+        await page.click('#pz-outcome-never');
+        hold.ms = 0;
+        await page.click('#pz-never-yes');
+        await page.waitForFunction(() => (document.querySelector('#pz-level-line') || {}).textContent === 'Set aside: it will not come back.');
+        must(posts.join() === 'sooner,knew_it,got_it,never', `${size.name}: YES, NEVER posted NEVER`);
+        must(await page.locator('.pz-outcome:disabled').count() === 4, `${size.name}: set aside, the four stay, disabled`);
+        await same('NEVER confirmed');
+        await shot(page, size, 'never-confirmed');
         await context.close();
       }
       // A miss: SOONER in force, GOT IT barred in its column.
       {
-        const { context, page } = await revealed(browser, size, puzzle, SHAPES.miss);
+        const { context, page, posts } = await revealed(browser, size, puzzle, SHAPES.miss);
         const rest = (await page.locator('#pz-reveal').boundingBox()).height;
         await page.click('#pz-outcome-got-it', { force: true });
         await page.waitForTimeout(60);
         must((await page.textContent('#pz-outcome-why')).trim() === 'You missed this one.', `${size.name}: GOT IT after a miss says why`);
-        must(!(await page.locator('#pz-apply').isVisible()), `${size.name}: and offers no APPLY`);
+        must(posts.length === 0, `${size.name}: and posts nothing`);
         must((await page.locator('#pz-reveal').boundingBox()).height === rest, `${size.name}: and moves nothing`);
         await shot(page, size, 'missed-got-it');
         await context.close();

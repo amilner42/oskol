@@ -22,13 +22,15 @@
  *     way back. I'M DONE ends a run after one. Once today's set is done
  *     the ring is full and the one button is still there: KEEP GOING (or
  *     PRACTICE ANYWAY), which starts a run.
- *     The answer that finishes today's set brings the celebration under
- *     its reveal: the ring over the board a check, "Today's 3 done.", the
- *     tier's grid, KEEP GOING beside I'M DONE -- and nothing above it moves,
- *     measured as it lands and, at 390x844, 320x568, 844x390 and 1440x900,
- *     with the card against without it. KEEP GOING starts three more and
- *     the ring's target grows by them (3/6); ANOTHER takes that run to its
- *     end with no second card, and the end card offers the way on.
+ *     The answer that finishes today's set is an ordinary reveal (the ring
+ *     over the board a check, no card in it) whose ANOTHER brings up the
+ *     celebration as the next card, the URL where it was and the board
+ *     gone: "Today's 3 done.", the tier's grid, "Keep going?" over KEEP
+ *     GOING beside I'M DONE, settled within a few seconds, and centered
+ *     with nothing sideways at 390x844, 320x568, 844x390 and 1440x900.
+ *     KEEP GOING starts three more and the ring's target grows by them
+ *     (3/6); ANOTHER takes that run to its end with no second card, and
+ *     the end card offers the way on.
  *  4. Phones: the home at 390x844, 320x568 and 844x390 scrolls nowhere
  *     sideways.
  *  5. More due than a page holds (many_due.exs: 25 very bad moves due):
@@ -174,27 +176,6 @@ async function boxOf(page, selector) {
     const r = document.querySelector(s).getBoundingClientRect();
     return { y: Math.round(r.y), h: Math.round(r.height) };
   }, selector);
-}
-
-/** Where the things over the card sit in the page: each one's box with
- * every scroll between it and the page taken out, so a scroll is not a
- * move. */
-function layoutOf(page) {
-  return page.evaluate(() => {
-    const at = (sel) => {
-      const el = document.querySelector(sel);
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      let y = r.top + window.scrollY;
-      let x = r.left + window.scrollX;
-      for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) {
-        y += p.scrollTop;
-        x += p.scrollLeft;
-      }
-      return { x: Math.round(x), y: Math.round(y), w: Math.round(r.width), h: Math.round(r.height) };
-    };
-    return { board: at('#pz-board'), strip: at('#pz-progress'), verdict: at('#pz-verdict'), level: at('#pz-level'), band: at('#pz-actions') };
-  });
 }
 
 async function noSideways(page, what) {
@@ -395,16 +376,15 @@ async function run(browser, setup, errors) {
     must(oneToday === '1 practiced today', `the day counts the one: "${oneToday}"`);
 
     // ---- 3c. the rest of the day's new ones, watching the strip ----
-    // The answer that finishes today's set puts the celebration under its
-    // reveal: the ring over the board full, "Today's 3 done.", the grid,
-    // and KEEP GOING beside I'M DONE -- and nothing above it moves.
+    // The answer that finishes today's set is an ordinary reveal; its
+    // ANOTHER brings the celebration up as the next card: "Today's 3
+    // done.", the grid, "Keep going?" over KEEP GOING beside I'M DONE.
     await alice.goto(`${BASE}/puzzles`);
     await alice.waitForSelector('#hub-go[data-action="fix-one"]');
     await alice.click('#hub-go');
     await alice.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
     const rest = NEW_PER_DAY - 1;
     let today = null;
-    let atReveal = null;
     for (let n = 1; n <= rest; n++) {
       await alice.waitForSelector('#pz-reveal', { state: 'detached' });
       await alice.waitForSelector('#pz-board .bg-stack');
@@ -413,47 +393,45 @@ async function run(browser, setup, errors) {
       if (today !== null) must(before.today === today, `the day's count carried over to puzzle ${n} (${before.today})`);
       await answer(alice);
       await alice.waitForSelector('#pz-reveal');
-      if (n === rest) atReveal = await layoutOf(alice);
       const after = await progressOf(alice, n);
       must(after.today === before.today + 1, `puzzle ${n}: the day's count moved ${before.today} -> ${after.today}`);
       must(after.ring.done === before.ring.done + 1, `puzzle ${n}: and the ring with it (${after.ring.done}/${after.ring.target})`);
       today = after.today;
-      if (n < rest) {
-        must(!(await alice.locator('#pz-today-done').count()), `puzzle ${n}: today's set is not done yet, and there is no card`);
-        await pressNext(alice);
-      }
+      must(!(await alice.locator('#pz-today-done').count()), `puzzle ${n}: no card in the reveal`);
+      if (n < rest) await pressNext(alice);
     }
-    must(await alice.locator('#pz-today-done').count(), "the answer that finishes today's set brings the card");
-    await alice.waitForSelector('#pz-today-done[data-settled="true"]', { timeout: 15000 });
-    must(await alice.isVisible('#pz-today-done'), 'and it is on the screen once it has played');
+    // The reveal that finished today's set: an ordinary one, the ring over
+    // the board a check, and ANOTHER the way on.
     const ringDone = await progressOf(alice, rest);
     must(ringDone.ring.done === NEW_PER_DAY && ringDone.ring.target === NEW_PER_DAY && await alice.locator('#pz-ring.is-done').count(),
       `the ring over the board reads a check (${ringDone.ring.done}/${ringDone.ring.target})`);
     must(ringDone.filled === rest, `a tile for each answer of the run in the strip (${ringDone.filled})`);
+    must(await alice.locator('#pz-actions #pz-next').count(), 'the reveal that finished today\'s set offers ANOTHER');
+    const lastUrl = new URL(alice.url()).pathname;
+    const pressedAt = Date.now();
+    await alice.click('#pz-next');
+    await alice.waitForSelector('#pz-today-done[data-settled="true"]', { timeout: 15000 });
+    const took = Date.now() - pressedAt;
+    log(`ANOTHER to the card settled in ${took} ms`);
+    must(took < 4000, `the card plays and settles quickly (${took} ms)`);
+    must(new URL(alice.url()).pathname === lastUrl, 'the card comes up on the last puzzle\'s URL');
+    must(!(await alice.locator('#pz-board').count()) && !(await alice.locator('#pz-reveal').count()), 'in place of the puzzle: the board and the reveal are gone');
+    must(await alice.isVisible('#pz-today-done'), 'and the card is on the screen');
     must((await alice.textContent('#pz-today-title')).trim() === `Today's ${NEW_PER_DAY} done.`, `the card says so: "${(await alice.textContent('#pz-today-title')).trim()}"`);
     must(Number(await alice.getAttribute('#pz-today-grid svg', 'data-count')) > 0, 'with the tier\'s grid');
-    const settledLayout = await layoutOf(alice);
-    for (const key of Object.keys(atReveal)) {
-      must(JSON.stringify(atReveal[key]) === JSON.stringify(settledLayout[key]),
-        `nothing above the card moved: ${key} ${JSON.stringify(settledLayout[key])}`);
-    }
+    must((await alice.textContent('#pz-today-ask')).trim() === 'Keep going?', 'and it asks: "Keep going?"');
     await alice.waitForSelector('#pz-today-way[data-way="keep-going"], #pz-today-way[data-way="practice-anyway"]');
     const way = await alice.getAttribute('#pz-today-way', 'data-way');
-    must(await alice.isVisible('#pz-done'), `I'M DONE beside ${way}`);
-    must(!(await alice.locator('#pz-next').count()), 'the band under the board leaves the way on to the card');
-    // At every size: the card, there or not, moves nothing above it.
+    must(await alice.isVisible('#pz-today-done #pz-done'), `I'M DONE beside ${way}`);
+    // At every size: the card centered on the page, the ring on the screen,
+    // nothing sideways.
     for (const size of [{ width: 390, height: 844 }, { width: 320, height: 568 }, { width: 844, height: 390 }, { width: 1440, height: 900 }]) {
       await alice.setViewportSize(size);
       await sleep(250);
-      const shown = await layoutOf(alice);
-      await alice.evaluate(() => { document.querySelector('#pz-today-done').style.display = 'none'; });
-      await sleep(50);
-      const without = await layoutOf(alice);
-      await alice.evaluate(() => { document.querySelector('#pz-today-done').style.display = ''; });
-      for (const key of Object.keys(shown)) {
-        must(JSON.stringify(shown[key]) === JSON.stringify(without[key]),
-          `${size.width}x${size.height}: ${key} is where it is without the card (${JSON.stringify(shown[key])} vs ${JSON.stringify(without[key])})`);
-      }
+      const box = await boxOf(alice, '#pz-today-done');
+      const x = await alice.evaluate(() => { const r = document.querySelector('#pz-today-done').getBoundingClientRect(); return { left: r.left, right: innerWidth - r.right }; });
+      must(Math.abs(x.left - x.right) <= 2, `${size.width}x${size.height}: the card is centered (${Math.round(x.left)} | ${Math.round(x.right)})`);
+      must(box.y >= 0 && box.y < size.height / 2, `${size.width}x${size.height}: the card starts on the screen (${box.y})`);
       await noSideways(alice, `the card at ${size.width}x${size.height}`);
     }
     await alice.setViewportSize({ width: 390, height: 844 });
@@ -475,14 +453,17 @@ async function run(browser, setup, errors) {
       must(grown.ring.done === NEW_PER_DAY && grown.ring.target > NEW_PER_DAY && grown.ring.target <= 2 * NEW_PER_DAY,
         `KEEP GOING went on, and the ring reads ${grown.ring.done}/${grown.ring.target}`);
       let cards = 0;
-      const more = await playRun(alice, { onReveal: async (page) => { cards += await page.locator('#pz-today-done').count(); } });
+      const more = await playRun(alice, {
+        onReveal: async (page) => { cards += await page.locator('#pz-today-done').count(); },
+        onCelebration: async (page) => { cards += 1; await page.click('#pz-today-done #pz-done'); },
+      });
       must(more === grown.ring.target - NEW_PER_DAY, `ANOTHER took the run through the ${more} it started, then it ended`);
       must(cards === 0, 'and the card is never drawn twice in a run');
       await alice.waitForSelector('#pz-way[data-way]:not([data-way=""])');
       const endToday = (await alice.textContent('#pz-today')).trim();
       must(endToday === `${NEW_PER_DAY + more} practiced today`, `the day's count, under the score: "${endToday}"`);
     } else {
-      await alice.click('#pz-done');
+      await alice.click('#pz-today-done #pz-done');
       await alice.waitForSelector('#pz-end');
     }
 

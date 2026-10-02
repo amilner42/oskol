@@ -189,13 +189,19 @@ async function holder(page, pattern) {
       const { after } = await onePuzzle(page, n, first);
       if (!first) first = after;
       if (n === 6) await shootAll(page, '01-mid-run');
-      // The answer that finishes today's set brings the celebration under
-      // the reveal (review-celebration photographs it); its I'M DONE ends
-      // the run on the end card, whose way on is measured as below.
-      if (await page.locator('#pz-today-done').count()) {
+      // The answer that finishes today's set (the ring over the board full)
+      // is an ordinary reveal whose ANOTHER brings up the celebration as
+      // the next card (review-celebration photographs it); its I'M DONE
+      // ends the run on the end card, whose way on is measured as below.
+      const ringFull = await page.evaluate(() => {
+        const r = document.querySelector('#pz-ring');
+        return !!r && Number(r.dataset.target) > 0 && r.dataset.done === r.dataset.target;
+      });
+      if (ringFull) {
+        await page.click('#pz-next');
         await page.waitForSelector('#pz-today-done[data-settled="true"]', { timeout: 15000 });
         standing.hold();
-        await page.click('#pz-done');
+        await page.click('#pz-today-done #pz-done');
         await page.waitForSelector('#pz-end');
         await sleep(200);
         const asking = { card: await box(page, '#pz-end'), band: await box(page, '#pz-way') };

@@ -275,31 +275,42 @@ async function run(browser, setup, errors) {
     // sent back to her), so the line names Bob.
     must(/^From your game vs Bob, \d+ \w{3}\. You played .+ \(a (dubious|bad|very bad) move\) and (won|lost) \d+ points?\./.test(aliceLine), `the player's memory line: "${aliceLine}"`);
 
-    // The four choices select, explain, then apply. A tap sends nothing and
-    // moves nothing: the reveal is the same height whichever is tapped.
+    // SOONER, GOT IT and KNEW IT apply on the tap; NEVER alone asks first.
+    // Nothing moves: the reveal is the same height whatever is tapped.
     const outcomePosts = [];
     alice.on('request', (r) => { if (/\/attempts\/[^/]+\/outcome$/.test(r.url())) outcomePosts.push(r.url()); });
     const revealHeight = async () => (await alice.locator('#pz-reveal').boundingBox()).height;
     const restHeight = await revealHeight();
-    for (const o of ['sooner', 'got-it', 'knew-it', 'never']) {
-      // GOT IT after a miss is aria-disabled (it still hears the tap, to say
-      // why), which Playwright counts as not enabled: forced, like a thumb.
-      await alice.click(`#pz-outcome-${o}`, { force: true });
+    must(!(await alice.locator('#pz-apply').count()), 'there is no APPLY');
+
+    // NEVER: its tap asks and sends nothing; tapped again, the question goes.
+    await alice.click('#pz-outcome-never');
+    await alice.waitForSelector('#pz-never-yes:not(.is-idle)');
+    must((await alice.textContent('#pz-never-yes')).trim() === 'YES, NEVER', 'NEVER asks: YES, NEVER');
+    must((await revealHeight()) === restHeight, "NEVER asking keeps the reveal's height");
+    await alice.click('#pz-outcome-never');
+    await alice.waitForSelector('#pz-never-yes.is-idle', { state: 'attached' });
+    // GOT IT after a miss is aria-disabled (it still hears the tap, to say
+    // why), which Playwright counts as not enabled: forced, like a thumb.
+    if ((await alice.getAttribute('#pz-outcome-got-it', 'aria-disabled')) === 'true') {
+      await alice.click('#pz-outcome-got-it', { force: true });
       await alice.waitForTimeout(80);
-      const h = await revealHeight();
-      must(h === restHeight, `tapping ${o} keeps the reveal's height (${h} === ${restHeight})`);
+      must((await alice.textContent('#pz-outcome-why')).trim() === 'You missed this one.', 'GOT IT after a miss says why');
     }
-    must(outcomePosts.length === 0, 'a tap posts nothing');
-    must((await alice.textContent('#pz-level-line')).trim() === line, 'and the level line stands until APPLY');
+    await alice.waitForTimeout(80);
+    must(outcomePosts.length === 0, 'neither posted anything');
+    must((await alice.textContent('#pz-level-line')).trim() === line, 'and the level line stands');
 
     const applyChoice = async (o, why) => {
+      const before = outcomePosts.length;
       await alice.click(`#pz-outcome-${o}`);
-      await alice.waitForTimeout(80);
+      await alice.waitForFunction((id) => {
+        const b = document.querySelector(id);
+        return b.getAttribute('aria-pressed') === 'true' && !b.disabled && !b.classList.contains('is-busy');
+      }, `#pz-outcome-${o}`, { timeout: 5000 });
+      must(outcomePosts.length === before + 1, `${o} posted on the tap, once`);
       const said = (await alice.textContent('#pz-outcome-why')).trim();
-      must(why.test(said), `${o} explains itself first: "${said}"`);
-      must(await alice.locator('#pz-apply').isVisible(), `${o}: APPLY is offered`);
-      await alice.click('#pz-apply');
-      await alice.waitForFunction((id) => document.querySelector(id).getAttribute('aria-pressed') === 'true', `#pz-outcome-${o}`, { timeout: 5000 });
+      must(why.test(said), `${o} says what it did: "${said}"`);
       must((await revealHeight()) === restHeight, `${o} applied, and the reveal is still the same height`);
     };
     // SOONER is what the grade already did to a miss, so to show the line
@@ -310,7 +321,7 @@ async function run(browser, setup, errors) {
       must(/back in a year$/.test(knew), `KNEW IT takes it to the top: "${knew}"`);
     }
     await applyChoice('sooner', /^Back to the start: it comes back tomorrow\.( Level \d+ → 0\.)?$/);
-    must(outcomePosts.length >= 1, 'APPLY posted the choice');
+    must(outcomePosts.length >= 1, 'the tap posted the choice');
     const sooner = (await alice.textContent('#pz-level-line')).trim();
     must(/^Level \d+ → 0 · back tomorrow$/.test(sooner) || /^Level 0 · back tomorrow$/.test(sooner), `SOONER puts it back to the start: "${sooner}"`);
 

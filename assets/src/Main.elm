@@ -555,9 +555,10 @@ startRunWith config today model =
 
 
 {-| What the puzzle page asked of the shell, with the page already in
-`model`. `AnsweredThen` is a choice applied on the way out of a run's
-puzzle: the answer is kept first, so the end card's score is about what
-the player settled on, and then the page goes on.
+`model`. `AnsweredThen` is ANOTHER or I'M DONE pressed while a choice
+(SOONER, GOT IT...) was still on its way: the answer is kept first, so
+the end card's score is about what the player settled on, and then the
+page goes on.
 -}
 puzzleOut : Page.Puzzle.Out -> Model -> ( Model, Cmd Msg )
 puzzleOut out model =
@@ -573,7 +574,7 @@ puzzleOut out model =
                             Run.answer given run
 
                         -- The answer that finishes today's set: the page
-                        -- draws the card under the reveal, and the deck is
+                        -- keeps the card for ANOTHER, and the deck is
                         -- read for its grid and its lines. Once a run.
                         ( kept, done ) =
                             Run.celebrate counts answered

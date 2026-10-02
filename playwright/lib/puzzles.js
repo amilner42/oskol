@@ -46,13 +46,23 @@ async function stageATurn(page) {
 /**
  * Play a run from the puzzle it is on to its end screen: stage, PLAY,
  * NEXT, until `#pz-end`. `onReveal(page, n)` is called at each reveal.
- * Resolves with how many puzzles were answered.
+ * Where NEXT brings up the card that says today's set is done,
+ * `onCelebration(page)` is called (by default it presses the card's I'M
+ * DONE, which ends the run). Resolves with how many puzzles were answered.
  */
-async function playRun(page, { onReveal = async () => {}, max = 40 } = {}) {
+async function playRun(page, { onReveal = async () => {}, onCelebration = async (p) => { await p.click('#pz-today-done #pz-done'); }, max = 40 } = {}) {
   let answered = 0;
   for (let i = 0; i < max; i++) {
-    await page.waitForSelector('#pz-board .bg-stack, #pz-end', { timeout: 15000 });
+    await page.waitForSelector('#pz-board .bg-stack, #pz-end, #pz-today-done', { timeout: 15000 });
     if (await page.locator('#pz-end').count()) return answered;
+    if (await page.locator('#pz-today-done').count()) {
+      const was = new URL(page.url()).pathname;
+      await onCelebration(page);
+      await page.waitForFunction(
+        (from) => new URL(location.href).pathname !== from || !!document.querySelector('#pz-end'),
+        was, { timeout: 15000 });
+      continue;
+    }
     if (await page.locator('#pz-bands').count()) {
       // a cube question: any band answers it
       await page.locator('#pz-bands .pz-band').first().click();
@@ -69,7 +79,8 @@ async function playRun(page, { onReveal = async () => {}, max = 40 } = {}) {
 }
 
 /**
- * On, until the page has moved: ANOTHER to the next mistake's URL, or,
+ * On, until the page has moved: ANOTHER to the next mistake's URL (or, on
+ * the answer that finished today's set, to the card that says so), or,
  * where the run has no other, I'M DONE to the end screen on this one.
  * The reveal keeps filling in after the buttons appear (the memory line
  * lands a request later and pushes them down), so a click aimed a frame
@@ -77,7 +88,8 @@ async function playRun(page, { onReveal = async () => {}, max = 40 } = {}) {
  */
 async function pressNext(page) {
   const was = new URL(page.url()).pathname;
-  const moved = (from) => new URL(location.href).pathname !== from || !!document.querySelector('#pz-end');
+  const moved = (from) => new URL(location.href).pathname !== from
+    || !!document.querySelector('#pz-end') || !!document.querySelector('#pz-today-done');
   for (let i = 0; i < 4; i++) {
     await page.waitForSelector('#pz-next, #pz-done', { timeout: 5000 });
     const on = (await page.locator('#pz-next').count()) ? '#pz-next' : '#pz-done';

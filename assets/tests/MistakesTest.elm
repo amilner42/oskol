@@ -359,10 +359,10 @@ choices =
                     , \_ -> Mistakes.neverWhy |> Expect.equal "Out of your practice for good. It will not come back, and this cannot be undone."
                     ]
                     ()
-        , test "APPLY, and NEVER's button asks in its own words" <|
+        , test "NEVER's confirm asks in its own words, and the celebration asks to keep going" <|
             \_ ->
-                List.map Mistakes.applyLabel [ "sooner", "got_it", "knew_it", "never" ]
-                    |> Expect.equal [ "APPLY", "APPLY", "APPLY", "YES, NEVER" ]
+                [ Mistakes.neverConfirm, Mistakes.keepGoingAsk ]
+                    |> Expect.equal [ "YES, NEVER", "Keep going?" ]
         ]
 
 
