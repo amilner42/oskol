@@ -196,13 +196,36 @@ async function fits(page, tag, sel) {
 }
 
 // Whichever hint this screen shows (a mouse's or a finger's), whole.
+// Which one shows is the browser's pointer media (CI's headless Chromium on
+// Linux reports a fine pointer even for a touch phone), so the check takes
+// whichever is drawn -- and it must be whole either way.
 async function hintFits(page, tag) {
   let seen = 0;
   for (const hint of ['.an-hint-touch', '.an-hint-mouse']) {
-    const shown = await page.$eval(hint, (el) => getComputedStyle(el).display !== 'none');
+    const shown = await page.$eval(hint, (el) => el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden');
     if (shown) { seen++; await fits(page, tag, hint); }
   }
   if (seen !== 1) throw new Error(`${tag}: ${seen} hints show`);
+}
+
+// A mouse in a phone-wide window draws the mouse's hint whatever the font:
+// it must be whole down to 320.
+async function mouseHints(browser, errors) {
+  for (const width of [480, 430, 390, 360, 320]) {
+    const context = await browser.newContext({ viewport: { width, height: 844 } });
+    try {
+      const page = settled(await context.newPage());
+      watch(page, `mouse ${width}`, errors);
+      await open(page);
+      if (!(await page.$eval('.an-hint-mouse', (el) => el.offsetParent !== null))) throw new Error(`${width}: a mouse does not get the mouse's hint`);
+      await hintFits(page, `a mouse at ${width}`);
+      await page.click('#an-brush-remove');
+      await hintFits(page, `a mouse at ${width}, the x`);
+    } finally {
+      await context.close();
+    }
+  }
+  log('a mouse in a narrow window: its hint whole at 480, 430, 390, 360 and 320');
 }
 
 // The dead cube: White two away on a cube of 2 that White owns, so the
@@ -1266,6 +1289,7 @@ async function part4(browser, errors) {
       await menu(browser, errors);
       await desktop(browser, errors);
       await phone(browser, errors);
+      await mouseHints(browser, errors);
       await aim(browser, errors, '320', { width: 320, height: 568 });
       await aim(browser, errors, '844x390', { width: 844, height: 390 });
       await doors(browser, errors);

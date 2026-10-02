@@ -3447,6 +3447,13 @@ oskol-demo-board {
   .an-hint-mouse { display: block; }
   .an-hint-touch { display: none; }
 }
+/* The mouse's hint is the longer one: in a narrow window (or a phone whose
+   browser reports a fine pointer, as headless Chromium on Linux does) its
+   short form, whole, rather than the long one cut off. */
+@media (hover: hover) and (pointer: fine) and (max-width: 479px) {
+  .an-hint-mouse .an-hint-long { display: none; }
+  .an-hint-mouse .an-hint-short { display: inline; }
+}
 
 .an-side { gap: 10px; }
 .an-strip { flex: none; display: flex; flex-direction: column; gap: 8px; }
