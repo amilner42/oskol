@@ -5,8 +5,10 @@ module Games.Backgammon.Rolls exposing
     , allRolls
     , bandName
     , bandOf
+    , canonical
     , decoder
     , helped
+    , hurt
     , inWords
     , label
     , levelInWords
@@ -107,11 +109,22 @@ type Band
 
 {-| The grid as `/papi` sends it.
 
-It refuses anything it could not draw: the twenty-one canonical rolls must
-all be there, once each, with the weight the dice imply. A grid missing a
-roll would draw a hole in the map, and a wrong weight would make a double
-look as likely as a non-double in the bars -- both are the picture lying,
-so they fail loudly instead.
+It refuses anything it could not draw, and anything that would draw a lie:
+
+  - the twenty-one canonical rolls must all be there, once each, or the map
+    has a hole in it;
+  - each weight must be the one its dice imply, or a double's bar is as
+    wide as a non-double's and the picture says they are equally likely;
+  - and the rows must average to the `equity` above them, because every
+    cell's value is its row less that figure. A grid whose headline did not
+    come from its own rows would shift all thirty-six values -- and so
+    every band, and the count of what helps -- by one silent constant,
+    which is the same class of lie as the other two and the only one that
+    would look entirely plausible.
+
+The third is held to 0.005, a quarter of the narrowest band: wide enough
+for the rounding in six decimals of JSON, far too narrow for an engine that
+has started answering about a different position.
 
 -}
 decoder : Decoder Grid
@@ -166,6 +179,9 @@ build level equity rows =
 
         misweighed =
             List.filter (\r -> r.weight /= weightOf r.dice) rows
+
+        mean =
+            List.sum (List.map (\r -> toFloat r.weight * r.equity) rows) / 36
     in
     if List.length rows /= 21 then
         D.fail ("a grid is 21 rolls, not " ++ String.fromInt (List.length rows))
@@ -175,6 +191,14 @@ build level equity rows =
 
     else if not (List.isEmpty misweighed) then
         D.fail ("a weight is not the roll's: " ++ String.join ", " (List.map (.dice >> label) misweighed))
+
+    else if abs (mean - equity) > 0.005 then
+        D.fail
+            ("the rolls do not average to the grid's equity: "
+                ++ Words.signed mean
+                ++ " against "
+                ++ Words.signed equity
+            )
 
     else
         D.succeed
@@ -211,6 +235,22 @@ allRolls =
         ++ List.concatMap
             (\a -> List.map (\b -> ( a, b )) (List.range (a + 1) 6))
             (List.range 1 5)
+
+
+{-| A pair of faces as this module keys them: smaller first.
+
+**The rest of the client does not write a roll this way.** A record's dice
+are sorted with the higher face first (`state.gleam`: `int.compare(b, a)`),
+which is how backgammon is spoken and what `Replay` decodes; the wire sorts
+the other way because it is indexing, not speaking. So anything a page hands
+in -- the roll that was thrown, the cell a reader tapped -- goes through
+this before it is compared with a cell, or 6-5 would match nothing and 6-6
+would match, and the map would look half-broken rather than broken.
+
+-}
+canonical : ( Int, Int ) -> ( Int, Int )
+canonical ( a, b ) =
+    ( min a b, max a b )
 
 
 {-| How many of the thirty-six a roll is: a double arrives one way, every
@@ -290,8 +330,21 @@ right to think something was wrong.
 -}
 helped : List Cell -> Int
 helped cells =
+    weightIn [ StrongUp, Up, SlightUp ] cells
+
+
+{-| And how many hurt: the three bands below the middle. The neutral ones
+are neither, which is why these two do not add up to thirty-six.
+-}
+hurt : List Cell -> Int
+hurt cells =
+    weightIn [ StrongDown, Down, SlightDown ] cells
+
+
+weightIn : List Band -> List Cell -> Int
+weightIn bands cells =
     cells
-        |> List.filter (\c -> List.member c.band [ StrongUp, Up, SlightUp ])
+        |> List.filter (\c -> List.member c.band bands)
         |> List.map .weight
         |> List.sum
 
@@ -435,10 +488,11 @@ inWords { withMove } cell =
         ]
 
 
-{-| A value in a cell, where there is room for four characters and no more:
-`+.39`, `−.10`, `0`. Two decimals, no leading zero, and a bare `0` for
-anything inside half a hundredth -- the bands are what carry the size, so
-the number is a reminder, not a measurement.
+{-| A value in a cell, where a cell is about fifty pixels across: `+.39`,
+`−.10`, `0`. Two decimals and no leading zero, a bare `0` for anything
+inside half a hundredth, and one decimal with the unit once a value reaches
+1 (`+1.4`) -- which an equity does in a position with a live gammon. The
+bands are what carry the size; the number is a reminder, not a measurement.
 -}
 short : Float -> String
 short value =
@@ -460,7 +514,12 @@ short value =
         "0"
 
     else if hundredths >= 100 then
-        sign ++ String.fromInt (hundredths // 100) ++ "." ++ String.fromInt (hundredths // 10 |> modBy 10)
+        let
+            -- rounded to the tenth, not truncated: 1.05 is +1.1
+            tenths =
+                round (abs value * 10)
+        in
+        sign ++ String.fromInt (tenths // 10) ++ "." ++ String.fromInt (modBy 10 tenths)
 
     else
         sign ++ "." ++ String.padLeft 2 '0' (String.fromInt hundredths)

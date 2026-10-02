@@ -155,6 +155,20 @@ theWire =
                     (String.replace """"dice": [6,6], "weight": 1""" """"dice": [6,6], "weight": 2""" fixtureJson)
                     |> Result.mapError (always "refused")
                     |> Expect.equal (Err "refused")
+        , test "refuses a headline that is not its own rows' mean -- every cell would be off by one silent constant" <|
+            \_ ->
+                D.decodeString Rolls.decoder
+                    (String.replace "\"equity\": 0.096737" "\"equity\": 0.2" fixtureJson)
+                    |> Result.mapError (always "refused")
+                    |> Expect.equal (Err "refused")
+        , test "but lets six decimals of JSON rounding through" <|
+            \_ ->
+                -- a thousandth out: well inside the 0.005 the decoder allows,
+                -- and far inside the 0.02 that could move a cell's band
+                D.decodeString Rolls.decoder
+                    (String.replace "\"equity\": 0.096737" "\"equity\": 0.0977" fixtureJson)
+                    |> Result.map (.cells >> List.length)
+                    |> Expect.equal (Ok 21)
         ]
 
 
@@ -435,6 +449,29 @@ theMap =
                     , \_ -> outlined Nothing |> Query.count (Expect.equal 0)
                     ]
                     ()
+        , test "and the roll may be handed in either way round -- a record says 6-5, the wire says 5-6" <|
+            \_ ->
+                -- Replay decodes the record's dice as the record sorts them,
+                -- higher face first (state.gleam). Matching on the raw tuple
+                -- would ring nothing for 6-5 and still work for 6-6, which
+                -- looks half-broken rather than broken.
+                Expect.all
+                    [ \_ ->
+                        Rolls_.view { config | outlined = Just ( 6, 5 ) } grid
+                            |> Query.fromHtml
+                            |> Query.findAll [ class "rl-cell", class "is-out" ]
+                            |> Query.count (Expect.equal 2)
+                    , \_ ->
+                        Rolls_.view { config | tapped = Just ( 4, 1 ) } grid
+                            |> Query.fromHtml
+                            |> Query.find [ class "rl-said" ]
+                            |> Query.has [ text "4-1 · −0.104 · 2 in 36" ]
+                    , \_ ->
+                        bars { config | outlined = Just ( 6, 5 ) }
+                            |> Query.findAll [ attr "data-out" "true" ]
+                            |> Query.count (Expect.equal 1)
+                    ]
+                    ()
         , test "the switches say which of them are on" <|
             \_ ->
                 Rolls_.view { config | numbers = True } grid
@@ -578,7 +615,7 @@ theWords =
                         [ attr "aria-label"
                             ("The 3-ply luck of every roll for Arie."
                                 ++ " Best 6-6 at +0.392, worst 4-1 at −0.104."
-                                ++ " 7 rolls in 36 help."
+                                ++ " Of 36 rolls, 7 help and 24 hurt."
                             )
                         ]
         , test "the map says the same sentence, so either drawing reads aloud" <|
@@ -586,10 +623,10 @@ theWords =
                 Rolls_.view config grid
                     |> Query.fromHtml
                     |> Query.find [ class "rl-map" ]
-                    |> Query.has [ text "", attr "aria-label" "The 3-ply luck of every roll for Arie. Best 6-6 at +0.392, worst 4-1 at −0.104. 7 rolls in 36 help." ]
+                    |> Query.has [ text "", attr "aria-label" "The 3-ply luck of every roll for Arie. Best 6-6 at +0.392, worst 4-1 at −0.104. Of 36 rolls, 7 help and 24 hurt." ]
         , test "a comparison calls its numbers something else" <|
             \_ ->
                 bars { config | words = Rolls_.difference }
                     |> Query.find [ attr "data-rolls" "bars" ]
-                    |> Query.has [ attr "aria-label" "The 3-ply difference of every roll for Arie. Best 6-6 at +0.392, worst 4-1 at −0.104. 7 rolls in 36 better." ]
+                    |> Query.has [ attr "aria-label" "The 3-ply difference of every roll for Arie. Best 6-6 at +0.392, worst 4-1 at −0.104. Of 36 rolls, 7 better and 24 worse." ]
         ]

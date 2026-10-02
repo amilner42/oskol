@@ -54,6 +54,7 @@ import Html.Attributes exposing (attribute, class, classList)
 import Html.Events exposing (onClick)
 import Svg exposing (Svg)
 import Svg.Attributes as SvgAttr
+import Ui.Charts exposing (num)
 
 
 {-| Which drawing is on.
@@ -95,12 +96,16 @@ difference =
 
   - `drawing` is which picture is on; `onDrawing` is told the other one.
   - `numbers` writes the value in each cell; `moves` writes the best play
-    there (on a desktop -- on a phone a cell has no room, and the tapped
-    line carries it). `onNumbers` and `onMoves` are the switches.
+    in the spoken line and in every cell's `aria-label` (see the note
+    above: a cell has no room for a notation at any width we ship).
+    `onNumbers` and `onMoves` are the switches.
   - `outlined` is the roll that was actually thrown, ringed in ink and said
-    first under the drawing. `Nothing` before a roll.
+    first under the drawing. `Nothing` before a roll. **Either order of the
+    faces will do**: a record says 6-5 and the wire says 5-6, so both this
+    and `tapped` are put through `Rolls.canonical` before anything is
+    compared.
   - `tapped` is the cell the reader last tapped; `onTap` is told a cell's
-    dice.
+    dice, canonical.
   - `mover` is the player on roll, named in the sentence.
   - `words` is what the values are called (`luck`, `difference`).
   - `attrs` is anything the page hangs on the component (an id).
@@ -134,7 +139,16 @@ wraps -- and nothing a reader is looking at sits below it.
 
 -}
 view : Config msg -> Grid -> Html msg
-view config grid =
+view config_ grid =
+    let
+        -- a page may hand in either order of the faces; everything below
+        -- compares against a cell's canonical dice
+        config =
+            { config_
+                | outlined = Maybe.map Rolls.canonical config_.outlined
+                , tapped = Maybe.map Rolls.canonical config_.tapped
+            }
+    in
     div (class "rl" :: config.attrs)
         [ viewBar config
         , div [ class "rl-draw" ]
@@ -196,9 +210,10 @@ bool b =
 
 
 {-| Thirty-six cells, six by six, die one down and die two across, each in
-its band's colour. The dice sit in a corner at 8px; NUMBERS adds the value,
-MOVES the play. Every cell is a button whose `aria-label` is the whole
-sentence, so the map is readable with the colours switched off.
+its band's colour. The dice sit in a corner at 8px and NUMBERS adds the
+value; MOVES does not write in the cell (there is no room) but does reach
+every cell's `aria-label`, which is the whole sentence -- so the map is
+readable with the colours switched off.
 -}
 viewMap : Config msg -> Grid -> Html msg
 viewMap config grid =
@@ -383,23 +398,6 @@ endLabels cells =
             []
 
 
-{-| A coordinate, short: as `Ui.Charts.num`, because an SVG attribute full
-of trailing zeroes is twice the bytes for nothing.
--}
-num : Float -> String
-num value =
-    let
-        rounded =
-            toFloat (round (value * 100)) / 100
-    in
-    if rounded == toFloat (round rounded) then
-        String.fromInt (round rounded)
-
-    else
-        String.fromFloat rounded
-
-
-
 -- THE WORDS UNDER IT
 
 
@@ -471,7 +469,15 @@ tagOf which =
 
 
 {-| What the picture says, in one sentence, for a reader who is not looking
-at it: the best roll, the worst, and how many of the thirty-six help.
+at it: the best roll, the worst, and how many of the thirty-six fall each
+side of the middle.
+
+**Both sides, not just the helpful one.** The hatch on the down arm is
+there because the sign of a cell must not depend on hue; a sentence that
+only counted the green half would leave the same reader to work the other
+one out, and the rest are neutral so it cannot be subtracted. The two
+counts are by band, as the colours are.
+
 -}
 sentence : Config msg -> Grid -> String
 sentence config grid =
@@ -487,7 +493,15 @@ sentence config grid =
             String.join " "
                 [ "The " ++ Rolls.levelInWords grid.level ++ " " ++ config.words.value ++ " of every roll for " ++ config.mover ++ "."
                 , "Best " ++ name best ++ ", worst " ++ name worst ++ "."
-                , String.fromInt (Rolls.helped grid.cells) ++ " rolls in 36 " ++ config.words.up ++ "."
+                , "Of 36 rolls, "
+                    ++ String.fromInt (Rolls.helped grid.cells)
+                    ++ " "
+                    ++ config.words.up
+                    ++ " and "
+                    ++ String.fromInt (Rolls.hurt grid.cells)
+                    ++ " "
+                    ++ config.words.down
+                    ++ "."
                 ]
 
         _ ->

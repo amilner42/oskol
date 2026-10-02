@@ -7,6 +7,7 @@ module Ui.Charts exposing
     , gridStepping
     , ladder
     , miniRing
+    , num
     , patched
     , prLine
     , ring
@@ -1244,6 +1245,10 @@ plural n noun =
 
 {-| A coordinate, short: SVG wants text and a trailing `.0` on every
 number makes the attributes twice as long for nothing.
+
+Exported, because it is about SVG and not about any of these pictures:
+`Ui.Rolls` draws its bars with it rather than keeping a second copy.
+
 -}
 num : Float -> String
 num value =
