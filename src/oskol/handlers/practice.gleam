@@ -45,6 +45,7 @@ import oskol/core/envelope
 import oskol/core/error.{type ApiError}
 import oskol/core/session.{type Session, Session}
 import oskol/handlers/home
+import oskol/handlers/puzzles as puzzles_handler
 import oskol/practice/catalog
 import oskol/practice/cost
 import oskol/practice/deck
@@ -541,7 +542,13 @@ pub fn deck_page_json(
   // An own set's page manages it, so it lists what is in it; only its
   // owner ever reaches one.
   let members = case found.kind, session.user_id {
-    catalog.Own(set), Some(_) -> decks.members_json(ctx, set, reading.cells)
+    catalog.Own(set), Some(_) ->
+      decks.members_json(
+        ctx,
+        set,
+        reading.cells,
+        puzzles_handler.stored_question_json,
+      )
     _, _ -> json.null()
   }
   Ok(

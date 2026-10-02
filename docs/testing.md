@@ -279,9 +279,18 @@ node playwright/test-analysis/test.js           # the analysis board. Part 1, se
                                                # different play at step 0 dropping the rest; an
                                                # edit at a later step starting a fresh line; the
                                                # board, the row over it, the line, ANALYZE and the
-                                               # panel holding their boxes throughout. PART=2 runs
-                                               # parts 2 and 3, PART=3 part 3 alone. Screenshots:
-                                               # screenshots/analysis-*.png.
+                                               # panel holding their boxes throughout. Part 4,
+                                               # SAVE, with an account account.exs makes (its old
+                                               # sets cleared): a guest's sign-in; the empty sheet at
+                                               # four sizes with nothing under it moving; a new set
+                                               # made and ticked, untick and tick, a taken name; the
+                                               # set under "Your sets" on /puzzles, TRAIN to a reveal
+                                               # whose SAVE has it ticked; the sheet, hub and set page
+                                               # at four sizes; MANAGE: noindex, the 72px board,
+                                               # rename, remove, delete (then 404). PART=2 runs parts
+                                               # 2 to 4, PART=3 part 3 alone, PART=4 part 4 alone.
+                                               # Screenshots: screenshots/analysis-*.png,
+                                               # puzzles-your-sets-*, practice-own-*, puzzle-save-390.
                                                # `playwright/test-analysis/run.sh` serves its own
                                                # port and database around it; bin/check points its
                                                # server's ANALYSIS_URL at the stand-in's port.

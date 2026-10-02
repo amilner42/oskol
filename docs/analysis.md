@@ -448,17 +448,29 @@ columns. Tests: `AnalysisPageTest` (on `AnalysisFixtures`, the server's own
   your play?"), the score and the cube, the picture drawn at the write; it
   names nobody, and an analyzed position has no source, so nobody can mint
   a story ("... got this wrong") for it. OPEN AS PUZZLE (`#an-open-puzzle`)
-  is the same link in a new tab. The row of buttons (`#an-actions`) is a
-  grid of fixed cells: PLAY THIS (or PLAY IT OUT, below) spans its first
-  row for now, and SAVE TO A SET (analysis-save-to-set) takes the second
-  cell of that row.
+  is the same link in a new tab. The buttons (`#an-actions`) are a grid
+  of fixed cells: PLAY THIS (or PLAY BEST, or PLAY IT OUT, below) across
+  the first row; SAVE, SHARE and OPEN AS PUZZLE as three equal cells in
+  the second, or SAVE and SHARE with OPEN AS PUZZLE under them where the
+  panel is under 420px wide (a container query on the grid).
+- **SAVE** (`#an-save`) opens the save sheet (`Ui.SaveToSet`, the same one
+  a puzzle's reveal opens with `#pz-save`) with the answer's puzzle id: the
+  account's sets with a check where one holds it, a tap putting it in or
+  taking it out, "New set" with CREATE, and one line ("Saved to Openings I
+  like · 12 positions"). A guest reads "Sign in to keep this position."
+  over the sign-in, whose `next` is `/analysis?xgid=<this position>`, so
+  nothing is lost; signed in there, the shell takes the account
+  (`Page.Analysis.updateWithOut` hands the shell `SignedIn`) and the sheet
+  goes on to the sets. The sheet floats (a sheet from the bottom on a
+  phone, a card in the middle wider), so nothing under it moves. See
+  [puzzles.md](puzzles.md#own-sets).
 - **Nothing moves.** The plate is ANALYZE's box; the panel holds a
   `min-height` (28rem) at every size, the tallest answer (a sentence over
   five rows, the line and the two rows of buttons), so the page is as tall before the
   answer as after it, and filling, showing a candidate or clearing moves
   nothing; the TRY AGAIN countdown is a fixed width. Before any press the
   panel says where the answer will land. A guest analyzes as an account
-  does (the budgets are the server's); nothing here asks anyone to sign in.
+  does (the budgets are the server's); only SAVE asks anyone to sign in.
 - **The smoke's engine.** `playwright/test-analysis/setup.exs` starts
   `Oskol.EngineServer` (`test_support/engine_server.ex`), a Bandit on
   `ANALYSIS_STUB_PORT` (`PORT + 10000`) that answers as

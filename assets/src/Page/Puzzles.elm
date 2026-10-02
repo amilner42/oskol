@@ -18,7 +18,10 @@ answer (`GET /papi/practice/decks`).
 
 The five are the three tiers of the player's own mistakes (`??` very bad,
 `?` bad, `?!` dubious) and the two universal sets (the openings, the
-replies to them), always in that order. One drawer is open: its deck is
+replies to them), always in that order, and after them an account's own
+sets under "Your sets" (each a set it made and saves positions into from
+the analysis board or any puzzle; an empty one offers OPEN ANALYSIS in
+its button's place). One drawer is open: its deck is
 drawn as a card (`Ui.Deck`) in its own slot -- its mastery grid, a
 square per position coloured by its rung, today's ring, its state in
 words, what it cost, and one button. The others are rows with their ring
@@ -393,24 +396,28 @@ request model deck which =
         ( Tier, PracticeAnyway ) ->
             Just (PracticeDecks.practiceAnyway model.session deck.id (GotTierRun deck which))
 
-        ( Set, Start ) ->
-            Just (Decks.join model.session deck.id model.tz (GotSetRun deck which))
-
-        ( Set, KeepGoing ) ->
-            Just (PracticeDecks.keepGoingSet model.session deck.id (GotSetRun deck which))
-
-        ( Set, PracticeAnyway ) ->
-            Just (PracticeDecks.practiceAnywaySet model.session deck.id (GotSetRun deck which))
-
-        ( Set, _ ) ->
-            if which == NoAction then
-                Nothing
-
-            else
-                Just (Decks.fetchSession model.session deck.id (GotSetRun deck which))
-
         ( Tier, _ ) ->
             Nothing
+
+        -- A set, the universal ones and an account's own alike.
+        ( _, Start ) ->
+            Just (Decks.join model.session deck.id model.tz (GotSetRun deck which))
+
+        ( _, KeepGoing ) ->
+            Just (PracticeDecks.keepGoingSet model.session deck.id (GotSetRun deck which))
+
+        ( _, PracticeAnyway ) ->
+            Just (PracticeDecks.practiceAnywaySet model.session deck.id (GotSetRun deck which))
+
+        ( _, NoAction ) ->
+            Nothing
+
+        -- A link, not a press.
+        ( _, OpenAnalysis ) ->
+            Nothing
+
+        ( _, _ ) ->
+            Just (Decks.fetchSession model.session deck.id (GotSetRun deck which))
 
 
 nothingMoreLine : String
@@ -448,6 +455,9 @@ body model catalog =
 
         open =
             front model.picked catalog
+
+        firstOwn =
+            catalog.decks |> List.filter PracticeDecks.isOwn |> List.head |> Maybe.map .id
 
         -- Every deck has its slot, in the catalog's order, whichever is
         -- open: a tap changes what one slot holds and never the order.
@@ -506,7 +516,18 @@ body model catalog =
                     )
                 , id "hub-rows"
                 ]
-                (List.map slot catalog.decks)
+                (List.concatMap
+                    (\deck ->
+                        -- An account's own sets come after the five, under
+                        -- their own heading.
+                        if Just deck.id == firstOwn then
+                            [ Html.h3 [ class "dk-group", id "hub-your-sets" ] [ Html.text "Your sets" ], slot deck ]
+
+                        else
+                            [ slot deck ]
+                    )
+                    catalog.decks
+                )
            , case v of
                 AnAccount ->
                     Html.text ""

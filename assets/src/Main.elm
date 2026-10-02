@@ -1020,8 +1020,21 @@ update msg model =
                     signedIn user withPage |> Tuple.mapSecond more
 
         ( AnalysisMsg pageMsg, Analysis pageModel ) ->
-            Page.Analysis.update pageMsg pageModel
-                |> wrap model Analysis AnalysisMsg
+            let
+                ( newPageModel, cmd, out ) =
+                    Page.Analysis.updateWithOut pageMsg pageModel
+
+                withPage =
+                    { model | page = Analysis newPageModel }
+            in
+            case out of
+                Page.Analysis.NoOut ->
+                    ( withPage, Cmd.map AnalysisMsg cmd )
+
+                -- The save sheet signed this browser in.
+                Page.Analysis.SignedIn user ->
+                    signedIn user withPage
+                        |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map AnalysisMsg cmd, more ])
 
         -- A deck's own page: its runs come back to it.
         ( PracticeMsg pageMsg, Practice pageModel ) ->

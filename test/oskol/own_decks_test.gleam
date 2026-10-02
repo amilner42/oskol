@@ -27,6 +27,7 @@ import oskol/fakes
 import oskol/handlers/decks as decks_handler
 import oskol/handlers/own_decks as handler
 import oskol/handlers/puzzles as puzzles_handler
+import oskol/puzzles as pz
 
 const set_id = "K7M2Q9XA"
 
@@ -502,4 +503,86 @@ pub fn the_owner_plays_the_set_in_its_own_scope_test() {
   assert string.contains(session, "\"own\":true")
   let assert Ok(_) = decks_handler.session_json(ctx, me(), set_id)
   assert log() == []
+}
+
+// ---------- The save sheet's list ----------
+
+pub fn the_save_sheet_s_list_says_which_sets_hold_the_puzzle_test() {
+  let rows = [row(set_id, "Back games"), row(other_id, "Primes")]
+  let ctx =
+    Ctx(
+      ..world(rows),
+      decks: DeckCaps(..world(rows).decks, members: fn(deck) {
+        case deck == set_id {
+          True -> [Member("p1", 1, "move", "{}")]
+          False -> []
+        }
+      }),
+    )
+  let body = handler.mine_holding_json(ctx, me(), "p1")
+  let assert Ok(holds) =
+    json.parse(
+      body,
+      decode.at(
+        ["decks"],
+        decode.list({
+          use id <- decode.field("id", decode.string)
+          use holds <- decode.field("holds", decode.bool)
+          use name <- decode.field("name", decode.string)
+          decode.success(#(id, holds, name))
+        }),
+      ),
+    )
+  assert holds == [#(set_id, True, "Back games"), #(other_id, False, "Primes")]
+  assert handler.mine_holding_json(ctx, fakes.guest("g1"), "p1")
+    == "{\"ok\":true,\"decks\":[]}"
+}
+
+pub fn a_member_carries_its_question_for_the_small_board_test() {
+  // A row that does not read as a question is null rather than a 500.
+  let rows = [row(set_id, "Back games")]
+  let ctx =
+    Ctx(
+      ..world(rows),
+      decks: DeckCaps(..world(rows).decks, members: fn(_) {
+        [Member("p2", 2, "move", "{}")]
+      }),
+    )
+  let assert Ok(shown) = handler.show_json(ctx, me(), set_id)
+  assert string.contains(shown, "\"question\":null")
+}
+
+pub fn a_member_s_question_is_the_one_its_page_shows_test() {
+  let question =
+    pz.Question(
+      kind: pz.Move,
+      board: list.repeat(0, 26),
+      dice: Some(#(6, 4)),
+      cube_value: 1,
+      cube_owner: pz.Centered,
+      away_mover: 0,
+      away_opponent: 0,
+      crawford: False,
+      jacoby: False,
+    )
+  let rows = [row(set_id, "Back games")]
+  let ctx =
+    Ctx(
+      ..world(rows),
+      decks: DeckCaps(..world(rows).decks, members: fn(_) {
+        [
+          Member("p3", 1, "move", json.to_string(pz.question_json(question))),
+        ]
+      }),
+    )
+  let assert Ok(shown) = handler.show_json(ctx, me(), set_id)
+  let assert Ok(dice) =
+    json.parse(
+      shown,
+      decode.at(
+        ["members"],
+        decode.list(decode.at(["question", "dice"], decode.list(decode.int))),
+      ),
+    )
+  assert dice == [[6, 4]]
 }

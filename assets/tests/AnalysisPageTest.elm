@@ -21,12 +21,14 @@ import Html.Attributes
 import Json.Decode as D
 import Page.Analysis as Analysis exposing (Brush(..), Button(..), Msg(..), Target(..))
 import PuzzleApiFixtures
+import Route
 import Session
 import Fuzz exposing (Fuzzer)
 import Test exposing (Test, describe, fuzz, test)
 import Test.Html.Event as Event
 import Test.Html.Query as Query
 import Test.Html.Selector exposing (attribute, class, id, text)
+import Ui.SaveToSet as SaveToSet
 
 
 suite : Test
@@ -665,6 +667,39 @@ answering =
                         , Query.find [ id "an-open-puzzle" ] >> Query.has [ attribute (Html.Attributes.href "/puzzles/fixmove1"), attribute (Html.Attributes.target "_blank") ]
                         , Query.has [ id "an-share" ]
                         ]
+        , test "SAVE opens the second row of the actions, under PLAY, and opens the save sheet for the answer's puzzle" <|
+            \_ ->
+                answered "move"
+                    |> Expect.all
+                        [ panel >> Query.find [ id "an-actions" ] >> Query.children [] >> Query.index 1 >> Query.has [ id "an-save", text "SAVE" ]
+                        , panel >> Query.find [ id "an-actions" ] >> Query.children [] >> Query.index 2 >> Query.has [ id "an-share" ]
+                        , panel >> Query.find [ id "an-actions" ] >> Query.children [] >> Query.index 3 >> Query.has [ id "an-open-puzzle" ]
+                        , panel >> Query.find [ id "an-save" ] >> Event.simulate Event.click >> Event.expect PressedSave
+                        , Analysis.view >> Query.fromHtml >> Query.hasNot [ id "save-modal" ]
+                        , send PressedSave >> .save >> Maybe.map .puzzleId >> Expect.equal (Just "fixmove1")
+                        , send PressedSave >> Analysis.view >> Query.fromHtml >> Query.find [ id "save-modal" ] >> Query.has [ text "SAVE TO A SET" ]
+                        ]
+        , test "a guest's SAVE is the sign-in, which comes back to this very position" <|
+            \_ ->
+                let
+                    saving =
+                        send PressedSave (answered "move")
+                in
+                Expect.all
+                    [ Analysis.view >> Query.fromHtml >> Query.find [ id "save-signin-line" ] >> Query.has [ text "Sign in to keep this position." ]
+                    , .save
+                        >> Maybe.andThen .signIn
+                        >> Maybe.map .next
+                        >> Expect.equal (Just (Route.href (Route.analysisXgid saving.setup)))
+                    ]
+                    saving
+        , test "the sheet's x closes it" <|
+            \_ ->
+                answered "move"
+                    |> send PressedSave
+                    |> send (SaveMsg SaveToSet.PressedClose)
+                    |> .save
+                    |> Expect.equal Nothing
         , test "a position analyzed before is answered at once, and says so" <|
             \_ ->
                 asked

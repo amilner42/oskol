@@ -1,14 +1,21 @@
 module Ui.Decks exposing
-    ( doneToday
+    ( deleteQuestion
+    , doneToday
+    , emptyOwnLine
     , endSignIn
     , hasWork
     , ladderLine
     , masteredOf
     , masteredRun
     , legendTop
+    , levelWord
+    , positions
+    , removedLine
     , restingLine
     , rowLeft
     , runSummary
+    , savedLine
+    , saveSignInLine
     , signInLine
     , signInRest
     , sizeEyebrow
@@ -288,3 +295,79 @@ button that opens the sign-in.
 signInRest : String
 signInRest =
     " to keep your place in these."
+
+
+
+-- A SET OF YOUR OWN
+
+
+{-| An own set with nothing in it, where its button would be.
+-}
+emptyOwnLine : String
+emptyOwnLine =
+    "Nothing here yet. Save a position from the analysis board or from any puzzle."
+
+
+{-| "1 position", "12 positions".
+-}
+positions : Int -> String
+positions n =
+    String.fromInt n
+        ++ (if n == 1 then
+                " position"
+
+            else
+                " positions"
+           )
+
+
+{-| The save sheet's one line, once a position went in:
+
+    "Saved to Openings I like · 12 positions"
+
+-}
+savedLine : { name : String, size : Int } -> String
+savedLine set =
+    "Saved to " ++ set.name ++ " · " ++ positions set.size
+
+
+{-| The same line once one came out: "Taken out of Openings I like · 11
+positions".
+-}
+removedLine : { name : String, size : Int } -> String
+removedLine set =
+    "Taken out of " ++ set.name ++ " · " ++ positions set.size
+
+
+{-| The save sheet, for anybody without an account, over the sign-in.
+-}
+saveSignInLine : String
+saveSignInLine =
+    "Sign in to keep this position."
+
+
+{-| Where one position of a set stands, in MANAGE's list: "to learn"
+before it is ever answered, "level 2" on the way, "mastered" at the top;
+one answered wrong at the bottom rung is "back at the start", as the
+ladder in words says it.
+-}
+levelWord : { level : Int, started : Bool, patchedLevel : Int } -> String
+levelWord at =
+    if not at.started then
+        "to learn"
+
+    else if at.level >= at.patchedLevel then
+        "mastered"
+
+    else if at.level <= 0 then
+        "back at the start"
+
+    else
+        "level " ++ String.fromInt at.level
+
+
+{-| DELETE SET's confirm, in place of the button.
+-}
+deleteQuestion : String -> String
+deleteQuestion name =
+    "Delete " ++ name ++ "? Its positions stay where they are; your progress on them is kept aside."

@@ -727,9 +727,40 @@ universal-set machinery with an owner, so there are no new practice rules.
   door, its membership and ladder stay, and its name is free again.
 - **On the hub** an own set is a row after the five (`kind: "own"`,
   `mark: ""`, `joined: true` even when empty, the set's own standing), and
-  its page (`/practice/<id>`) carries `members` for MANAGE. The client
-  draws one as a set for now (`Api.PracticeDecks` reads `"own"` as `Set`);
-  the save sheet and MANAGE are the `analysis-save-to-set` ticket.
+  its page (`/practice/<id>`) carries `members` for MANAGE, each with its
+  `question` as the puzzle page shows it (`handlers/puzzles.
+  stored_question_json`; null for a row that does not read as one).
+- **The save sheet** (`assets/src/Ui/SaveToSet.elm`, `#save-modal`) is one
+  component two doors open: SAVE on the analysis board's answer
+  (`#an-save`) and SAVE on a puzzle's reveal (`#pz-save`). It reads
+  `GET /papi/decks/mine?puzzle=<id>` (each set with `holds`), a row
+  (`#save-set-<id>`, a checkbox) puts the position in or takes it out
+  through `POST/DELETE /papi/decks/:id/puzzles` -- the check inked at once,
+  put back on an error -- and "New set" (`#save-new-name`, CREATE
+  `#save-create`) makes a set and then adds. One fixed-height line
+  (`#save-line`): "Saved to Openings I like · 12 positions", "Taken out of
+  ...", or the server's refusal ("You already have a set called that").
+  A guest gets "Sign in to keep this position." over `Ui.SignIn`, `next`
+  the page's own URL (the analysis board's carries `?xgid=`); signed in
+  there, the shell is told and the sheet goes on to the sets. The list
+  holds its height from loading to loaded; the sheet floats.
+- **The client.** `Api.PracticeDecks.Kind` has `Own`, and `Ui.Deck` draws
+  one with a bookmark for its icon, a set's words (learned, mastered) and
+  a set's buttons (`Ui.Deck.action`: TRAIN / KEEP GOING / PRACTICE ANYWAY),
+  and, while it holds nothing, OPEN ANALYSIS (`#hub-open-analysis`, a link
+  to `/analysis`) in the button's slot over "Nothing here yet. Save a
+  position from the analysis board or from any puzzle." The hub
+  (`Page.Puzzles`) puts them after the five under "Your sets"
+  (`#hub-your-sets`); a run from one is `StartDeckRun` with the set
+  (`Run.InSet`), exactly as Openings'. Its page (`Page.Practice`) adds
+  MANAGE (`#practice-manage`) under the card: the name in a field
+  (`#practice-rename`, RENAME, `PATCH`), the positions as a list -- a 72px
+  still board (`viewStill` on `Setup.fromQuestion`), the prompt, where it
+  stands ("to learn", "back at the start", "level 2", "mastered"), and an
+  x (`#practice-remove-<pid>`) -- and DELETE SET (`#practice-delete`),
+  which asks in its own slot ("Delete Openings I like? Its positions stay
+  where they are; your progress on them is kept aside.", YES, DELETE
+  `#practice-delete-yes`, KEEP IT) and then goes back to `/puzzles`.
 
 `POST /papi/practice/tz {tz}` writes the browser's zone onto the deck itself
 (no new column: retain already keeps a learner's timezone, and it is the

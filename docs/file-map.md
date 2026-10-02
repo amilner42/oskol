@@ -355,6 +355,9 @@ assets/src/Page/Login.elm        that page: confirm, the win, expired (a fresh m
 assets/src/Ui/Username.elm       a new account's username on the win, and changing it
 assets/src/Ui/Identity.elm       the guest / account badge beside every name
 src/oskol/guests/username.gleam  which usernames a new account tries, in order
+assets/src/Ui/SaveToSet.elm      SAVE's sheet, from the analysis board and a puzzle's
+                                 reveal: your sets with checks, New set, the one line,
+                                 a guest's sign-in
 assets/src/Ui/SignIn.elm         signing in, the one component every entry embeds:
                                  email -> "Check your email" + six digits -> the win
 assets/src/Api/Auth.elm          /papi/auth/* and /papi/me for the client

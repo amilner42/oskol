@@ -29,6 +29,7 @@ import PuzzleRevealFixtures
 import Route
 import Session
 import Test exposing (Test, describe, test)
+import Test.Html.Event as Event
 import Test.Html.Query as Query
 import Test.Html.Selector exposing (attribute, class, id, tag, text)
 import Time
@@ -555,6 +556,20 @@ revealing =
                         , attribute (Html.Attributes.rel "noopener")
                         , text "OPEN IN ANALYSIS"
                         ]
+        , test "after the reveal, SAVE beside SHARE opens the save sheet for this puzzle" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> rendered (after "move_dubious") |> Query.find [ id "pz-save" ] |> Query.has [ tag "button", text "SAVE" ]
+                    , \_ -> rendered (after "move_dubious") |> Query.find [ id "pz-save" ] |> Event.simulate Event.click |> Event.expect PressedSave
+                    , \_ -> rendered (after "move_dubious") |> Query.hasNot [ id "save-modal" ]
+                    , \_ -> (step PressedSave (after "move_dubious")).save |> Maybe.map .puzzleId |> Expect.equal (Just "fixmove1")
+                    , \_ -> rendered (step PressedSave (after "move_dubious")) |> Query.find [ id "save-modal" ] |> Query.has [ text "SAVE TO A SET" ]
+                    , \_ -> (step PressedSave (after "move_dubious")).save |> Maybe.andThen .signIn |> Maybe.map .next |> Expect.equal (Just "/puzzles/fix")
+                    ]
+                    ()
+        , test "before the reveal there is no SAVE" <|
+            \_ ->
+                rendered (page { hasNext = False } "move") |> Query.hasNot [ id "pz-save" ]
         , test "a pass and a miss wear their colours" <|
             \_ ->
                 Expect.all

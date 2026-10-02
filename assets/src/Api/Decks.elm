@@ -1,14 +1,23 @@
 module Api.Decks exposing
     ( Deck
     , Named
+    , OwnSet
     , Standing
     , Session
+    , addPuzzle
+    , createOwn
     , deckDecoder
+    , deleteOwn
     , fetchList
+    , fetchMine
     , fetchSession
     , join
     , listDecoder
+    , mineDecoder
     , named
+    , ownSetDecoder
+    , removePuzzle
+    , renameOwn
     , sessionDecoder
     )
 
@@ -21,8 +30,19 @@ openings first -- as the practice home reads them:
     set gets its queue, anybody else walks it in order, unsaved
   - `POST /papi/decks/:id/join` add it (an account's), then the same
 
+and an account's own sets, which it makes and fills itself:
+
+  - `GET /papi/decks/mine?puzzle=<id>` its sets, oldest first, each saying
+    whether it holds that puzzle (the save sheet's checks)
+  - `POST /papi/decks/mine {name}` make one
+  - `PATCH /papi/decks/:id {name}`, `DELETE /papi/decks/:id` rename and
+    delete one
+  - `POST /papi/decks/:id/puzzles {puzzle_id}` and
+    `DELETE /papi/decks/:id/puzzles/:puzzle_id` put a position in and take
+    it out
+
 Which sets exist and how they are practiced is the server's; this only
-reads what it said.
+reads what it said. To a player an own set is a "set", never a deck.
 
 -}
 
@@ -81,6 +101,18 @@ type alias Session =
     }
 
 
+{-| One of an account's own sets, as the save sheet lists it: `holds` is
+whether it holds the puzzle the sheet was opened for (False where the
+list was not asked about one).
+-}
+type alias OwnSet =
+    { id : String
+    , name : String
+    , size : Int
+    , holds : Bool
+    }
+
+
 fetchList : Session.Session -> (Result Error (List Deck) -> msg) -> Cmd msg
 fetchList session toMsg =
     Api.get session "/papi/decks" listDecoder toMsg
@@ -136,3 +168,74 @@ standingDecoder =
         (D.field "left" D.int)
         (D.field "due" D.int)
         (D.field "new_left" D.int)
+
+
+
+-- AN ACCOUNT'S OWN SETS
+
+
+{-| The account's own sets, each saying whether it holds `puzzleId`.
+-}
+fetchMine : Session.Session -> String -> (Result Error (List OwnSet) -> msg) -> Cmd msg
+fetchMine session puzzleId toMsg =
+    Api.get session ("/papi/decks/mine?puzzle=" ++ puzzleId) mineDecoder toMsg
+
+
+createOwn : Session.Session -> String -> (Result Error OwnSet -> msg) -> Cmd msg
+createOwn session name toMsg =
+    Api.post session
+        "/papi/decks/mine"
+        (E.object [ ( "name", E.string name ) ])
+        (D.field "deck" ownSetDecoder)
+        toMsg
+
+
+renameOwn : Session.Session -> String -> String -> (Result Error OwnSet -> msg) -> Cmd msg
+renameOwn session id name toMsg =
+    Api.request session
+        "PATCH"
+        ("/papi/decks/" ++ id)
+        (Just (E.object [ ( "name", E.string name ) ]))
+        (D.field "deck" ownSetDecoder)
+        toMsg
+
+
+deleteOwn : Session.Session -> String -> (Result Error () -> msg) -> Cmd msg
+deleteOwn session id toMsg =
+    Api.request session "DELETE" ("/papi/decks/" ++ id) Nothing (D.succeed ()) toMsg
+
+
+{-| Save a position into a set: the set as it is after (its size counts
+the new one).
+-}
+addPuzzle : Session.Session -> String -> String -> (Result Error OwnSet -> msg) -> Cmd msg
+addPuzzle session id puzzleId toMsg =
+    Api.post session
+        ("/papi/decks/" ++ id ++ "/puzzles")
+        (E.object [ ( "puzzle_id", E.string puzzleId ) ])
+        (D.field "deck" ownSetDecoder |> D.map (\set -> { set | holds = True }))
+        toMsg
+
+
+removePuzzle : Session.Session -> String -> String -> (Result Error OwnSet -> msg) -> Cmd msg
+removePuzzle session id puzzleId toMsg =
+    Api.request session
+        "DELETE"
+        ("/papi/decks/" ++ id ++ "/puzzles/" ++ puzzleId)
+        Nothing
+        (D.field "deck" ownSetDecoder)
+        toMsg
+
+
+mineDecoder : Decoder (List OwnSet)
+mineDecoder =
+    D.field "decks" (D.list ownSetDecoder)
+
+
+ownSetDecoder : Decoder OwnSet
+ownSetDecoder =
+    D.map4 OwnSet
+        (D.field "id" D.string)
+        (D.field "name" D.string)
+        (D.field "size" D.int)
+        (D.map (Maybe.withDefault False) (D.maybe (D.field "holds" D.bool)))

@@ -42,6 +42,7 @@ suite =
         , aStranger
         , drawers
         , marks
+        , ownSets
         ]
 
 
@@ -946,4 +947,129 @@ marks =
                             )
                             [ ( "openings", 1 ), ( "opening_replies", 2 ) ]
                         )
+        ]
+
+
+
+-- AN ACCOUNT'S OWN SETS
+
+
+{-| The account above with two sets of its own after the five, in the
+wire's order: one with two positions saved (both new today), one empty.
+-}
+ownJson : String
+ownJson =
+    catalog
+        { decks =
+            [ tier "very_bad" "very-bad" "Very bad moves" "??" 44 (standing { total = 44, untouched = 20, inProgress = 18, patched = 6, due = 4, newLeft = 3, done = 2 }) veryBadCost
+            , tier "bad" "bad" "Bad moves" "?" 0 (standing { total = 0, untouched = 0, inProgress = 0, patched = 0, due = 0, newLeft = 0, done = 0 }) "null"
+            , tier "doubtful" "dubious" "Dubious moves" "?!" 0 (standing { total = 0, untouched = 0, inProgress = 0, patched = 0, due = 0, newLeft = 0, done = 0 }) "null"
+            , set "openings" "Openings" 15 5 True (standing { total = 15, untouched = 8, inProgress = 3, patched = 4, due = 2, newLeft = 5, done = 0 })
+            , set "opening_replies" "Opening replies" 315 10 False (standing { total = 0, untouched = 0, inProgress = 0, patched = 0, due = 0, newLeft = 0, done = 0 })
+            , deck { id = "K7M2Q9XA", slug = "K7M2Q9XA", kind = "own", name = "Openings I like", mark = "", size = 2, pace = 5, joined = True, standing = standing { total = 2, untouched = 2, inProgress = 0, patched = 0, due = 0, newLeft = 2, done = 0 }, cost = "null" }
+            , deck { id = "Z3W8R1PB", slug = "Z3W8R1PB", kind = "own", name = "Back games", mark = "", size = 0, pace = 5, joined = True, standing = standing { total = 0, untouched = 0, inProgress = 0, patched = 0, due = 0, newLeft = 0, done = 0 }, cost = "null" }
+            ]
+        , lead = "\"very_bad\""
+        , today = "{\"done\":2}"
+        , streak = 5
+        , costAll = "null"
+        , mistakes = "null"
+        }
+
+
+ownSessionJson : String
+ownSessionJson =
+    """{"ok":true,"deck":{"id":"K7M2Q9XA","name":"Openings I like","blurb":"","size":2,"standing":{"joined":true,"total":2,"in_progress":0,"patched":0,"left":2,"due":0,"new_left":2}},"puzzles":[{"id":"pppppppp","kind":"move","prompt":"White to play 3-1. What's your play?","due":false},{"id":"qqqqqqqq","kind":"double","prompt":"White to play. Double?","due":false}],"today":{"done":2}}"""
+
+
+ownSets : Test
+ownSets =
+    describe "an account's own sets"
+        [ test "they read as their own kind, after the five, in the wire's order" <|
+            \_ ->
+                case parse ownJson of
+                    Ok c ->
+                        c.decks
+                            |> List.map (\d -> ( d.id, d.kind ))
+                            |> List.drop 5
+                            |> Expect.equal [ ( "K7M2Q9XA", PracticeDecks.Own ), ( "Z3W8R1PB", PracticeDecks.Own ) ]
+
+                    Err _ ->
+                        Expect.fail "the catalog parses"
+        , test "the rows: the five, then \"Your sets\", then each of its own" <|
+            \_ ->
+                loaded ownJson
+                    |> rendered
+                    |> Query.find [ id "hub-rows" ]
+                    |> Query.children []
+                    |> Expect.all
+                        [ Query.count (Expect.equal 8)
+                        , Query.index 0 >> Query.has [ id "hub-slot-very_bad" ]
+                        , Query.index 1 >> Query.has [ id "hub-slot-bad" ]
+                        , Query.index 2 >> Query.has [ id "hub-slot-doubtful" ]
+                        , Query.index 3 >> Query.has [ id "hub-slot-openings", text "Openings" ]
+                        , Query.index 4 >> Query.has [ id "hub-slot-opening_replies", text "Opening replies" ]
+                        , Query.index 5 >> Query.has [ id "hub-your-sets", text "Your sets" ]
+                        , Query.index 6 >> Query.has [ id "hub-slot-K7M2Q9XA" ]
+                        , Query.index 7 >> Query.has [ id "hub-slot-Z3W8R1PB", text "Empty" ]
+                        ]
+        , test "a row is its bookmark, its name and how many are left" <|
+            \_ ->
+                loaded ownJson
+                    |> rendered
+                    |> Query.find [ id "hub-row-K7M2Q9XA" ]
+                    |> Expect.all
+                        [ Query.has [ tag "button", text "Openings I like", text "2 left" ]
+                        , Query.find [ class "dk-icon" ] >> Query.has [ class "is-own" ]
+                        ]
+        , test "an empty one says so, and OPEN ANALYSIS is in its button's place" <|
+            \_ ->
+                let
+                    open =
+                        loaded ownJson |> send (PickedDeck "Z3W8R1PB")
+                in
+                Expect.all
+                    [ \m -> rendered m |> Query.find [ id "hub-open-analysis" ] |> Query.has [ tag "a", attribute (Html.Attributes.href "/analysis"), text "OPEN ANALYSIS" ]
+                    , \m -> rendered m |> Query.findAll [ id "hub-go" ] |> Query.count (Expect.equal 0)
+                    , \m -> rendered m |> Query.find [ id "hub-quiet" ] |> Query.has [ text "Nothing here yet. Save a position from the analysis board or from any puzzle." ]
+                    ]
+                    open
+        , test "a set with positions in it is TRAIN, as a set is" <|
+            \_ ->
+                deckOf ownJson "K7M2Q9XA"
+                    |> Ui.Deck.action Ui.Deck.Account
+                    |> Expect.equal Practice
+        , test "its card says a set's words, not a tier's" <|
+            \_ ->
+                loaded ownJson
+                    |> send (PickedDeck "K7M2Q9XA")
+                    |> rendered
+                    |> Query.find [ id "hub-card" ]
+                    |> Expect.all
+                        [ Query.has [ dataAttr "data-kind" "own" ]
+                        , Query.find [ id "hub-name" ] >> Query.has [ text "Openings I like" ]
+                        , Query.find [ id "hub-state" ] >> Query.has [ text "2 to learn" ]
+                        , Query.find [ id "hub-go" ] >> Query.has [ text "TRAIN" ]
+                        ]
+        , test "TRAIN starts a run of the set, named, as StartDeckRun" <|
+            \_ ->
+                let
+                    own =
+                        deckOf ownJson "K7M2Q9XA"
+                in
+                loaded ownJson
+                    |> send (PickedDeck "K7M2Q9XA")
+                    |> send (Pressed own Practice)
+                    |> out (GotSetRun own Practice (Api.parseBody Decks.sessionDecoder ownSessionJson))
+                    |> Expect.equal
+                        (StartDeckRun [ "pppppppp", "qqqqqqqq" ]
+                            (Just { done = 2 })
+                            { id = "K7M2Q9XA", name = "Openings I like" }
+                            { deckToday = Just { done = 0, target = 2 }, anyway = False, slug = "K7M2Q9XA" }
+                        )
+        , test "nobody but its owner is offered anything on one" <|
+            \_ ->
+                deckOf ownJson "K7M2Q9XA"
+                    |> Ui.Deck.action Ui.Deck.Guest
+                    |> Expect.equal NoAction
         ]

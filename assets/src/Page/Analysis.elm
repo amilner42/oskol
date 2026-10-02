@@ -1,6 +1,6 @@
 port module Page.Analysis exposing
-    ( Model, Msg(..), Brush(..), Button(..), Target(..), Press, Asking(..), Refusal
-    , init, update, view, title, withSession, subscriptions
+    ( Model, Msg(..), Brush(..), Button(..), Target(..), Press, Asking(..), Refusal, Out(..)
+    , init, update, updateWithOut, view, title, withSession, subscriptions
     , Off, paint, toPlace, offFrom, positionId, line, analyzable, rolls, longPressMs, defaultMatch
     , puzzleGone, pollLimit, tooLongMessage, depthLine, shownSetup
     , Mode(..), Line, Step, Moves(..), lineNow, plate, ending, notation
@@ -52,8 +52,10 @@ it otherwise), in the replay's words and its candidate table
 (`Ui.Candidates`): a row puts its play on the board, the dice (or the same
 row) take it back. A double or a take is the cube's three equities, the
 chances and the sentence. Under it, the depth and whether it was asked
-just now or already analyzed, SHARE (the puzzle's clean link) and OPEN AS
-PUZZLE. When it cannot: the server's sentence, and TRY AGAIN once any wait
+just now or already analyzed, SAVE (the position into a set of your own:
+`Ui.SaveToSet`, the sheet a puzzle's reveal opens too, which a guest
+signs in from with the position kept in the URL), SHARE (the puzzle's
+clean link) and OPEN AS PUZZLE. When it cannot: the server's sentence, and TRY AGAIN once any wait
 it named has passed. Any change to the position clears the answer.
 
 **Playing it out** (analysis-play-it-out). From a complete position the
@@ -109,6 +111,7 @@ import Session exposing (Session)
 import Task
 import Ui.Candidates as Candidates
 import Ui.Dialog
+import Ui.SaveToSet as SaveToSet
 import Ui.Scrub as Scrub
 
 
@@ -161,6 +164,7 @@ type alias Model =
     , fetching : List String -- levels of a lazy tree on their way
     , swaps : Int
     , movesAsked : Int -- every fetch is numbered: a tree for an earlier step is dropped
+    , save : Maybe SaveToSet.Model -- SAVE's sheet, while it is open
     }
 
 
@@ -327,6 +331,7 @@ init session origin door =
             , fetching = []
             , swaps = 0
             , movesAsked = 0
+            , save = Nothing
             }
     in
     case ( door.xgid, door.puzzle ) of
@@ -1056,7 +1061,50 @@ type Msg
     | GotMoves Int (Result Api.Error Puzzle.Tree)
     | GotNode Int String (Result Api.Error Puzzle.Node)
     | BoardOut Puzzle.Out
+    | PressedSave
+    | SaveMsg SaveToSet.Msg
     | NoOp
+
+
+{-| What the shell does for the page: nothing, or take the account the
+save sheet just signed in.
+-}
+type Out
+    = NoOut
+    | SignedIn (Maybe Session.User)
+
+
+{-| `update`, and what the shell hears of it: the save sheet's sign-in.
+-}
+updateWithOut : Msg -> Model -> ( Model, Cmd Msg, Out )
+updateWithOut msg model =
+    case msg of
+        SaveMsg sub ->
+            case model.save of
+                Just sheet ->
+                    let
+                        ( next, cmd, out ) =
+                            SaveToSet.update model.session sub sheet
+                    in
+                    case out of
+                        SaveToSet.NoOut ->
+                            ( { model | save = Just next }, Cmd.map SaveMsg cmd, NoOut )
+
+                        SaveToSet.Close ->
+                            ( { model | save = Nothing }, Cmd.none, NoOut )
+
+                        SaveToSet.SignedIn user ->
+                            ( { model | save = Just next }, Cmd.map SaveMsg cmd, SignedIn user )
+
+                Nothing ->
+                    ( model, Cmd.none, NoOut )
+
+        _ ->
+            let
+                ( next, cmd ) =
+                    update msg model
+            in
+            ( next, cmd, NoOut )
 
 
 {-| Every message, and then in PLAY the legal plays of the step on the
@@ -1396,6 +1444,30 @@ updateOne msg model =
 
         Show rank ->
             ( { model | showing = rank }, Cmd.none )
+
+        -- SAVE: the sheet, for the puzzle the answer is. A guest's sign-in
+        -- comes back to this position (`?xgid=`), so nothing is lost.
+        PressedSave ->
+            case model.ask of
+                Answered { answer } ->
+                    let
+                        ( sheet, cmd ) =
+                            SaveToSet.init model.session
+                                { puzzleId = answer.puzzle.id
+                                , next = Route.href (Route.analysisXgid model.setup)
+                                }
+                    in
+                    ( { model | save = Just sheet }, Cmd.map SaveMsg cmd )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        SaveMsg _ ->
+            let
+                ( next, cmd, _ ) =
+                    updateWithOut msg model
+            in
+            ( next, cmd )
 
         PressedShare ->
             case model.ask of
@@ -2134,6 +2206,12 @@ view model =
 
           else
             text ""
+        , case model.save of
+            Just sheet ->
+                Html.map SaveMsg (SaveToSet.view sheet)
+
+            Nothing ->
+                text ""
         ]
 
 
@@ -2919,15 +2997,17 @@ viewPanel model =
                             , span [ class "an-share-note", id "an-share-note" ] [ text (Maybe.withDefault "" model.shareNote) ]
                             ]
 
-                       -- PLAY THIS (or, for the cube, PLAY IT OUT) spans the
-                       -- first row of fixed cells for now; SAVE TO A SET
-                       -- (analysis-save-to-set) takes its second cell.
+                       -- Two rows of fixed cells: PLAY THIS (or PLAY BEST,
+                       -- or for the cube PLAY IT OUT) across the first; SAVE,
+                       -- SHARE and OPEN AS PUZZLE under it (2 + 1 where three
+                       -- do not fit).
                        , div [ class "an-actions", id "an-actions" ]
                             [ viewPlayAction model answer
-                            , button [ type_ "button", id "an-share", class "q-btn plain an-action pixel", onClick PressedShare ] [ text "SHARE" ]
+                            , button [ type_ "button", id "an-save", class "q-btn plain an-action an-action-third pixel", onClick PressedSave ] [ text "SAVE" ]
+                            , button [ type_ "button", id "an-share", class "q-btn plain an-action an-action-third pixel", onClick PressedShare ] [ text "SHARE" ]
                             , a
                                 [ id "an-open-puzzle"
-                                , class "q-btn plain an-action pixel"
+                                , class "q-btn plain an-action an-action-third an-action-last pixel"
                                 , href (Route.href (Route.puzzle answer.puzzle.id))
                                 , Html.Attributes.target "_blank"
                                 , Html.Attributes.rel "noopener"

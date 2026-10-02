@@ -5,6 +5,7 @@ module Api exposing
     , get
     , parseBody
     , post
+    , request
     , send
     )
 

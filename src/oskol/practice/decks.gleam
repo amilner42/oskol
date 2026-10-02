@@ -379,7 +379,15 @@ pub fn shown_cells(set: Deck, cells: List(Cell)) -> List(Cell) {
 /// An own set's positions for its owner, in the set's order, each with the
 /// rung its card stands on (0 for one never answered). `cells` are the
 /// owner's, read off the set's own ladder (`practice(ctx, deck).cells`).
-pub fn members_json(ctx: Ctx, deck: Deck, cells: List(Cell)) -> Json {
+/// `question` writes each one's question as the page draws it
+/// (`handlers/puzzles.stored_question_json`, passed in because that module
+/// reads this one), for the small board MANAGE lists it with.
+pub fn members_json(
+  ctx: Ctx,
+  deck: Deck,
+  cells: List(Cell),
+  question: fn(String) -> Json,
+) -> Json {
   let levels = list.map(cells, fn(c) { #(c.key, c.level) })
   json.array(ctx.decks.members(deck.id), fn(m) {
     json.object([
@@ -391,6 +399,7 @@ pub fn members_json(ctx: Ctx, deck: Deck, cells: List(Cell)) -> Json {
         "level",
         json.int(list.key_find(levels, m.puzzle_id) |> result.unwrap(0)),
       ),
+      #("question", question(m.question_json)),
     ])
   })
 }
