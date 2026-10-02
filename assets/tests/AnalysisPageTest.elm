@@ -210,6 +210,18 @@ pointers =
                     |> sendAll [ Pointer "point:7" (Board.Moved 10 40), LongPressed down.presses, Pointer "point:7" Board.Up ]
                     |> .setup
                     |> Expect.equal cleared.setup
+        , test "a phone's late right click for a press it dropped (a scroll) does not paint" <|
+            \_ ->
+                cleared
+                    |> sendAll [ Pointer "point:7" (Board.Down True 10 10), Pointer "point:7" Board.Cancelled, Pointer "point:7" Board.Context ]
+                    |> .setup
+                    |> Expect.equal cleared.setup
+        , test "nor for one that slid away" <|
+            \_ ->
+                cleared
+                    |> sendAll [ Pointer "point:7" (Board.Down True 10 10), Pointer "point:7" (Board.Moved 10 60), Pointer "point:7" Board.Context ]
+                    |> .setup
+                    |> Expect.equal cleared.setup
         , test "a timer from an earlier press does nothing to this one" <|
             \_ ->
                 let
@@ -328,6 +340,30 @@ doors =
                         [ .setup >> Ok >> Expect.equal (Xgid.decode raw)
                         , .setup >> .toPlay >> Expect.equal Black
                         , .setup >> Xgid.encode >> Expect.equal raw
+                        ]
+        , test "an id with Crawford and nobody one away comes in without it, by every door" <|
+            \_ ->
+                let
+                    raw =
+                        "XGID=-b----E-C---eE---c-e----B-:0:0:1:31:2:2:1:7:10"
+
+                    crawford =
+                        .setup >> .match >> Maybe.map .crawford
+                in
+                Expect.all
+                    [ \_ -> Analysis.init Session.empty { xgid = Just raw, puzzle = Nothing } |> Tuple.first |> crawford |> Expect.equal (Just False)
+                    , \_ -> page |> sendAll [ OpenedImport, ImportInput raw, ImportSubmitted ] |> crawford |> Expect.equal (Just False)
+                    , \_ -> page |> sendAll [ OpenedImport, ImportInput raw, ImportSubmitted ] |> Analysis.line |> Expect.equal Nothing
+                    , \_ -> page |> sendAll [ OpenedImport, ImportInput raw, ImportSubmitted, ToggledGame, ToggledGame ] |> crawford |> Expect.equal (Just False)
+                    ]
+                    ()
+        , test "an id with an owner on a cube at 1 comes in centered" <|
+            \_ ->
+                Analysis.init Session.empty { xgid = Just "XGID=-b----E-C---eE---c-e----B-:0:1:1:31:0:0:1:0:10", puzzle = Nothing }
+                    |> Tuple.first
+                    |> Expect.all
+                        [ .setup >> .cubeOwner >> Expect.equal Nothing
+                        , Analysis.line >> Expect.equal Nothing
                         ]
         , test "?xgid= that is not one opens the opening and says so" <|
             \_ ->
@@ -484,6 +520,8 @@ settings =
                     , send ToggledCrawford >> .setup >> .match >> Maybe.map .crawford >> Expect.equal (Just True)
                     , sendAll [ ToggledCrawford, SteppedScore White -1 ] >> .setup >> .match >> Maybe.map .crawford >> Expect.equal (Just False)
                     , sendAll [ ToggledCrawford, SteppedLength 1 ] >> .setup >> .match >> Maybe.map .crawford >> Expect.equal (Just False)
+                    , sendAll [ ToggledCrawford ] >> Analysis.view >> Query.fromHtml >> Query.find [ id "an-crawford" ] >> Query.has [ attribute (Html.Attributes.disabled False) ]
+                    , sendAll [ ToggledCrawford, ToggledCrawford ] >> .setup >> .match >> Maybe.map .crawford >> Expect.equal (Just False)
                     ]
                     oneAway
         , test "unlimited: the match's controls stay in place, disabled" <|

@@ -217,7 +217,15 @@ withDice dice board cubeValue cubeOwner turn match =
             , toPlay = toPlay
             , ask = ask
             , cubeValue = cubeValue
-            , cubeOwner = cubeOwner
+
+            -- A cube at 1 sits in the middle, whatever the owner field
+            -- says: an id that names one is read as centered.
+            , cubeOwner =
+                if cubeValue == 1 then
+                    Nothing
+
+                else
+                    cubeOwner
             , match = match
             }
     in

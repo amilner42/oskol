@@ -35,7 +35,8 @@ const OPENING = 'XGID=-b----E-C---eE---c-e----B-:0:0:1:00:0:0:1:0:10';
 
 // The boxes that must never move, and every control in the strip.
 const HELD = [
-  '#an-board', '#an-brushes', '#an-strip', '#an-check', '#an-analyze',
+  '#an-board', '.bg-still', '.player-bar.is-me', '.player-bar:not(.is-me)',
+  '#an-brushes', '#an-strip', '#an-check', '#an-analyze',
   '#an-brush-white', '#an-brush-black', '#an-brush-remove',
   '#an-turn', '#an-ask', '#an-dice', '#an-ask-double', '#an-ask-take', '#an-cube', '#an-cube-owner',
   '#an-length', '#an-game', '#an-score-white', '#an-score-black', '#an-crawford',
@@ -131,6 +132,40 @@ const watch = (page, who, errors) => {
 async function open(page, path = '/analysis') {
   await page.goto(`${BASE}${path}`);
   await page.waitForSelector('#an-pt-24');
+}
+
+// A box shows all it holds: the hint (the only place a phone learns about
+// the long press) and the line under the strip at its longest.
+async function fits(page, tag, sel) {
+  await settle(page);
+  const over = await page.$eval(sel, (el) => [el.scrollWidth - el.clientWidth, el.scrollHeight - el.clientHeight]);
+  if (over[0] > 0 || over[1] > 0) throw new Error(`${tag}: ${sel} is cut off (${over[0]}px wide, ${over[1]}px tall)`);
+}
+
+// Whichever hint this screen shows (a mouse's or a finger's), whole.
+async function hintFits(page, tag) {
+  let seen = 0;
+  for (const hint of ['.an-hint-touch', '.an-hint-mouse']) {
+    const shown = await page.$eval(hint, (el) => getComputedStyle(el).display !== 'none');
+    if (shown) { seen++; await fits(page, tag, hint); }
+  }
+  if (seen !== 1) throw new Error(`${tag}: ${seen} hints show`);
+}
+
+// The dead cube: White two away on a cube of 2 that White owns, so the
+// line says its longest sentence.
+const DEAD = 'XGID=-b----E-C---eE---c-e----B-:1:1:1:00:5:0:0:7:10';
+const DEAD_LINE = 'No double is possible here: the cube already covers what White needs';
+
+async function deadCube(page, tag, press) {
+  await press('#an-xgid-import');
+  await page.waitForSelector('#an-import');
+  await page.fill('#an-import-text', DEAD);
+  await press('#an-import-go');
+  await page.waitForSelector('#an-import', { state: 'detached' });
+  await press('#an-ask-double');
+  await expectLine(page, tag, DEAD_LINE);
+  await fits(page, tag, '#an-check');
 }
 
 async function noSideScroll(page, tag) {
@@ -288,11 +323,21 @@ async function desktop(browser, errors) {
     if ((await xgid(page)) !== pasted) throw new Error(`IMPORT gave ${await xgid(page)}, not ${pasted}`);
     await still('IMPORT');
 
+    // Who is to play, and the longest line.
+    await page.click('#an-turn-black');
+    if (!(await page.$('#an-turn-black.is-on'))) throw new Error('TO PLAY Black did not take');
+    await still('TO PLAY');
+    await deadCube(page, 'desktop dead cube', (sel) => page.click(sel));
+    await still('the longest line');
+    await hintFits(page, 'desktop');
+    await fits(page, 'desktop: the whole id shows', '#an-xgid');
+    await page.screenshot({ path: `${SHOTS}/analysis-desktop-04-dead-cube.png` });
+
     // COPY.
     await page.click('#an-xgid-copy');
     if ((await page.innerText('#an-xgid-copy')).trim() !== 'COPIED') throw new Error('COPY did not say so');
     const copied = await page.evaluate(() => navigator.clipboard.readText());
-    if (copied !== pasted) throw new Error(`COPY put "${copied}" on the clipboard`);
+    if (copied !== (await xgid(page))) throw new Error(`COPY put "${copied}" on the clipboard`);
     await still('COPY');
     log('desktop: clicks, right clicks, the x, the bar, the sixteenth, the strip, FLIP, IMPORT, COPY; nothing moved');
   } finally {
@@ -340,6 +385,11 @@ async function phone(browser, errors) {
     await page.screenshot({ path: `${SHOTS}/analysis-390-03-set.png`, fullPage: true });
     await page.tap('#an-flip');
     await still('FLIP');
+    await page.tap('#an-turn-black');
+    await still('TO PLAY');
+    await deadCube(page, 'phone dead cube', (sel) => page.tap(sel));
+    await still('the longest line');
+    await hintFits(page, 'phone');
     await noSideScroll(page, 'phone');
     log('phone: taps, long presses, the bar, the sheet of rolls, FLIP; nothing moved');
   } finally {
@@ -377,6 +427,9 @@ async function aim(browser, errors, tag, viewport) {
     await page.tap('#an-bar-white');
     await expectCount(page, `${tag} bar`, 25, 1);
     sameBoxes(tag, held, await boxes(page));
+    await deadCube(page, `${tag} dead cube`, (sel) => page.tap(sel));
+    sameBoxes(`${tag} the longest line`, held, await boxes(page));
+    await hintFits(page, tag);
     await noSideScroll(page, tag);
     log(`${tag}: a tap on each of the 24 points lands on that point`);
   } finally {

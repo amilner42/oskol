@@ -3390,6 +3390,7 @@ oskol-demo-board {
 .an-x { font-size: 15px; line-height: 1; font-weight: 700; }
 .an-hint { flex: 1; min-width: 0; font-size: 12px; color: var(--pencil); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .an-hint-mouse { display: none; }
+.an-hint-short { display: none; }
 @media (hover: hover) and (pointer: fine) {
   .an-hint-mouse { display: block; }
   .an-hint-touch { display: none; }
@@ -3501,7 +3502,12 @@ oskol-demo-board {
   #an-crawford { width: 30px; }
   .an-score-value { width: 18px; }
   .an-row { gap: 4px; }
+  /* The hint is the only place a phone learns about the long press: the
+     short one, whole, rather than the long one cut off. */
+  .an-brush { width: 38px; }
   .an-hint { font-size: 11px; }
+  .an-hint-long { display: none; }
+  .an-hint-short { display: inline; }
 }
 
 /* Sideways: the board down the left at the screen's height, everything
@@ -3512,10 +3518,44 @@ oskol-demo-board {
   .an-page .rp-board, .an-page .rp-side { align-self: start; }
 }
 
-/* A desktop: the brushes over the board, the column beside both. */
+/* A desktop: the brushes over the board, the column beside both -- a
+   wider one than the replay's, its controls a size up so they sit with
+   the big board, and the position id on a line of its own. The board's
+   width term is the replay's with this column's width. */
 @media (min-width: 1024px) {
-  .an-page .rp-main { grid-template-rows: auto auto; row-gap: 8px; }
+  .an-page .rp-main { grid-template-columns: max-content 26rem; grid-template-rows: auto auto; row-gap: 8px; }
   .an-page .an-brushes { grid-column: 1; grid-row: 1; }
   .an-page .rp-board { grid-column: 1; grid-row: 2; }
-  .an-page .rp-side { grid-column: 2; grid-row: 1 / span 2; }
+  .an-page .rp-side { grid-column: 2; grid-row: 1 / span 2; width: 26rem; gap: 14px; }
+  .an-page .bg-still {
+    --bg-point-h: min(
+      calc((var(--page-h) - 28px - 2.5rem - 2.6rem - 3.2rem - 5.5rem - var(--bg-band-h) - 2 * var(--bg-lip) - 1rem) / 2),
+      calc((100vw - 48px - 26rem - 16px - 4rem) / 2.9)
+    );
+  }
+  .an-brushes { height: 40px; }
+  .an-brush { width: 48px; height: 38px; }
+  .an-chip { width: 19px; height: 19px; }
+  .an-hint { font-size: 13px; }
+  .an-strip { gap: 12px; }
+  .an-label { font-size: 7px; line-height: 8px; height: 8px; }
+  .an-controls, .an-segs, .an-stepper { height: 38px; }
+  .an-seg { font-size: 8px; }
+  .an-step { width: 26px; font-size: 17px; }
+  #an-turn-white, #an-turn-black { width: 38px; }
+  #an-dice { width: 56px; }
+  #an-ask-double { width: 68px; }
+  #an-ask-take { width: 52px; }
+  #an-cube { width: 38px; font-size: 9px; }
+  #an-cube-owner { width: 60px; }
+  #an-game { width: 100px; }
+  #an-crawford { width: 42px; }
+  .an-score-value { width: 26px; font-size: 9px; }
+  .an-die { width: 18px; height: 18px; }
+  .an-quick { height: 38px; font-size: 8px; }
+  .an-xgid-row { flex-wrap: wrap; }
+  .an-xgid { flex: 1 1 100%; height: 38px; font-size: 12px; }
+  .an-xgid-row .an-quick { flex: 1 1 0; width: auto; }
+  .an-check { font-size: 14px; }
+  .an-analyze { height: 52px; font-size: 13px; }
 }

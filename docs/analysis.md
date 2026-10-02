@@ -145,6 +145,8 @@ and the `D` turn.
 
 Oskol's choices on top of the format:
 
+- A cube at 1 (exponent 0) is in the middle whatever the owner field
+  says: an id naming an owner there reads as centered.
 - Unlimited play writes flags 1 and length 0. Any money id is read as
   unlimited play (Jacoby, no beavers), the only money game Oskol plays.
 - `Move Nothing` writes `00`. `00` reads back as `Double` where the player
@@ -277,7 +279,10 @@ and the column is beside both.
   the x takes one off whatever is there. A right click (contextmenu
   prevented) and a long press (500 ms without sliding 10 px) are the other
   colour's brush; with the x both buttons remove. A phone that also sends
-  contextmenu for a long press acts once, whichever comes first. A mouse
+  contextmenu for a long press acts once, whichever comes first, and a
+  late contextmenu for a finger's press that was dropped (a scroll, a
+  pointercancel) paints nothing. The hint beside the brushes has a short
+  form for phones under 360px, so it is never cut off. A mouse
   acts on release over the point it pressed; a finger that slides is a
   scroll. A sixteenth checker is refused and that colour's tray flashes
   (`an-flash-<color>-<parity>` on the page). `Page.Analysis.paint` is the
@@ -292,9 +297,11 @@ and the column is beside both.
   the doubler, so the strip never makes a cube `check` refuses); GAME
   (`#an-game`, UNLIMITED or MATCH TO n, inside the `#an-length` stepper,
   1..25), the scores (`#an-score-white`, `#an-score-black`, 0..n-1) and
-  CRAWFORD (`#an-crawford`, enabled only while somebody is one away, and
-  turned off when nobody is). The match's controls stay in place,
-  disabled, in unlimited play.
+  CRAWFORD (`#an-crawford`, which can be turned on only while somebody is
+  one away and off at any time; it is turned off when nobody is). The
+  match's controls stay in place, disabled, in unlimited play. Every door
+  in (`?xgid=`, `?p=`, IMPORT, MATCH TO coming back) and every edit runs
+  the same `normalize`: Crawford only one away, a cube at 1 centered.
 - **Quick starts**: OPENING (`#an-opening`: the checkers where a game
   starts, the cube in the middle; who is to play, the ask and the match
   stay), CLEAR (`#an-clear`: no checkers, the rest kept), FLIP

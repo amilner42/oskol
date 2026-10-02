@@ -77,6 +77,7 @@ type alias Model =
     , brush : Brush
     , press : Maybe Press -- a finger or a button down on a place of the board
     , presses : Int -- every press is numbered, so a long-press timer knows its own
+    , spent : Maybe String -- the place a finger's press was dropped from (a scroll, the browser taking it): its late right click is not a new one
     , rolling : Bool -- the sheet of the 21 rolls is open
     , lastRoll : Maybe ( Int, Int ) -- the roll ROLL goes back to after DOUBLE? or TAKE?
     , lastMatch : Match -- the match MATCH TO goes back to after UNLIMITED
@@ -169,6 +170,7 @@ init session door =
             , brush = Paint White
             , press = Nothing
             , presses = 0
+            , spent = Nothing
             , rolling = False
             , lastRoll = Nothing
             , lastMatch = defaultMatch
@@ -206,7 +208,11 @@ init session door =
 to what it had.
 -}
 remembered : Model -> Model
-remembered model =
+remembered incoming =
+    let
+        model =
+            { incoming | setup = normalize incoming.setup }
+    in
     { model
         | lastRoll =
             case model.setup.ask of
@@ -538,6 +544,7 @@ update msg model =
 
                     else
                         { s | cubeOwner = Just (Setup.other (Maybe.withDefault Black s.cubeOwner)) }
+                            |> normalize
                 )
                 model
             , Cmd.none
@@ -581,7 +588,8 @@ update msg model =
         ToggledCrawford ->
             ( editMatch
                 (\m ->
-                    if oneAway m then
+                    -- it can always be turned off, and on only one away
+                    if m.crawford || oneAway m then
                         { m | crawford = not m.crawford }
 
                     else
@@ -680,27 +688,30 @@ any answer about the position before are gone with it.
 -}
 edit : (Setup -> Setup) -> Model -> Model
 edit change model =
-    { model | setup = change model.setup, notice = Nothing, ask = NotAsked }
+    { model | setup = normalize (change model.setup), notice = Nothing, ask = NotAsked }
 
 
 editMatch : (Match -> Match) -> Model -> Model
 editMatch change =
-    edit
-        (\s ->
-            { s
-                | match =
-                    Maybe.map
-                        (\m ->
-                            let
-                                changed =
-                                    change m
-                            in
-                            -- Crawford only stands while somebody is one away
-                            { changed | crawford = changed.crawford && oneAway changed }
-                        )
-                        s.match
-            }
-        )
+    edit (\s -> { s | match = Maybe.map change s.match })
+
+
+{-| The two settings the strip cannot show wrongly, made right on the way
+in from every door (an id, a puzzle, MATCH TO coming back) and after every
+edit: Crawford only stands while somebody is one away, and a cube at 1
+sits in the middle.
+-}
+normalize : Setup -> Setup
+normalize s =
+    { s
+        | match = Maybe.map (\m -> { m | crawford = m.crawford && oneAway m }) s.match
+        , cubeOwner =
+            if s.cubeValue == 1 then
+                Nothing
+
+            else
+                s.cubeOwner
+    }
 
 
 oneAway : Match -> Bool
@@ -787,7 +798,7 @@ pointer zone event model =
                 seq =
                     model.presses + 1
             in
-            ( { model | presses = seq, press = Just { zone = zone, touch = touch, x = x, y = y, seq = seq, long = False } }
+            ( { model | presses = seq, spent = Nothing, press = Just { zone = zone, touch = touch, x = x, y = y, seq = seq, long = False } }
             , if touch then
                 Process.sleep longPressMs |> Task.perform (\_ -> LongPressed seq)
 
@@ -799,7 +810,7 @@ pointer zone event model =
             case model.press of
                 Just p ->
                     if not p.long && (abs (x - p.x) > slop || abs (y - p.y) > slop) then
-                        ( { model | press = Nothing }, Cmd.none )
+                        ( dropped p model, Cmd.none )
 
                     else
                         ( model, Cmd.none )
@@ -820,7 +831,12 @@ pointer zone event model =
                     ( model, Cmd.none )
 
         Board.Cancelled ->
-            ( { model | press = Nothing }, Cmd.none )
+            case model.press of
+                Just p ->
+                    ( dropped p model, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         Board.Context ->
             case model.press of
@@ -836,7 +852,28 @@ pointer zone event model =
                         ( pressed Secondary zone { model | press = Nothing }, Cmd.none )
 
                 Nothing ->
-                    ( pressed Secondary zone model, Cmd.none )
+                    if model.spent == Just zone then
+                        -- the phone's right click for a press already dropped
+                        ( { model | spent = Nothing }, Cmd.none )
+
+                    else
+                        ( pressed Secondary zone model, Cmd.none )
+
+
+{-| A press let go of without acting: a finger's is remembered, so the
+right click a phone sends for it late does not paint.
+-}
+dropped : Press -> Model -> Model
+dropped p model =
+    { model
+        | press = Nothing
+        , spent =
+            if p.touch then
+                Just p.zone
+
+            else
+                Nothing
+    }
 
 
 
@@ -988,29 +1025,37 @@ viewBrushes model =
 
                 Erase ->
                     ( "takes one off", "takes one off" )
+
+        -- "adds White" -> "White": the narrow phone's hint
+        short words =
+            String.replace "adds " "" words
+
+        -- the whole hint, and the one a narrow phone has room for, both
+        -- always on the page: CSS shows one
+        hint kind ( long, narrow ) =
+            span [ class ("an-hint " ++ kind) ]
+                [ span [ class "an-hint-long" ] [ text long ]
+                , span [ class "an-hint-short" ] [ text narrow ]
+                ]
     in
     div [ class "an-brushes", id "an-brushes" ]
         [ brushButton "an-brush-white" (Paint White) "White checkers" [ span [ class "an-chip white" ] [] ]
         , brushButton "an-brush-black" (Paint Black) "Black checkers" [ span [ class "an-chip black" ] [] ]
         , brushButton "an-brush-remove" Erase "Take checkers off" [ span [ class "an-x" ] [ text "✕" ] ]
-        , span [ class "an-hint an-hint-touch" ]
-            [ text
-                (if model.brush == Erase then
-                    "Tap " ++ tap
+        , hint "an-hint-touch"
+            (if model.brush == Erase then
+                ( "Tap takes one off", "Tap: one off" )
 
-                 else
-                    "Tap " ++ tap ++ " · hold " ++ other
-                )
-            ]
-        , span [ class "an-hint an-hint-mouse" ]
-            [ text
-                (if model.brush == Erase then
-                    "Click " ++ tap
+             else
+                ( "Tap " ++ tap ++ " · hold " ++ other, "Tap: " ++ short tap ++ " · hold: " ++ short other )
+            )
+        , hint "an-hint-mouse"
+            (if model.brush == Erase then
+                ( "Click takes one off", "Click: one off" )
 
-                 else
-                    "Click " ++ tap ++ " · right-click " ++ other
-                )
-            ]
+             else
+                ( "Click " ++ tap ++ " · right-click " ++ other, "Click: " ++ short tap ++ " · right: " ++ short other )
+            )
         ]
 
 
@@ -1153,7 +1198,7 @@ viewStrip model =
                         , classList [ ( "an-seg an-crawford", True ), ( "is-on", inMatch && m.crawford ) ]
                         , attribute "aria-pressed" (boolString (inMatch && m.crawford))
                         , attribute "aria-label" "Crawford game"
-                        , disabled (not (inMatch && oneAway m))
+                        , disabled (not (inMatch && (oneAway m || m.crawford)))
                         , onClick ToggledCrawford
                         ]
                         [ text
