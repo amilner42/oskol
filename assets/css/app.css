@@ -1096,9 +1096,12 @@ a.q-card:hover, a.q-card:focus-visible {
    frame's wood beside the felt. Its rows are the bar's -- points, band,
    points -- so its top half runs alongside the top home board and its
    bottom half alongside the bottom one, each the tray of the player who
-   bears off there. A half has a slot for all fifteen from the start, so
-   nothing grows as a game comes off: a checker borne off is a thin sliver
-   of its colour, edge-on, filling from the outer end. The count is a small
+   bears off there. A half is three bins of five, recessed compartments
+   with a strip of the frame's wood between them, the way a fancier board
+   divides its trays (and the way the strips keep three holders): room for
+   all fifteen from the start, so nothing grows as a game comes off. A
+   checker borne off is a sliver of its colour, edge-on, a fifth of its
+   bin, filling bin by bin from the outer end. The count is a small
    plate in the band's row, between the halves, where no sliver reaches.
 
    A phone held upright keeps the strips in the identity bars: across 390px
@@ -1122,11 +1125,9 @@ a.q-card:hover, a.q-card:focus-visible {
     /* a point is 0.21 of its height wide; the tray is most of a point */
     --bg-tray-w: calc(var(--bg-pw) * 0.8);
     --bg-tray-gap: 4px;
-    --off-pad: 2px;
-    --off-gap: 1px;
-    /* a sliver is a checker's edge: a quarter of a point's width, and never
-       so tall that fifteen of them overflow the slot */
-    --sliver-h: min(calc(var(--bg-pw) * 0.24), calc((var(--bg-point-h) - 2 * var(--off-pad) - 14 * var(--off-gap)) / 15));
+    --off-pad: 2px;    /* inside a bin, round its five */
+    --off-gap: 1px;    /* between two checkers in a bin */
+    --off-divider: 3px; /* the wood between two bins */
   }
   .bg-page .player-bar .bg-tray { display: none; }
   .bg-tray-col {
@@ -1136,17 +1137,22 @@ a.q-card:hover, a.q-card:focus-visible {
     grid-template-rows: var(--bg-point-h) minmax(var(--bg-band-h), 1fr) var(--bg-point-h);
   }
   .bg-tray-col.left { order: -1; margin-left: 0; margin-right: var(--bg-tray-gap); }
+  /* A half is the three bins and the wood between them; a bin is five
+     equal rows, so a full bin is full. */
   .bg-off {
     position: relative;
-    grid-template-rows: repeat(15, var(--sliver-h));
-    row-gap: var(--off-gap);
-    align-content: start;
-    padding: var(--off-pad);
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+    row-gap: var(--off-divider);
     border-radius: 4px;
+  }
+  .off-bin {
+    grid-template-rows: repeat(5, minmax(0, 1fr));
+    row-gap: var(--off-gap);
+    padding: var(--off-pad);
+    border-radius: 3px;
     background: var(--bg-slot);
     box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45);
   }
-  .bg-off.bottom { align-content: end; }
   /* Where a checker bearing off is tapped to: a quiet ring, drawn outside
      the slot so it costs no room, and a reach into the wood either side so
      a thumb does not have to find a column a point wide. */
@@ -1169,7 +1175,7 @@ a.q-card:hover, a.q-card:focus-visible {
    twelve points' share of it, shared by all twelve. On a big board the tray
    stands apart from the felt by a full width of the frame's wood, so it
    reads as a tray on the rail, the way a real board has it, and not as one
-   more strip of the home board; a sideways phone keeps it close (4px, set
+   more strip of the home board; a sideways phone keeps it closer (7px, set
    in its own layout below), where the rail is narrow and the board small. */
 @media (min-width: 640px) {
   .bg-page {
@@ -1526,18 +1532,18 @@ a.bg-match-door:hover { background: var(--paper-2); }
     /* Air above and below the board, so a sideways phone does not read as
        a board jammed against the bezel. */
     --bg-edge: 10px;
-    --bg-tray-gap: 4px;
+    --bg-tray-gap: 7px; /* the wood between the felt and the tray, a phone's share of it */
     /* The height is what drives the board -- unless the screen is too
        narrow to be proportionate to it (a squarish landscape), in which
        case the width has the last word and the board merely fits. The
        ratio is the board's own: a point is 0.21 of its height wide, and
        the board is 12 points, the bar and its frame across, with the
        chrome's column to fit beside it. The tray column at the home boards'
-       end is 0.8 of a point and 4px of wood more: 0.168 of the height, so
+       end is 0.8 of a point and 7px of wood more: 0.168 of the height, so
        3.07 rather than 2.9, and the chrome keeps the width it had. */
     --bg-point-h: min(
       calc((var(--page-h) - var(--bg-band-h) - 2 * var(--bg-lip) - 2 * var(--bg-edge)) / 2),
-      calc((100vw - 10rem - 4px) / 3.07)
+      calc((100vw - 10rem - 7px) / 3.07)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
     --bg-half: calc(var(--bg-pw) * 6 + 5px + 6px); /* six points, their hairlines, the felt's inset */
@@ -1979,7 +1985,7 @@ a.bg-match-door:hover { background: var(--paper-2); }
   }
   .bg-page .player-bar { padding: 10px 16px; }
   .bg-page .bg-tray { --holder-h: 1.4rem; --stick-w: 4px; }
-  .bg-page { --off-pad: 3px; --off-gap: 2px; }
+  .bg-page { --off-pad: 3px; --off-gap: 2px; --off-divider: 5px; }
   .bg-page .off-plate { font-size: 9px; padding: 3px; }
   /* The dice grow with the board, within reason. */
   .bg-page .bg-band .die { --die-size: clamp(2.5rem, calc(var(--bg-pw) * 0.7), 3.5rem); }

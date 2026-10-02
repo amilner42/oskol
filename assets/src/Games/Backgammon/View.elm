@@ -1735,8 +1735,9 @@ homeOnRight myColor =
 {-| The bear-off trays as a real board keeps them: one column on the
 board's outer edge at the end of the home boards (`homeOnRight`), its top
 half the tray of the player whose home board is the top one, its bottom
-half the other's. Each half has room for all fifteen from the start; a
-checker borne off is a thin sliver of its colour, edge-on, filling from
+half the other's. Each half is three bins of five, as a fancier board
+divides its trays, with room for all fifteen from the start; a checker
+borne off is a thin sliver of its colour, edge-on, filling bin by bin from
 the outer end, so the column never changes size as a game comes off.
 The count is a small plate in the band's row, between the halves, where
 no sliver can reach it. The viewer's half is where a bearing-off checker
@@ -1820,18 +1821,27 @@ viewTrayColumn board =
                     else
                         []
 
-                -- from the outer end inwards: the checkers off, then the
-                -- room left for the rest
-                slivers =
-                    List.range 0 14
-                        |> List.map
-                            (\i ->
-                                if i < n then
-                                    div [ classList [ ( "off-sliver " ++ color, True ), ( "just-moved", i >= n - landed ) ] ] []
+                -- One sliver: the i-th checker off, counted from the outer end.
+                sliver i =
+                    if i < n then
+                        div [ classList [ ( "off-sliver " ++ color, True ), ( "just-moved", i >= n - landed ) ] ] []
 
-                                else
-                                    div [ class "off-sliver empty" ] []
-                            )
+                    else
+                        div [ class "off-sliver empty" ] []
+
+                -- Three bins of five, the way a fancier board divides its
+                -- trays, filled bin by bin from the outer end: the top
+                -- half's from the top down, the bottom half's from the
+                -- bottom up.
+                outward list =
+                    if isTop then
+                        list
+
+                    else
+                        List.reverse list
+
+                bin b =
+                    div [ class "off-bin grid" ] (List.range (5 * b) (5 * b + 4) |> List.map sliver |> outward)
             in
             div
                 ([ classList
@@ -1846,12 +1856,7 @@ viewTrayColumn board =
                  ]
                     ++ click
                 )
-                (if isTop then
-                    slivers
-
-                 else
-                    List.reverse slivers
-                )
+                (List.map bin [ 0, 1, 2 ] |> outward)
 
         topOwner =
             ownerOf top
