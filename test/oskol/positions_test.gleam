@@ -330,7 +330,13 @@ fn the_write() -> #(NewPuzzle, String, Option(ReplayLink)) {
 }
 
 fn key_of(kind: puzzles.Kind, g: GameTurns, turn: Turn) -> String {
-  puzzles.key(puzzles.question_of(kind, turn.position, turn.dice, g.jacoby))
+  // A roll is asked on the cube it was played on; a cube decision on the
+  // cube as the turn began.
+  let position = case kind {
+    puzzles.Move -> analysis.played_on(turn)
+    _ -> turn.position
+  }
+  puzzles.key(puzzles.question_of(kind, position, turn.dice, g.jacoby))
 }
 
 // ---------- A step of each kind ----------
@@ -449,15 +455,9 @@ pub fn every_decision_of_a_game_is_the_question_the_review_asked_test() {
                   assert p.key == key_of(pair.1, g, turn)
                   Ok(Nil)
                 }
-                // A forced roll or a dance is no decision; the roll after a
-                // taken double goes to the analysis board.
+                // A forced roll or a dance is no decision.
                 Error(error.Conflict(code, _)) -> {
                   assert code == positions.no_decision_code
-                    || {
-                      code == positions.incomplete_code
-                      && pair.1 == puzzles.Move
-                      && turn.double == Some(analysis.Took)
-                    }
                   Error(Nil)
                 }
                 Error(_) -> panic as "a step of a graded game failed"
@@ -787,16 +787,17 @@ pub fn a_spent_budget_is_a_429_in_a_players_words_and_writes_nothing_test() {
   assert get_writes("writes") == []
 }
 
-pub fn a_roll_after_a_taken_double_goes_to_the_analysis_board_test() {
-  // Its stored question has the cube from before the double, which the
-  // engine did not grade it on: refused, the incomplete sentence.
+pub fn a_roll_after_a_taken_double_is_asked_on_the_doubled_cube_test() {
+  // The roll is played on the cube the take left: doubled, and the
+  // opponent's. That is the cube the engine graded it on and the cube
+  // `extract` asks with, so the share is the puzzle already written.
   let #(f, ctx) = seeded()
   let #(g, turn) =
     find_turn(replayed(f), fn(t) {
-      t.double == Some(analysis.Took) && t.entry != None
+      t.double == Some(analysis.Took) && t.entry != None && !analysis.danced(t)
     })
   let assert Some(line) = turn.entry
-  let assert Error(error.Conflict(code, _)) =
+  let assert Ok(_) =
     positions.share(
       ctx,
       stranger_session(),
@@ -805,8 +806,17 @@ pub fn a_roll_after_a_taken_double_goes_to_the_analysis_board_test() {
       g.number,
       line + 1,
     )
-  assert code == positions.incomplete_code
-  assert get_writes("writes") == []
+  let #(p, _, _) = the_write()
+  assert p.key == key_of(puzzles.Move, g, turn)
+  let asked =
+    puzzles.question_of(
+      puzzles.Move,
+      analysis.played_on(turn),
+      turn.dice,
+      g.jacoby,
+    )
+  assert asked.cube_value == turn.position.cube_value * 2
+  assert asked.cube_owner == puzzles.Opponent
 }
 
 pub fn a_record_row_that_will_not_read_is_a_500_not_a_skipped_game_test() {

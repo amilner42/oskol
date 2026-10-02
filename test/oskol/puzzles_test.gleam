@@ -698,6 +698,18 @@ pub fn a_checker_play_after_a_take_graded_by_the_fixed_engine_is_asked_test() {
   let assert [s] = sources
   assert s.key == Some(p.key)
   assert s.skipped_reason == None
+  // Asked on the cube the roll was played on: doubled, and the opponent's,
+  // never the cube from before the double.
+  let on_doubled =
+    puzzle.question_of(
+      puzzle.Move,
+      analysis.after_take(a_position(White)),
+      Some(#(6, 4)),
+      False,
+    )
+  assert p.key == puzzle.key(on_doubled)
+  assert on_doubled.cube_value == a_position(White).cube_value * 2
+  assert on_doubled.cube_owner == puzzle.Opponent
 }
 
 // ---------- Mismatched answers ----------

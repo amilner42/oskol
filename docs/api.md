@@ -219,9 +219,9 @@ POST /papi/games/:slug/rooms/:id/positions  (open: anyone who can read the
                                          chances), no_decision (step 0, a
                                          resignation, the result, a forced roll
                                          or dance, an ungraded double); a roll
-                                         played after a taken double is also
-                                         409 incomplete (its stored question has
-                                         the pre-double cube); 404 for a room,
+                                         played after a taken double is asked
+                                         on the doubled cube the opponent holds
+                                         (`analysis.played_on`); 404 for a room,
                                          game or step that names nothing; 422
                                          without {game, step}; 429 rate_limited
                                          past 30 an hour per caller (account,

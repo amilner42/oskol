@@ -489,10 +489,10 @@ log), `test/backgammon/analysis_test.gleam` (`turns_from_record` against
   instead."), nothing written -- every answer from before `all_results`.
   Step 0, a resignation, the result, a forced roll, a dance and a double the
   engine does not grade are 409 `no_decision`; a room, game or step that
-  names nothing 404. A roll played after a taken double is `incomplete`
-  too: its stored question (`extract`'s, whose key a share must match) has
-  the cube from before the double while the engine graded the doubled one,
-  so it goes to the analysis board, which reads the cube off the record. A
+  names nothing 404. A roll played after a taken double is asked on the
+  cube it was played on -- doubled, and the opponent's
+  (`analysis.played_on`) -- exactly as `extract` asks it, so the keys agree
+  and the share is the puzzle already written. A
   record row that will not read is a 500, never a skipped game (it would
   move every later game's number and score).
 - **A budget.** Past `allow_ask` with `positions.buckets`: 30 an hour per
@@ -532,8 +532,8 @@ log), `test/backgammon/analysis_test.gleam` (`turns_from_record` against
   container query) and, pressed, the sentence; "Not graded" on a game whose
   review failed; "Analysis only" on a roll whose answer predates every play
   being sent (the review's `every_play`, a generated column on
-  `game_reviews` served beside the rendered report) or a roll after a take,
-  pointing at OPEN IN ANALYSIS beside it; unseen on a step that is no
+  `game_reviews` served beside the rendered report), pointing at OPEN IN
+  ANALYSIS beside it; unseen on a step that is no
   decision. What a share did floats under the head over the tabs
   (`#rp-share-note`), on that step only, and moves nothing.
 

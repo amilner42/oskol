@@ -385,15 +385,6 @@ fn move_decision(
   graded: TurnReview,
   jacoby: Bool,
 ) -> Result(#(Question, Answer), ApiError) {
-  // A roll played after a taken double: the stored question (`extract`'s,
-  // whose key this must share) has the cube as it stood before the double,
-  // while the engine graded the play on the doubled cube. Until that is
-  // mended, such a step goes to the analysis board, which reads the cube
-  // off the record.
-  use _ <- result.try(case turn.double {
-    Some(analysis.Took) -> Error(incomplete())
-    _ -> Ok(Nil)
-  })
   use _ <- result.try(case graded.move, analysis.danced(turn) {
     None, _ -> Error(not_graded())
     Some(report.Danced), _ | _, True -> Error(no_decision())
@@ -403,12 +394,19 @@ fn move_decision(
   // Every legal play and a board on every candidate, or nothing: the rule
   // the analysis board and the built sets trust an answer by. An answer
   // from before the engine sent every play -- and so a play after a take
-  // graded on the old cube -- fails it.
+  // graded on the old cube -- fails it. A play after a take on a fixed
+  // answer asks with the cube it was played on (`analysis.played_on`), as
+  // `extract` does, so the two keys agree.
   use answer <- result.try(
     openings.answer(graded) |> result.replace_error(incomplete()),
   )
   Ok(#(
-    puzzles.question_of(puzzles.Move, turn.position, turn.dice, jacoby),
+    puzzles.question_of(
+      puzzles.Move,
+      analysis.played_on(turn),
+      turn.dice,
+      jacoby,
+    ),
     answer,
   ))
 }

@@ -24,7 +24,13 @@ path builds one and nothing re-asks the engine to recover one.
   (`bg-analysis-post-take-context`): that engine graded it on the pre-offer
   cube. The fix shipped with `all_results`, so "old" is read off the answer
   itself -- a move without `results` (`extract.before_results`) -- and an
-  answer from the fixed engine has every such play asked. Skipped turns are
+  answer from the fixed engine has every such play asked -- **on the cube it
+  was played on**, doubled and the opponent's (`analysis.played_on`), never
+  the cube the turn began with. Until `bg-post-take-cube` the question took
+  the turn's starting cube, so the puzzle showed one cube and was answered
+  on another; `mix oskol.puzzles.repair_post_take`
+  (`Oskol.Puzzles.PostTakeRepair`) deleted those, cards and all, and
+  reopened their games for the sweep to extract again. Skipped turns are
   still written, as a source with a reason and no puzzle, so the backfill
   can count and re-ask them.
 - **A puzzle is public and deduplicated.** `src/oskol/puzzles.gleam` is the

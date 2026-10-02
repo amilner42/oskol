@@ -89,6 +89,27 @@ pub type Turn {
   )
 }
 
+/// The position a turn's checker play was made on. `position` is where the
+/// turn began, before any double; after a take the roll is played on the
+/// doubled cube, which the opponent now holds, and that is the cube the
+/// engine grades the play on and the cube a puzzle of it must ask with.
+pub fn played_on(turn: Turn) -> Position {
+  case turn.double {
+    Some(Took) -> after_take(turn.position)
+    _ -> turn.position
+  }
+}
+
+/// A position once its mover's double has been taken: the cube doubled, and
+/// the opponent's.
+pub fn after_take(position: Position) -> Position {
+  Position(
+    ..position,
+    cube_value: position.cube_value * 2,
+    cube_owner: "opponent",
+  )
+}
+
 /// One game of a room.
 pub type GameTurns {
   GameTurns(
@@ -577,14 +598,7 @@ fn settle(
     Some(Took) ->
       case engine_can_double(p.position) {
         True -> #(p.position, answer)
-        False -> #(
-          Position(
-            ..p.position,
-            cube_value: p.position.cube_value * 2,
-            cube_owner: "opponent",
-          ),
-          None,
-        )
+        False -> #(after_take(p.position), None)
       }
     Some(Passed) ->
       case engine_can_double(p.position) {

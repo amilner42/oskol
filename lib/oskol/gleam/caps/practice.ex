@@ -786,6 +786,22 @@ defmodule Oskol.Gleam.Caps.Practice do
   defp graded({:error, :out_of_order}), do: {:error, :out_of_order}
   defp graded({:error, :not_amendable}), do: {:error, :not_amendable}
 
+  @doc """
+  Every learner's card on these puzzles, gone with its reviews: for a
+  puzzle that is itself being deleted (`Oskol.Puzzles.PostTakeRepair`),
+  whose card would otherwise point at nothing. Retain keeps a card by the
+  puzzle's id and has no call for this, so it is done here, in the one
+  module that reaches past `Retain.*` to its rows. Answers how many cards.
+  """
+  def forget([]), do: 0
+
+  def forget(keys) when is_list(keys) do
+    items = from(i in Retain.Item, where: i.key in ^keys, select: i.id)
+    from(r in Retain.Review, where: r.item_id in subquery(items)) |> Oskol.Repo.delete_all()
+    {cards, _} = from(i in Retain.Item, where: i.key in ^keys) |> Oskol.Repo.delete_all()
+    cards
+  end
+
   # The Gleam Outcome type is closed, so this cannot be reached from a
   # handler; if it ever is, it is a bug and should read like one.
   defp outcome(outcome) when outcome in [:pass, :partial, :fail, :again, :known], do: outcome
