@@ -1415,7 +1415,7 @@ sharePosition =
                     |> run [ GotIndex (Ok allDone), GotAnalysis 1 (Ok old) ]
                     |> doorAt gradedRollStep
                     |> Expect.equal (ShareQuiet InAnalysis)
-        , test "the roll after a take points at the analysis board" <|
+        , test "the roll after a take is shareable: it is asked on the doubled cube" <|
             \_ ->
                 let
                     line =
@@ -1448,7 +1448,7 @@ sharePosition =
                 loaded (Just 1)
                     |> run [ GotIndex (Ok allDone), GotAnalysis 1 (Ok tookFirst) ]
                     |> doorAt gradedRollStep
-                    |> Expect.equal (ShareQuiet InAnalysis)
+                    |> Expect.equal ShareReady
         , test "a game whose review failed is not graded, not graded soon" <|
             \_ ->
                 let

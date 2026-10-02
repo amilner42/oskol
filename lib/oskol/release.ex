@@ -108,6 +108,26 @@ defmodule Oskol.Release do
   end
 
   @doc """
+  The repair for `bg-post-take-cube`: puzzles of a roll after a taken
+  double asked on the cube from before it, deleted with their cards, and
+  their games reopened for the sweep to extract again. Dry run unless
+  `dry_run: false`. Run only after the deploy with the fixed extractor.
+  """
+  def repair_post_take(opts \\ []) do
+    write? = Keyword.get(opts, :dry_run, true) == false
+    Application.load(@app)
+
+    {:ok, result, _} =
+      Ecto.Migrator.with_repo(Oskol.Repo, fn _repo ->
+        result = Oskol.Puzzles.PostTakeRepair.run(write?)
+        Enum.each(Oskol.Puzzles.PostTakeRepair.describe(result, write?), &IO.puts/1)
+        result
+      end)
+
+    result
+  end
+
+  @doc """
   Give every mistake the owner its seat has, and fill the decks that were
   missing them, from a release (`puzzles-stale-owner`):
 

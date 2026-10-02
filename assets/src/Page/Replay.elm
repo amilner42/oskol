@@ -833,9 +833,9 @@ Otherwise it is quiet, with a word beside it and a sentence when pressed:
     anything.
   - `NotGraded`: the review failed and will not be tried again on its own.
   - `InAnalysis`: the answer cannot make a puzzle the server would keep --
-    one from before the engine sent every legal play (`everyPlay`), or a
-    roll played after a taken double (whose stored question has the cube as
-    it was before the double) -- so the door is OPEN IN ANALYSIS beside it.
+    one from before the engine sent every legal play (`everyPlay`) -- so the
+    door is OPEN IN ANALYSIS beside it. A roll after a taken double is
+    shared like any other, asked on the doubled cube it was played on.
 
 -}
 type ShareDoor
@@ -882,12 +882,12 @@ shareDoor model game =
             case Replay.entryAt game model.step of
                 Just (TurnEntry _) ->
                     case Replay.moveAt r line of
-                        Just ( t, Moved m ) ->
+                        Just ( _, Moved m ) ->
                             if m.forced then
                                 ShareOff
 
-                            else if not r.everyPlay || t.answerEntry /= Nothing then
-                                -- An old answer, or the roll after a take.
+                            else if not r.everyPlay then
+                                -- An answer from before every play was sent.
                                 ShareQuiet InAnalysis
 
                             else

@@ -167,10 +167,12 @@ fn move_puzzle(
             // the backfill asks the fixed engine.
             True -> [#(None, source(None))]
             False -> {
+              // The cube the roll was played on: doubled and the
+              // opponent's after a take, as the engine graded it.
               let question =
                 puzzle.question_of(
                   puzzle.Move,
-                  turn.position,
+                  analysis.played_on(turn),
                   Some(dice),
                   g.jacoby,
                 )
