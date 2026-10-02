@@ -104,14 +104,16 @@ type Showing
     | Before -- the roll on the position it was thrown into, the move not yet made
 
 
-{-| The panel's three tabs: the game's overview (each player's PR, the
-mistakes, PRACTICE), and the two sides of a roll's verdict, the move
-played and the cube that could have been turned before it. The overview is
-always there, so a reader can look at it mid-game and press MOVE to come
-back to the same line.
+{-| The panel's four tabs: the game's overview (each player's PR, the
+mistakes, PRACTICE), the game's moves as a list in notation with the
+annotators' marks, and the two sides of a roll's verdict, the checker play
+(CHECKER) and the cube that could have been turned before it. The overview
+and the list are always there, so a reader can look at either mid-game and
+press CHECKER to come back to the same line.
 -}
 type Tab
     = OverviewTab
+    | MovesTab
     | MoveTab
     | CubeTab
 
@@ -397,6 +399,7 @@ type Msg
     | GotPosition Int Int (Result Api.Error String) -- the puzzle's path, for that game and step
     | ShareReported String -- what the share sheet (or the clipboard) did
     | ShareFaded Int
+    | Follow Int -- keep the move list's current line in view
     | NoOp
 
 
@@ -693,7 +696,11 @@ advance msg model =
                         _ ->
                             Played
               }
-            , Cmd.none
+            , if tab == MovesTab then
+                follow model.step
+
+              else
+                Cmd.none
             )
 
         First ->
@@ -759,6 +766,13 @@ advance msg model =
                 Replay.indexDecoder
                 GotIndex
             )
+
+        Follow step ->
+            if step == model.step && model.tab == MovesTab then
+                ( model, followNow step )
+
+            else
+                ( model, Cmd.none )
 
         NoOp ->
             ( model, Cmd.none )
@@ -947,13 +961,20 @@ goTo step model =
         ( model, Cmd.none )
 
     else
-        ( arrive clamped model, Cmd.none )
+        ( arrive clamped model
+        , if model.tab == MovesTab then
+            follow clamped
+
+          else
+            Cmd.none
+        )
 
 
 {-| Land on a step: the move on the board, and the panel open on the move,
 unless the cube was this turn's mistake, in which case it opens on the
 cube and the board shows the position it was about. The start is the
-overview.
+overview. A reader on the move list stays on it: the list is how they
+are moving.
 -}
 arrive : Int -> Model -> Model
 arrive step model =
@@ -962,7 +983,11 @@ arrive step model =
             { model | step = step, showing = Played }
 
         tab =
-            defaultTab placed
+            if model.tab == MovesTab then
+                MovesTab
+
+            else
+                defaultTab placed
     in
     case tab of
         CubeTab ->
@@ -1448,12 +1473,16 @@ viewSide model record game =
             [ viewPanelHead model record game
             , div [ class "rp-tabs", id "rp-tabs" ]
                 [ tab (model.tab == OverviewTab) True "rp-tab-overview" "OVERVIEW" (PickTab OverviewTab)
-                , tab (model.tab == MoveTab) (model.step > 0) "rp-note-move" "MOVE" (PickTab MoveTab)
+                , tab (model.tab == MovesTab) True "rp-tab-moves" "MOVES" (PickTab MovesTab)
+                , tab (model.tab == MoveTab) (model.step > 0) "rp-note-move" "CHECKER" (PickTab MoveTab)
                 , tab (model.tab == CubeTab) cubeOffered "rp-note-cube" "CUBE" (PickTab CubeTab)
                 ]
             , case model.tab of
                 OverviewTab ->
                     viewOverview model record game
+
+                MovesTab ->
+                    viewMoves model record game
 
                 _ ->
                     viewNote model record game
@@ -1573,6 +1602,186 @@ viewOverview model record game =
         [ viewAnalysisState model game (currentReview model)
         , viewSummary model record game
         ]
+
+
+
+-- THE MOVE LIST
+
+
+{-| The game a line at a time, in notation, each line a door to its step:
+the roll and the play, the cube's lines in words, and the annotators' mark
+on whatever the engine called a mistake.
+-}
+viewMoves : Model -> Record -> Game -> Html Msg
+viewMoves model record game =
+    let
+        review =
+            currentReview model |> Maybe.andThen .review
+
+        line step content =
+            div
+                [ classList [ ( "rp-line", True ), ( "is-on", step == model.step ) ]
+                , id (lineId step)
+                , onClick (GoTo step)
+                ]
+                content
+
+        swatch player =
+            div [ class ("swatch " ++ colorOf record player) ] []
+
+        entryLine index entry =
+            let
+                step =
+                    index + 1
+
+                tag =
+                    review
+                        |> Maybe.andThen (\r -> Replay.moveAt r index)
+                        |> Maybe.andThen
+                            (\( _, move ) ->
+                                case move of
+                                    Moved m ->
+                                        if m.forced then
+                                            Nothing
+
+                                        else
+                                            Just (listTag m.grade)
+
+                                    Danced ->
+                                        Nothing
+                            )
+                        |> Maybe.withDefault (text "")
+
+                cubeTag =
+                    notesAt model index
+                        |> List.filterMap
+                            (\a ->
+                                case a of
+                                    DoubleNote _ c ->
+                                        c.doubler.mistake |> Maybe.map (\_ -> listTag c.doubler.grade)
+
+                                    AnswerNote _ _ v ->
+                                        v.mistake |> Maybe.map (\_ -> listTag v.grade)
+
+                                    NoDoubleNote _ c ->
+                                        c.doubler.mistake |> Maybe.map (\_ -> listTag c.doubler.grade)
+
+                                    MoveNote _ _ ->
+                                        Nothing
+                            )
+
+                said player words =
+                    line step ([ swatch player, span [ class "rp-moves italic" ] [ text words ] ] ++ cubeTag)
+            in
+            case entry of
+                TurnEntry t ->
+                    line step
+                        ([ swatch t.player
+                         , span [ class "rp-dice" ] [ text (t.dice |> List.map String.fromInt |> String.join "") ]
+                         , span [ class "rp-moves" ]
+                            [ text
+                                (if t.moves == [] then
+                                    "(no play)"
+
+                                 else
+                                    String.join " " t.moves
+                                )
+                            ]
+                         , tag
+                         ]
+                            ++ cubeTag
+                        )
+
+                DoubleEntry d ->
+                    said d.player ("Doubles to " ++ String.fromInt d.value)
+
+                TakeEntry p ->
+                    said p "Takes"
+
+                DropEntry p ->
+                    said p "Passes"
+
+                ResignEntry p ->
+                    line step [ swatch p, span [ class "rp-moves italic" ] [ text "Resigns" ] ]
+
+                ResultEntry r ->
+                    line step
+                        [ span [ class "rp-moves font-bold" ] [ text (Replay.playerNamed record r.winner ++ resultWords r.result ++ " · " ++ pointsText r.points) ]
+                        , span [ class "tabular-nums font-bold" ] [ text (scoreText record r.scores) ]
+                        ]
+    in
+    div [ class "rp-list", id "rp-list" ]
+        (line 0 [ span [ class "rp-moves", style "color" "var(--pencil)" ] [ text "Start" ] ]
+            :: List.indexedMap entryLine game.entries
+        )
+
+
+{-| Keep the move list's current line in view, once the steps have
+stopped for a moment: measuring takes a few frames, and two measurements
+under way at once would read each other's scrolling.
+-}
+follow : Int -> Cmd Msg
+follow step =
+    Process.sleep 120 |> Task.perform (\_ -> Follow step)
+
+
+followNow : Int -> Cmd Msg
+followNow step =
+    Browser.Dom.getElement (lineId step)
+        |> Task.andThen
+            (\line ->
+                Browser.Dom.getElement "rp-list"
+                    |> Task.andThen
+                        (\list ->
+                            Browser.Dom.getViewportOf "rp-list"
+                                |> Task.andThen
+                                    (\vp ->
+                                        let
+                                            top =
+                                                vp.viewport.y + line.element.y - list.element.y
+
+                                            bottom =
+                                                top + line.element.height
+
+                                            visible =
+                                                top >= vp.viewport.y && bottom <= vp.viewport.y + vp.viewport.height
+                                        in
+                                        if visible then
+                                            Task.succeed ()
+
+                                        else
+                                            Browser.Dom.setViewportOf "rp-list" 0 (top - vp.viewport.height / 3)
+                                    )
+                        )
+            )
+        |> Task.attempt (\_ -> NoOp)
+
+
+lineId : Int -> String
+lineId step =
+    "rp-line-" ++ String.fromInt step
+
+
+resultWords : String -> String
+resultWords result =
+    case result of
+        "gammon" ->
+            " wins a gammon"
+
+        "backgammon" ->
+            " wins a backgammon"
+
+        _ ->
+            " wins"
+
+
+pointsText : Int -> String
+pointsText points =
+    if points == 1 then
+        "1 pt"
+
+    else
+        String.fromInt points ++ " pts"
 
 
 {-| In the band, on the half opposite the dice: the door to the engine's

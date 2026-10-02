@@ -120,15 +120,15 @@ async function count(page, expected) {
   return page.evaluate(read);
 }
 
-/** The side is one panel under one bar of three tabs, OVERVIEW, MOVE and
- * CUBE, each showing its content alone; MOVE and CUBE are offered only
+/** The side is one panel under one bar of four tabs, OVERVIEW, MOVES,
+ * CHECKER (#rp-note-move) and CUBE, each showing its content alone; MOVE and CUBE are offered only
  * where they have something to say; OVERVIEW keeps the step. On a phone
  * the page scrolls, never a panel. Leaves the page where it found it. */
 async function onePanel(page, what, { phone }) {
-  const tabs = ['#rp-tab-overview', '#rp-note-move', '#rp-note-cube'];
+  const tabs = ['#rp-tab-overview', '#rp-tab-moves', '#rp-note-move', '#rp-note-cube'];
   for (const tab of tabs) must(await page.locator(`#rp-panel .rp-tabs ${tab}`).count() === 1, `${what}: the one panel has the tab ${tab}`);
   must(await page.locator('.rp-panel').count() === 1 && await page.locator('.rp-tabs').count() === 1 && await page.locator('.rp-note-tabs').count() === 0, `${what}: one panel, one bar`);
-  must(await page.locator('#rp-list, .rp-line').count() === 0, `${what}: no move list`);
+  must(await page.locator('#rp-list, .rp-line').count() === 0, `${what}: no move list until MOVES is picked`);
   // The start: OVERVIEW, and neither MOVE nor CUBE is a door.
   const step = Number(await page.getAttribute('.rp-controls-wrap', 'data-step'));
   await page.click('#rp-first');
@@ -158,6 +158,18 @@ async function onePanel(page, what, { phone }) {
   await page.waitForSelector('#rp-overview', { timeout: 2000 });
   must(Number(await page.getAttribute('.rp-controls-wrap', 'data-step')) === roll && await page.locator('#rp-note').count() === 0, `${what}: OVERVIEW mid-game keeps step ${roll} and shows the overview alone`);
   must(await page.locator('.rp-tab.is-on').count() === 1, `${what}: one tab is on`);
+  // MOVES: the game a line at a time; a line is a door to its step, and
+  // the list stays up while the reader moves through it.
+  await page.click('#rp-tab-moves');
+  await page.waitForSelector('#rp-list .rp-line', { timeout: 2000 });
+  must(await page.locator('#rp-list .rp-line.is-on').count() === 1, `${what}: MOVES marks the current line`);
+  await page.click('#rp-line-1');
+  await page.waitForFunction(() => document.querySelector('.rp-controls-wrap').dataset.step === '1', null, { timeout: 2000 });
+  must(await page.locator('#rp-tab-moves.is-on').count() === 1 && await page.locator('#rp-line-1.is-on').count() === 1, `${what}: a line opens its step and MOVES stays up`);
+  await page.click(`#rp-line-${roll}`);
+  await page.waitForFunction((want) => document.querySelector('.rp-controls-wrap').dataset.step === String(want), roll, { timeout: 2000 });
+  await page.click('#rp-tab-overview');
+  await page.waitForSelector('#rp-overview', { timeout: 2000 });
   if (phone) {
     // The overview is the tallest: the page, not the panel, is what scrolls.
     const scroll = await page.evaluate(() => ({

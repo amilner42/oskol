@@ -968,11 +968,11 @@ phone =
                     [ Query.findAll [ Selector.class "rp-panel" ] >> Query.count (Expect.equal 1)
                     , Query.findAll [ Selector.class "rp-note-tabs" ] >> Query.count (Expect.equal 0)
                     , Query.findAll [ Selector.class "rp-tabs" ] >> Query.count (Expect.equal 1)
-                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.count (Expect.equal 3)
+                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.count (Expect.equal 4)
                     , Query.findAll [ Selector.class "rp-tab" ] >> Query.index 0 >> Query.has [ Selector.id "rp-tab-overview", Selector.text "OVERVIEW" ]
-                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.index 1 >> Query.has [ Selector.id "rp-note-move", Selector.text "MOVE" ]
-                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.index 2 >> Query.has [ Selector.id "rp-note-cube", Selector.text "CUBE" ]
-                    , Query.hasNot [ Selector.text "MOVES" ]
+                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.index 1 >> Query.has [ Selector.id "rp-tab-moves", Selector.text "MOVES" ]
+                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.index 2 >> Query.has [ Selector.id "rp-note-move", Selector.text "CHECKER" ]
+                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.index 3 >> Query.has [ Selector.id "rp-note-cube", Selector.text "CUBE" ]
                     , Query.findAll [ Selector.class "rp-line" ] >> Query.count (Expect.equal 0)
                     ]
         , onEveryScreen "the start opens on OVERVIEW: the summary, no note, no game name; MOVE and CUBE are not offered" <|
@@ -995,6 +995,23 @@ phone =
                     |> Query.fromHtml
                     |> Query.find [ Selector.id "rp-overview" ]
                     |> Query.has [ Selector.id "rp-analysis-state", Selector.text "Analyzing game 3 at 4-ply… this can take a few minutes" ]
+        , onEveryScreen "MOVES is the game a line at a time, always offered, and the reader stays on it while stepping" <|
+            Expect.all
+                [ offered "rp-tab-moves" True
+                , run [ PickTab Page.MovesTab ] >> Expect.all [ tabOn "rp-tab-moves", shows "rp-list" True, shows "rp-overview" False, shows "rp-note" False ]
+                , run [ PickTab Page.MovesTab ]
+                    >> Page.view
+                    >> Query.fromHtml
+                    >> Query.find [ Selector.id "rp-list" ]
+                    >> Expect.all
+                        [ Query.has [ Selector.text "Start" ]
+                        , Query.find [ Selector.id "rp-line-0" ] >> Query.has [ Selector.class "is-on" ]
+                        ]
+                , run [ PickTab Page.MovesTab, GoTo 3 ] >> Expect.all [ tabOn "rp-tab-moves", .step >> Expect.equal 3, shows "rp-list" True ]
+                , run [ PickTab Page.MovesTab, GoTo 3 ] >> Page.view >> Query.fromHtml >> Query.find [ Selector.id "rp-line-3" ] >> Query.has [ Selector.class "is-on" ]
+                , run [ PickTab Page.MovesTab, Next, Next ] >> Expect.all [ tabOn "rp-tab-moves", .step >> Expect.equal 2 ]
+                , run [ PickTab Page.MovesTab, GoTo 3, PickTab Page.MoveTab ] >> Expect.all [ tabOn "rp-note-move", .step >> Expect.equal 3 ]
+                ]
         , onEveryScreen "a step opens MOVE, that move's verdict; CUBE is its other side; each alone" <|
             run [ Next ]
                 >> Expect.all
