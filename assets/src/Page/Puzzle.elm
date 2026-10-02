@@ -2484,6 +2484,7 @@ viewReveal model puzzle reveal =
                )
             ++ viewSchedule model reveal
             ++ viewMemory model
+            ++ viewFromReplay model puzzle
             ++ viewStory reveal
         )
 
@@ -3465,6 +3466,26 @@ viewMemory model =
                 , a [ href memory.replay, class "pz-memory-link", id "pz-memory-link" ] [ text "See it in the replay →" ]
                 ]
             ]
+
+
+{-| A position somebody shared out of a replay leads back into it, onto
+the very step, once the reader has tried it: the page itself names nobody,
+and the way back is the room the sharer was watching. A reader who played
+in the game the puzzle came from has the memory line instead, which links
+to the replay already.
+-}
+viewFromReplay : Model -> Puzzle -> List (Html Msg)
+viewFromReplay model puzzle =
+    case ( puzzle.replay, model.memory ) of
+        ( Just path, Nothing ) ->
+            [ div [ class "pz-memory pz-from-replay", id "pz-from-replay" ]
+                [ span [] [ text "From a game on Oskol · " ]
+                , a [ href path, class "pz-memory-link", id "pz-replay" ] [ text "WATCH THE REPLAY →" ]
+                ]
+            ]
+
+        _ ->
+            []
 
 
 {-| The story a share-with-my-story link told, in the server's own words:

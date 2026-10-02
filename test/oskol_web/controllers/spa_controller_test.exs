@@ -342,6 +342,36 @@ defmodule OskolWeb.SpaControllerTest do
       refute html =~ "got this wrong"
     end
 
+    test "a position shared out of a replay unfurls as the same invite, naming nobody",
+         %{conn: conn} do
+      id = a_puzzle("move")
+
+      Oskol.Repo.update_all(
+        Ecto.Query.from(p in Oskol.Puzzles.Puzzle, where: p.id == ^id),
+        set: [
+          origin: "replay",
+          replay: %{"slug" => "backgammon", "id" => "ROOM01", "game" => 2, "step" => 14}
+        ]
+      )
+
+      # The clean link, and one with a token nobody minted: neither tells a
+      # story, because a share from a replay has none to tell.
+      for path <- ["/puzzles/#{id}", "/puzzles/#{id}?s=notatoken000"] do
+        html = conn |> get(path) |> html_response(200)
+        prompt = esc("White to play 6-4. What's your play?")
+        assert html =~ ~s(<meta property="og:title" content="#{prompt}"), path
+        assert html =~ ~s(<meta name="description" content="Match play, 3 away against 5.), path
+
+        assert html =~
+                 ~s(<meta property="og:image" content="http://localhost:4002/puzzles/#{id}.png"),
+               path
+
+        refute html =~ "got this wrong", path
+        # The room is the page's to offer after the reveal, not the head's.
+        refute html =~ "ROOM01", path
+      end
+    end
+
     test "a puzzle nobody stored is a 404", %{conn: conn} do
       assert_error_sent 404, fn -> get(conn, ~p"/puzzles/nope0000") end
     end

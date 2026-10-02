@@ -74,6 +74,7 @@ type alias Puzzle =
     , question : Question
     , tree : Maybe Tree -- "move" only
     , prompt : String
+    , replay : Maybe String -- the replay step it was shared from, for WATCH THE REPLAY
     }
 
 
@@ -151,12 +152,15 @@ type alias Child =
 
 decoder : D.Decoder Puzzle
 decoder =
-    D.map5 Puzzle
+    D.map6 Puzzle
         (D.field "id" D.string)
         (D.field "kind" D.string)
         (D.field "question" questionDecoder)
         (optional "tree" treeDecoder)
         (D.field "prompt" D.string)
+        -- Only `GET /papi/puzzles/:id` says; a puzzle inside another
+        -- answer (the analysis board's) has no way back to a replay.
+        (optional "replay" (D.field "path" D.string))
 
 
 questionDecoder : D.Decoder Question

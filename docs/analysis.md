@@ -201,7 +201,8 @@ Puzzles (`nav-analysis`).
 - **`puzzles.origin`** (`game` | `set` | `analysis` | `replay`), set once by
   whichever write got the key first. TRY ONE and the status page sample
   `game` and `set` only (`Oskol.Puzzles.sample/1`, `sample_move/0`), so a
-  board nobody meant for a stranger is never handed to one.
+  board nobody meant for a stranger is never handed to one; TRY ONE also
+  skips any row with a replay link (`puzzles.replay`, below).
 - **`prepare`** decides, in order: the setup decodes and passes `check`
   (else 422 with its sentence; a roll that plays nothing is 409 `dances`,
   "6-4 cannot be played from here", nothing asked); a complete row is
@@ -383,14 +384,103 @@ pastes anywhere). Neither spends engine time.
 - **The replay**: OPEN IN ANALYSIS (`#rp-analysis`) in a fixed-height row
   over the panel's tabs (`.rp-panel-head`), on every tab, to
   `Route.analysisXgid`; on a step that is no decision it keeps its place
-  unseen (`.is-off`, a span), so nothing moves as the reader steps. The
-  share-from-the-replay door belongs in the same row.
+  unseen (`.is-off`, a span), so nothing moves as the reader steps. SHARE
+  sits beside it (below).
 - **Every puzzle page**: OPEN IN ANALYSIS (`#pz-analysis`) after the
   reveal, beside SHARE, to `Route.analysisPuzzle id` (`/analysis?p=<id>`).
 - `playwright/test-backgammon-replay` opens a graded turn, a double, a
   take, a turn of the Crawford game and one after it, and checks the new
   tab's 24 points (read from the editor's targets), bars, dice, cube and
   owner, score and Crawford against the record.
+
+## Share a position from the replay (`src/oskol/handlers/positions.gleam`)
+
+SHARE (`#rp-share-position`, in `.rp-panel-head` beside OPEN IN ANALYSIS)
+makes any graded step of a replay the same link a set-up position shares:
+a puzzle page that unfurls with the board and the question, names nobody,
+and can be played on the spot. `POST /papi/games/:slug/rooms/:id/positions
+{game, step}` (wire: `docs/api.md`). Tests: `test/oskol/positions_test.gleam`
+(every decision on stubs, over the seeded match 821900's records, reviews and
+log), `test/backgammon/analysis_test.gleam` (`turns_from_record` against
+`games` over played games of every format),
+`test/oskol_web/controllers/api/positions_api_test.exs`, `ReplayTest`,
+`PuzzlePageTest`, `playwright/test-backgammon-replay` part 7.
+
+- **Never engine time.** The row is written from what the game already left
+  behind: the stored record gives the position, dice, cube and score; the
+  stored review (`analysis.stored_one`, one game's row) gives the engine's
+  answer for that turn. Nothing on this path can reach the engine or the
+  asker, and no budget is charged. A step whose game has no done review
+  (the game on the board, a review pending or failed) is 409 `not_graded`,
+  "This position will be shareable once the game is graded."; the page says
+  "Graded soon" and waits for the review (about a minute behind the last
+  move) rather than asking.
+- **No replay of the log.** `backgammon/analysis.turns_from_record` reads a
+  finished game's turns off its stored record lines, through the same
+  `settle` the log replay uses (a dead-cube double folded away the same
+  way), so each turn is exactly the one `analysis.games` lists (`log_index`
+  aside); the stored answer is zipped against them as `extract` zips it.
+  The question is `puzzles.question_of` on that turn -- a roll is the
+  checker play on the board before it, a double the doubler's call, a take
+  or a drop the answer to the double -- so **a mistake shared this way is
+  the very row `extract` wrote** (same key; it keeps its origin and
+  sources). Away scores come from the previous game's result line, Crawford
+  from `record.crawford_game`.
+- **Trust.** A checker play must carry every legal play and a board on
+  every candidate (`openings.answer`, the analysis board's and the sets'
+  rule; the reveal lists the top five, never the move that was played); a
+  cube answer its chances. Short of that is 409 `incomplete` ("This
+  position's answer is incomplete; open it in the analysis board
+  instead."), nothing written -- every answer from before `all_results`.
+  Step 0, a resignation, the result, a forced roll, a dance and a double the
+  engine does not grade are 409 `no_decision`; a room, game or step that
+  names nothing 404. A roll played after a taken double is `incomplete`
+  too: its stored question (`extract`'s, whose key a share must match) has
+  the cube from before the double while the engine graded the doubled one,
+  so it goes to the analysis board, which reads the cube off the record. A
+  record row that will not read is a 500, never a skipped game (it would
+  move every later game's number and score).
+- **A budget.** Past `allow_ask` with `positions.buckets`: 30 an hour per
+  caller (the account, else the guest id) and 1000 an hour for everybody,
+  under `analysis:` so the limiter fails closed. Charged only for a share
+  that would be written; refused, a 429 in a player's words.
+- **Written once, nobody's practice.** `puzzles.store_one(puzzle, "replay",
+  Some(ReplayLink))` writes the row with `origin = 'replay'` and
+  `puzzles.replay = {slug, id, game, step}`; a key already stored keeps its
+  row and its origin and gets the link only if it has none. A position a
+  universal set holds (`origin = 'set'`, or any `deck_puzzles` row under a
+  deck that is not somebody's own -- origin is only whoever wrote the key
+  first) is never linked, and `replay_of` answers nothing for one linked
+  before the set took it in: a set's learners did not come from that room.
+  An own set is its owner's alone, so its positions may keep a link. Then
+  `pictures_one` draws the unfurl picture.
+  **No `puzzle_sources` row**, so it enters no deck and no story can be
+  minted on it (`handlers/shares` mints only on the caller's own source:
+  403). Idempotent: the same step is the same key is the same id.
+- **Who may share**: anyone who can read the replay, which is anyone with
+  the room's link (`handlers/record` asks no seat). The shared page names
+  nobody; its way back (below) opens a replay the sharer could have sent
+  anyway. TRY ONE never draws a `replay` row **nor any row with a replay
+  link** (`Oskol.Puzzles.sample/1`), so a stranger handed a puzzle at random
+  is never handed a door into somebody's room.
+- **The way back.** `GET /papi/puzzles/:id` carries `replay: {path}` from
+  the column (`puzzles.replay_of`); after the reveal the page says "From a
+  game on Oskol · WATCH THE REPLAY →" (`#pz-replay`) onto
+  `/<slug>/<id>/replay?game=n&step=s` -- unless the reader has the memory
+  line (they played in it), which links to the replay already. The head,
+  the picture and the canonical are the ordinary puzzle's.
+- **The button.** One word, SHARE, because the head row is about 280 px on
+  a 320 phone and both doors must fit: ready on a graded decision (posts,
+  then `shareInvite` with `origin ++ url`: the share sheet on a phone, the
+  clipboard elsewhere, "Link copied"); `is-soon` and quiet on a decision not
+  graded yet, with "Graded soon" to its left where the row has room (a
+  container query) and, pressed, the sentence; "Not graded" on a game whose
+  review failed; "Analysis only" on a roll whose answer predates every play
+  being sent (the review's `every_play`, a generated column on
+  `game_reviews` served beside the rendered report) or a roll after a take,
+  pointing at OPEN IN ANALYSIS beside it; unseen on a step that is no
+  decision. What a share did floats under the head over the tabs
+  (`#rp-share-note`), on that step only, and moves nothing.
 
 ## The answer (`Page.Analysis`, `Api.Analysis`, `Ui.Candidates`)
 

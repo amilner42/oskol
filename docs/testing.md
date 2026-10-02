@@ -235,6 +235,10 @@ node playwright/test-backgammon-replay/test.js  # the replay of a finished match
                                                # the room): steps, keys, swipes, analysis
                                                # pending -> done, retry, phones, OPEN IN
                                                # ANALYSIS at a graded turn, a double, a take,
+                                               # SHARE on the seeded match 821900
+                                               # (share_setup.exs): the link copied, the
+                                               # doors holding their boxes, the stranger's
+                                               # reveal and WATCH THE REPLAY back to the step,
                                                # the Crawford game and after it (the board,
                                                # dice, cube, score in the new tab); the match
                                                # is searched for one with all of those; the

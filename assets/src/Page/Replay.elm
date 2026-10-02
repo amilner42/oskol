@@ -3,6 +3,8 @@ module Page.Replay exposing
     , Model
     , Msg(..)
     , Out(..)
+    , Quiet(..)
+    , ShareDoor(..)
     , Showing(..)
     , Tab(..)
     , init
@@ -17,6 +19,7 @@ module Page.Replay exposing
     , view
     , locate
     , settled
+    , shareDoor
     , url
     , withSession
     )
@@ -63,7 +66,7 @@ import Games.Backgammon.Setup as Setup
 import Games.Backgammon.View as Board
 import Games.Backgammon.Words exposing (answerInWords, candidateInWords, cubeChances, cubeLine, doubleInWords, gradeMark, gradeOf, gradeTag, inWords, lost, moveInWords, noDoubleInWords, signed, verdictTag)
 import Api.Catalog as Catalog
-import Page.Play exposing (storePref)
+import Page.Play exposing (shareInvite, shareResult, storePref)
 import Html exposing (Html, a, button, div, p, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, href, id, rel, style, target)
 import Html.Events exposing (on, onClick)
@@ -143,7 +146,19 @@ type alias Model =
     , mistakes : Dict.Dict Int (List String) -- each graded game's mistakes for the reader's seat, by number: what the deck holds
     , signIn : Maybe SignIn.Model -- the overview's sign-in, once opened
     , mistakeAsks : Dict.Dict Int Int -- asks made for a game's mistakes still unanswered (they land a moment after the grade)
+    , origin : String -- scheme, host and port, for the link SHARE POSITION hands over
+    , sharing : Bool -- a SHARE POSITION is on its way
+    , shareNote : Maybe ShareNote -- what the last one did, for a moment, on the step it was pressed at
+    , shares : Int -- notes so far, so only the newest fades itself
     }
+
+
+{-| A line over the panel after SHARE POSITION: "Link copied", or why the
+step could not be shared. It belongs to the step it was pressed at, and is
+not shown on any other.
+-}
+type alias ShareNote =
+    { game : Int, step : Int, text : String }
 
 
 {-| How often a page with pending analysis asks again. What it asks for is
@@ -177,7 +192,7 @@ maxFailures =
 
 init :
     Session
-    -> { slug : String, gameId : String, game : Maybe Int, step : Maybe Int }
+    -> { slug : String, gameId : String, origin : String, game : Maybe Int, step : Maybe Int }
     -> ( Model, Cmd Msg )
 init session config =
     let
@@ -211,6 +226,10 @@ init session config =
             , mistakes = Dict.empty
             , mistakeAsks = Dict.empty
             , signIn = Nothing
+            , origin = config.origin
+            , sharing = False
+            , shareNote = Nothing
+            , shares = 0
             }
     in
     ( model
@@ -374,6 +393,10 @@ type Msg
     | GotMistakes Int (Result Api.Error Practice.Practice)
     | OpenedSignIn -- the overview's "Sign in", for a guest with mistakes to keep
     | SignInMsg SignIn.Msg
+    | PressedSharePosition -- SHARE POSITION, on a graded step
+    | GotPosition Int Int (Result Api.Error String) -- the puzzle's path, for that game and step
+    | ShareReported String -- what the share sheet (or the clipboard) did
+    | ShareFaded Int
     | NoOp
 
 
@@ -442,6 +465,60 @@ advance msg model =
 
                 Just _ ->
                     ( model, Cmd.none )
+
+        PressedSharePosition ->
+            if model.sharing || currentShareDoor model == ShareOff then
+                ( model, Cmd.none )
+
+            else if currentShareDoor model /= ShareReady then
+                case currentShareDoor model of
+                    ShareQuiet quiet ->
+                        noteShare { game = model.game, step = model.step, text = quietWhy quiet } 3000 model
+
+                    _ ->
+                        ( model, Cmd.none )
+
+            else
+                ( { model | sharing = True, shareNote = Nothing }
+                , Api.post model.session
+                    (base model ++ "/positions")
+                    (E.object [ ( "game", E.int model.game ), ( "step", E.int model.step ) ])
+                    (D.field "url" D.string)
+                    (GotPosition model.game model.step)
+                )
+
+        GotPosition _ _ (Ok path) ->
+            ( { model | sharing = False }, shareInvite (model.origin ++ path) )
+
+        -- The server's own sentence ("This position will be shareable once
+        -- the game is graded."), on the step it was pressed at.
+        GotPosition game step (Err err) ->
+            noteShare { game = game, step = step, text = Api.errorMessage err } 4000 { model | sharing = False }
+
+        ShareReported result ->
+            noteShare
+                { game = model.game
+                , step = model.step
+                , text =
+                    case result of
+                        "copied" ->
+                            "Link copied"
+
+                        "shared" ->
+                            "Shared"
+
+                        _ ->
+                            "Copy failed"
+                }
+                2000
+                model
+
+        ShareFaded n ->
+            if n == model.shares then
+                ( { model | shareNote = Nothing }, Cmd.none )
+
+            else
+                ( model, Cmd.none )
 
         AskMistakes number ->
             case Dict.get number model.mistakeAsks of
@@ -685,6 +762,163 @@ advance msg model =
 
         NoOp ->
             ( model, Cmd.none )
+
+
+{-| Why SHARE is quiet at a decision, in the word beside it and the
+sentence a press of it says (the server's own, `handlers/positions`,
+where it has one).
+-}
+quietWord : Quiet -> String
+quietWord quiet =
+    case quiet of
+        GradedSoon ->
+            "Graded soon"
+
+        NotGraded ->
+            "Not graded"
+
+        InAnalysis ->
+            "Analysis only"
+
+
+quietWhy : Quiet -> String
+quietWhy quiet =
+    case quiet of
+        GradedSoon ->
+            "This position will be shareable once the game is graded."
+
+        NotGraded ->
+            "This game could not be graded, so its positions cannot be shared."
+
+        InAnalysis ->
+            "This position's answer is incomplete; open it in the analysis board instead."
+
+
+{-| Put a line over the panel for `ms`, then let it go.
+-}
+noteShare : ShareNote -> Float -> Model -> ( Model, Cmd Msg )
+noteShare shareNote ms model =
+    let
+        n =
+            model.shares + 1
+    in
+    ( { model | shares = n, shareNote = Just shareNote }
+    , Process.sleep ms |> Task.perform (\_ -> ShareFaded n)
+    )
+
+
+{-| What SHARE is at a step. A step that is no decision anyone could be
+asked about (the start, a resignation, the result, a roll with one way to
+play it or none, a double the engine does not grade) keeps the button's
+place, unseen, as OPEN IN ANALYSIS does. A graded decision is ready.
+Otherwise it is quiet, with a word beside it and a sentence when pressed:
+
+  - `GradedSoon`: the game has no answer yet (on the board, a review still
+    running). The share is written from the game's stored answer and never
+    asks the engine, so it waits for the review rather than spending
+    anything.
+  - `NotGraded`: the review failed and will not be tried again on its own.
+  - `InAnalysis`: the answer cannot make a puzzle the server would keep --
+    one from before the engine sent every legal play (`everyPlay`), or a
+    roll played after a taken double (whose stored question has the cube as
+    it was before the double) -- so the door is OPEN IN ANALYSIS beside it.
+
+-}
+type ShareDoor
+    = ShareOff
+    | ShareQuiet Quiet
+    | ShareReady
+
+
+type Quiet
+    = GradedSoon
+    | NotGraded
+    | InAnalysis
+
+
+shareDoor : Model -> Game -> ShareDoor
+shareDoor model game =
+    let
+        line =
+            model.step - 1
+
+        graded =
+            currentReview model
+                |> Maybe.andThen
+                    (\r ->
+                        case ( r.status, r.review ) of
+                            ( Done, Just review ) ->
+                                Just (Ok review)
+
+                            ( Failed, _ ) ->
+                                Just (Err NotGraded)
+
+                            _ ->
+                                Nothing
+                    )
+
+        cubeOn pick r =
+            if List.any (\t -> pick t == Just line && t.cube /= Nothing) r.turns then
+                ShareReady
+
+            else
+                ShareOff
+
+        ready r =
+            case Replay.entryAt game model.step of
+                Just (TurnEntry _) ->
+                    case Replay.moveAt r line of
+                        Just ( t, Moved m ) ->
+                            if m.forced then
+                                ShareOff
+
+                            else if not r.everyPlay || t.answerEntry /= Nothing then
+                                -- An old answer, or the roll after a take.
+                                ShareQuiet InAnalysis
+
+                            else
+                                ShareReady
+
+                        _ ->
+                            ShareOff
+
+                Just (DoubleEntry _) ->
+                    cubeOn .doubleEntry r
+
+                Just (TakeEntry _) ->
+                    cubeOn .answerEntry r
+
+                Just (DropEntry _) ->
+                    cubeOn .answerEntry r
+
+                _ ->
+                    ShareOff
+    in
+    case Replay.entryAt game model.step of
+        Just (ResignEntry _) ->
+            ShareOff
+
+        Just (ResultEntry _) ->
+            ShareOff
+
+        Nothing ->
+            ShareOff
+
+        Just _ ->
+            case graded of
+                Just (Ok r) ->
+                    ready r
+
+                Just (Err quiet) ->
+                    ShareQuiet quiet
+
+                Nothing ->
+                    ShareQuiet GradedSoon
+
+
+currentShareDoor : Model -> ShareDoor
+currentShareDoor model =
+    currentGame model |> Maybe.map (shareDoor model) |> Maybe.withDefault ShareOff
 
 
 endsInResult : Game -> Bool
@@ -933,6 +1167,7 @@ subscriptions model =
     Sub.batch
         [ Browser.Events.onKeyDown keyDecoder
         , Browser.Events.onResize Resized
+        , shareResult ShareReported
         , if polling model then
             Time.every pollEveryMs (\_ -> Poll)
 
@@ -1210,7 +1445,7 @@ viewSide model record game =
     in
     div [ class "rp-side" ]
         [ div [ class "rp-panel", id "rp-panel" ]
-            [ viewPanelHead record game model.step
+            [ viewPanelHead model record game
             , div [ class "rp-tabs", id "rp-tabs" ]
                 [ tab (model.tab == OverviewTab) True "rp-tab-overview" "OVERVIEW" (PickTab OverviewTab)
                 , tab (model.tab == MoveTab) (model.step > 0) "rp-note-move" "MOVE" (PickTab MoveTab)
@@ -1227,20 +1462,86 @@ viewSide model record game =
 
 
 {-| Over the tabs, on every one: the doors out of the replay at this step.
-OPEN IN ANALYSIS is a link (a new tab, so the replay stays where it was)
-to the analysis board on the step's decision, with its dice, cube, score
-and Crawford (`Setup.fromReplay`, carried as an XGID). A step that is no
-decision (a resignation, the result) keeps the link's place, unseen, so
-nothing moves as the reader steps through.
+SHARE (SHARE POSITION in one word: the row is about 280 pixels on the
+smallest phone, and both doors must fit it) makes the step a puzzle page that unfurls with the board
+and the question and names nobody, and hands its link to the share sheet
+(the clipboard on a desktop); see `shareDoor` for when it can. OPEN IN
+ANALYSIS is a link (a new tab, so the replay stays where it was) to the
+analysis board on the step's decision, with its dice, cube, score and
+Crawford (`Setup.fromReplay`, carried as an XGID). A step that is no
+decision (a resignation, the result) keeps both places, unseen, so
+nothing moves as the reader steps through. What a share did is a line floating under the head, over
+the tabs, for a moment.
 -}
-viewPanelHead : Record -> Game -> Int -> Html Msg
-viewPanelHead record game step =
+viewPanelHead : Model -> Record -> Game -> Html Msg
+viewPanelHead model record game =
     let
+        step =
+            model.step
+
         icon =
             span [ class "hero-arrow-top-right-on-square w-3.5 h-3.5", attribute "aria-hidden" "true" ] []
+
+        linkIcon =
+            span [ class "hero-link w-3.5 h-3.5", attribute "aria-hidden" "true" ] []
+
+        door =
+            shareDoor model game
+
+        shareNote =
+            case model.shareNote of
+                Just n ->
+                    if n.game == model.game && n.step == step then
+                        Just n.text
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
     in
     div [ class "rp-panel-head" ]
-        [ case Setup.fromReplay record game step of
+        [ -- The quiet word for a decision not graded yet, where the row
+          -- has room for it; always there, so the doors never move.
+          case door of
+            ShareQuiet quiet ->
+                span [ class "rp-share-soon", id "rp-share-soon" ] [ text (quietWord quiet) ]
+
+            _ ->
+                span [ class "rp-share-soon is-hidden", id "rp-share-soon" ] []
+        , case door of
+            ShareReady ->
+                button
+                    [ classList [ ( "rp-door rp-share pixel text-[8px]", True ), ( "is-busy", model.sharing ) ]
+                    , id "rp-share-position"
+                    , attribute "aria-label" "Share this position"
+                    , attribute "aria-busy"
+                        (if model.sharing then
+                            "true"
+
+                         else
+                            "false"
+                        )
+                    , onClick PressedSharePosition
+                    ]
+                    [ linkIcon, text "SHARE" ]
+
+            -- Not a door: pressed, it says why in the floating line.
+            ShareQuiet quiet ->
+                button
+                    [ class "rp-door rp-share is-soon pixel text-[8px]"
+                    , id "rp-share-position"
+                    , attribute "aria-disabled" "true"
+                    , attribute "aria-label" ("Share this position (" ++ String.toLower (quietWord quiet) ++ ")")
+                    , Html.Attributes.title (quietWord quiet)
+                    , onClick PressedSharePosition
+                    ]
+                    [ linkIcon, text "SHARE" ]
+
+            ShareOff ->
+                span [ class "rp-door rp-share is-off pixel text-[8px]", id "rp-share-position", attribute "aria-hidden" "true" ]
+                    [ linkIcon, text "SHARE" ]
+        , case Setup.fromReplay record game step of
             Just setup ->
                 a
                     [ class "rp-door pixel text-[8px]"
@@ -1254,6 +1555,12 @@ viewPanelHead record game step =
             Nothing ->
                 span [ class "rp-door pixel text-[8px] is-off", id "rp-analysis", attribute "aria-hidden" "true" ]
                     [ text "OPEN IN ANALYSIS", icon ]
+        , case shareNote of
+            Just line ->
+                div [ class "rp-share-note", id "rp-share-note", attribute "role" "status" ] [ text line ]
+
+            Nothing ->
+                text ""
         ]
 
 

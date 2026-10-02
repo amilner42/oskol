@@ -30,6 +30,14 @@
  *    Crawford are the record's, worked out here from the record's JSON.
  *    A result line keeps the link's place, unseen, and the panel does not
  *    move as the reader steps on and off it.
+ * 7. SHARE (`#rp-share-position`, beside OPEN IN ANALYSIS) on the seeded
+ *    match at 821900, really graded (`share_setup.exs`; no stub, and no
+ *    engine either -- the share is written from the stored answer): at a
+ *    graded roll it copies `/puzzles/<id>`; the doors and the panel hold
+ *    their boxes at a start, a roll, a double, a result and a game that is
+ *    not graded ("Graded soon"); a stranger opening the link plays it and
+ *    gets the reveal, under which WATCH THE REPLAY lands back on
+ *    `?game=n&step=s`. Screenshots of that page at 390x844 and desktop.
  *
  * The analysis is stubbed by default (`lib/replay-stub.js`): `/reviews`
  * (the index: a status and a turn count per game) and `/reviews/<n>` (one
@@ -47,6 +55,7 @@ const fs = require('fs');
 const { execFileSync } = require('child_process');
 const { resultLine } = require('../lib/flows');
 const { stubAnalysis } = require('../lib/replay-stub');
+const { stageATurn } = require('../lib/puzzles');
 
 const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const SHOTS = process.env.SHOTS_DIR || 'playwright/screenshots/test-backgammon-replay';
@@ -475,10 +484,112 @@ async function main() {
     must(/\/replay\?game=\d+$/.test(t.url()), 'REPLAY at game over opens this game\'s replay, with no token in the link');
     await table.close();
 
+    await sharePosition(browser, watch);
+
     must(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
     log('all replay checks passed');
   } finally {
     await browser.close();
+  }
+}
+
+// ---------- 7. SHARE POSITION ----------
+
+async function sharePosition(browser, watch) {
+  log('arranging the seeded match (mix run playwright/test-backgammon-replay/share_setup.exs)');
+  const room = JSON.parse(resultLine(execFileSync(
+    'mix',
+    ['run', '-e', 'Code.eval_file("playwright/test-backgammon-replay/share_setup.exs")'],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }
+  )));
+  const code = room.game_id;
+  const record = await (await fetch(`${BASE}/papi/games/backgammon/rooms/${code}/record`)).json();
+  const game1 = record.record.games.find((g) => g.number === 1);
+  const at = (kind) => game1.entries.findIndex((e) => e.kind === kind) + 1;
+  // Game 1's second roll: a checker play with plenty of ways to play it.
+  const rollStep = 2;
+  const replayAt = (game, step) => `${BASE}/backgammon/${code}/replay?game=${game}&step=${step}`;
+
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+  await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  // The last game is told it is still being graded, in the browser only:
+  // what a game whose review has not landed looks like.
+  await ctx.route(new RegExp(`/papi/games/backgammon/rooms/${code}/reviews$`), async (route) => {
+    const res = await route.fetch();
+    const body = await res.json();
+    const last = body.games[body.games.length - 1];
+    last.status = 'pending';
+    await route.fulfill({ response: res, json: body });
+  });
+  const page = await ctx.newPage();
+  watch(page, 'share');
+  const lastGame = record.record.games[record.record.games.length - 1].number;
+  // Where the doors and the tabs sit within the panel, and the panel's
+  // size: a page loaded on another step may put the panel elsewhere on the
+  // screen (a verdict over the board), but nothing inside it may move.
+  const boxes = async () => {
+    const [panel, ...rest] = await Promise.all(['#rp-panel', '#rp-share-position', '#rp-analysis', '#rp-tabs'].map((sel) => page.locator(sel).boundingBox()));
+    return JSON.stringify([Math.round(panel.width), ...rest.map((r) => [r.x - panel.x, r.y - panel.y, r.width, r.height].map(Math.round))]);
+  };
+  await page.goto(replayAt(1, rollStep));
+  await page.waitForSelector('button#rp-share-position:not(.is-soon)', { timeout: 20000 });
+  const on = await boxes();
+  for (const [what, game, step, state] of [
+    ['the start', 1, 0, 'off'],
+    ['the first double', 1, at('double'), 'ready'],
+    ['the result', 1, game1.entries.length, 'off'],
+    ['a roll of a game not graded yet', lastGame, 2, 'soon'],
+  ]) {
+    await page.goto(replayAt(game, step));
+    await page.waitForSelector('#rp-panel', { timeout: 20000 });
+    const sel = { off: '#rp-share-position.is-off', ready: 'button#rp-share-position:not(.is-soon)', soon: 'button#rp-share-position.is-soon' }[state];
+    await page.waitForSelector(sel, { state: 'attached', timeout: 20000 });
+    must(await boxes() === on, `${what}: SHARE is ${state}, and the doors, the tabs and the panel hold their boxes`);
+    if (state === 'soon') {
+      must(await page.isVisible('#rp-share-soon'), `${what}: "Graded soon" says so beside it`);
+      // aria-disabled, which a pointer still presses.
+      await page.click('#rp-share-position', { force: true });
+      await page.waitForSelector('#rp-share-note');
+      must((await page.textContent('#rp-share-note')).includes('shareable once the game is graded'), `${what}: pressed, it says why, and asks nobody`);
+      must(await boxes() === on, `${what}: the line floats, and moves nothing`);
+    }
+  }
+
+  await page.goto(replayAt(1, rollStep));
+  await page.waitForSelector('button#rp-share-position:not(.is-soon)', { timeout: 20000 });
+  await page.click('#rp-share-position');
+  await page.waitForSelector('#rp-share-note', { timeout: 10000 });
+  must((await page.textContent('#rp-share-note')).trim() === 'Link copied', 'SHARE copies the link, and says so');
+  must(await boxes() === on, 'and nothing moved');
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  must(new RegExp(`^${BASE}/puzzles/[A-Za-z0-9]+$`).test(copied), `the link is the puzzle's own: ${copied}`);
+  await page.screenshot({ path: `${SHOTS}/07-share-copied.png` });
+  await ctx.close();
+
+  // A stranger with the link: the ordinary puzzle page, then the way back.
+  for (const vp of [{ name: 'desktop', width: 1440, height: 900 }, { name: 'phone', width: 390, height: 844, mobile: true }]) {
+    const sctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, isMobile: !!vp.mobile, hasTouch: !!vp.mobile, deviceScaleFactor: 2 });
+    await sctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    const p = await sctx.newPage();
+    watch(p, `shared-${vp.name}`);
+    await p.goto(copied);
+    await p.waitForSelector('#pz-prompt, .pz-prompt', { timeout: 20000 }).catch(() => {});
+    must(/What's your play\?/.test(await p.title()), `${vp.name}: the page asks the question, naming nobody`);
+    must(!(await p.isVisible('#pz-replay')), `${vp.name}: no way back before the attempt`);
+    await stageATurn(p);
+    await p.click('#bg-action-play');
+    await p.waitForSelector('#pz-reveal');
+    await p.waitForSelector('#pz-replay');
+    must((await p.textContent('#pz-from-replay')).includes('From a game on Oskol'), `${vp.name}: the reveal says where it came from`);
+    await p.locator('#pz-replay').scrollIntoViewIfNeeded();
+    await p.screenshot({ path: `${SHOTS}/07-shared-${vp.name}.png` });
+    await p.click('#pz-replay');
+    await p.waitForSelector('.bg-still .bg-board', { timeout: 20000 });
+    must(p.url().endsWith(`/backgammon/${code}/replay?game=1&step=${rollStep}`), `${vp.name}: WATCH THE REPLAY lands on the very step (${p.url()})`);
+    const landed = await p.waitForFunction((want) => document.querySelector('.rp-controls-wrap')?.dataset.step === want, String(rollStep), { timeout: 5000 }).then(() => true, () => false);
+    must(landed, `${vp.name}: and the replay shows it`);
+    await sctx.close();
   }
 }
 

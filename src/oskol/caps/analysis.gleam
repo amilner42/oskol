@@ -359,6 +359,11 @@ pub type AnalysisCaps {
     /// Hand back one reserved ask from each bucket (`Oskol.Limiter.release/1`):
     /// an ask that was charged and never reached the engine.
     release_ask: fn(List(LimitBucket)) -> Nil,
+    /// One game's review row with the engine's answer: (game_id,
+    /// game_number). What sharing a replay step reads -- one game's answer,
+    /// not a whole match's (`stored`). Appended after `release_ask`, so
+    /// every field before keeps its place.
+    stored_one: fn(String, Int) -> Option(Stored),
   )
 }
 
@@ -394,5 +399,6 @@ pub fn stub() -> AnalysisCaps {
     submit: fn(_) { panic as "stub analysis.submit" },
     allow_ask: fn(_) { panic as "stub analysis.allow_ask" },
     release_ask: fn(_) { panic as "stub analysis.release_ask" },
+    stored_one: fn(_, _) { panic as "stub analysis.stored_one" },
   )
 }

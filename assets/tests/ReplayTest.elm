@@ -24,7 +24,7 @@ import Games.Backgammon.View as View
 import Games.Backgammon.Xgid as Xgid
 import Route
 import Json.Decode as D
-import Page.Replay as Page exposing (Loadable(..), Msg(..), Showing(..))
+import Page.Replay as Page exposing (Loadable(..), Msg(..), ShareDoor(..), Quiet(..), Showing(..))
 import ReplayFixtures
 import Session
 import Test exposing (Test, describe, test)
@@ -49,6 +49,7 @@ suite =
         , careers
         , phone
         , openInAnalysis
+        , sharePosition
         ]
 
 
@@ -163,7 +164,7 @@ signedIn model =
 -}
 loaded : Maybe Int -> Page.Model
 loaded wanted =
-    Page.init session { slug = "backgammon", gameId = "000011", game = wanted, step = Nothing }
+    Page.init session { slug = "backgammon", gameId = "000011", origin = "", game = wanted, step = Nothing }
         |> Tuple.first
         |> Page.update (GotRecord (Ok record))
         |> first3
@@ -221,7 +222,7 @@ practice =
                         ]
         , test "a stranger is never asked for: they hold no seat, and the answer would be a 404" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", game = Just 3, step = Nothing }
+                Page.init session { slug = "backgammon", gameId = "000011", origin = "", game = Just 3, step = Nothing }
                     |> Tuple.first
                     |> run [ GotRecord (Ok shared), GotIndex (Ok allDone) ]
                     |> .mistakeAsks
@@ -295,7 +296,7 @@ practice =
                     , \m -> m |> run [ mistakes [] ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "rp-deck" ]
                     , \m -> m |> signedIn |> run [ mistakes [] ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "rp-deck" ]
                     , \_ ->
-                        Page.init session { slug = "backgammon", gameId = "000011", game = Just 3, step = Nothing }
+                        Page.init session { slug = "backgammon", gameId = "000011", origin = "", game = Just 3, step = Nothing }
                             |> Tuple.first
                             |> run ([ GotRecord (Ok shared) ] ++ gotEverything)
                             |> Page.view
@@ -631,7 +632,7 @@ fetching =
                     |> Expect.equal ( [], [ 3 ] )
         , test "the index arriving before the record still fetches, once the record names the game" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", game = Just 1, step = Nothing }
+                Page.init session { slug = "backgammon", gameId = "000011", origin = "", game = Just 1, step = Nothing }
                     |> Tuple.first
                     |> run [ GotIndex (Ok allDone), GotRecord (Ok record) ]
                     |> .fetching
@@ -673,14 +674,14 @@ analysisArriving =
                     |> Expect.equal ( 1, Proposed 1 )
         , test "the record arriving after the analysis changes nothing about it" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", game = Just 3, step = Nothing }
+                Page.init session { slug = "backgammon", gameId = "000011", origin = "", game = Just 3, step = Nothing }
                     |> Tuple.first
                     |> run (gotEverything ++ [ GotRecord (Ok record) ])
                     |> (\m -> ( m.index /= Nothing, m.game ))
                     |> Expect.equal ( True, 3 )
         , test "a replay with no game named still opens, on the first seat" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", game = Nothing, step = Nothing }
+                Page.init session { slug = "backgammon", gameId = "000011", origin = "", game = Nothing, step = Nothing }
                     |> Tuple.first
                     |> run [ GotRecord (Ok record) ]
                     |> .record
@@ -819,7 +820,7 @@ rendered =
                     |> Query.has [ Selector.attribute (Html.Attributes.title "Turn the board around (P2 at the bottom)") ]
         , test "a stranger is not told an analysis is running that nobody started" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", game = Just 3, step = Nothing }
+                Page.init session { slug = "backgammon", gameId = "000011", origin = "", game = Just 3, step = Nothing }
                     |> Tuple.first
                     |> run [ GotRecord (Ok shared), GotIndex (Ok (index ReplayFixtures.indexPending)) ]
                     |> Expect.all
@@ -1299,7 +1300,7 @@ openInAnalysis =
             \_ ->
                 case Setup.fromReplay record (game 3) 2 of
                     Just setup ->
-                        Page.init session { slug = "backgammon", gameId = "000011", game = Just 3, step = Just 2 }
+                        Page.init session { slug = "backgammon", gameId = "000011", origin = "", game = Just 3, step = Just 2 }
                             |> Tuple.first
                             |> Page.update (GotRecord (Ok record))
                             |> first3
@@ -1318,7 +1319,7 @@ openInAnalysis =
                         Expect.fail "a turn is a decision"
         , test "a result step keeps the door's place, unseen and not a link" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", game = Just 1, step = Just 4 }
+                Page.init session { slug = "backgammon", gameId = "000011", origin = "", game = Just 1, step = Just 4 }
                     |> Tuple.first
                     |> Page.update (GotRecord (Ok record))
                     |> first3
@@ -1329,4 +1330,215 @@ openInAnalysis =
                         [ Query.has [ Selector.tag "span", Selector.class "is-off" ]
                         , Query.hasNot [ Selector.tag "a" ]
                         ]
+        ]
+
+
+
+-- SHARE POSITION
+
+
+{-| The first line of game 1 that is a checker play with a choice in it,
+as a step.
+-}
+gradedRollStep : Int
+gradedRollStep =
+    List.range 0 40
+        |> List.filter
+            (\line ->
+                case Replay.moveAt review1 line of
+                    Just ( _, Moved m ) ->
+                        not m.forced
+
+                    _ ->
+                        False
+            )
+        |> List.head
+        |> Maybe.map ((+) 1)
+        |> Maybe.withDefault -1
+
+
+doorAt : Int -> Page.Model -> ShareDoor
+doorAt step model =
+    let
+        at =
+            run [ GoTo step ] model
+    in
+    Page.shareDoor at (game 1)
+
+
+shareButton : Page.Model -> Query.Single Msg
+shareButton model =
+    model |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-share-position" ]
+
+
+sharePosition : Test
+sharePosition =
+    describe "SHARE POSITION: a step as a puzzle, from the game's stored answer"
+        [ test "a graded roll can be shared; the start and the result cannot" <|
+            \_ ->
+                let
+                    model =
+                        loaded (Just 1) |> run gotEverything
+                in
+                ( doorAt gradedRollStep model, doorAt 0 model, doorAt 4 model )
+                    |> Expect.equal ( ShareReady, ShareOff, ShareOff )
+        , test "a decision whose game is not graded yet is graded soon" <|
+            \_ ->
+                -- The record is in; the index and the analysis are not.
+                doorAt gradedRollStep (loaded (Just 1))
+                    |> Expect.equal (ShareQuiet GradedSoon)
+        , test "an answer from before every play was sent points at the analysis board" <|
+            \_ ->
+                let
+                    old =
+                        analysis ReplayFixtures.analysisGame1
+                            |> (\a -> { a | review = Maybe.map (\r -> { r | everyPlay = False }) a.review })
+                in
+                loaded (Just 1)
+                    |> run [ GotIndex (Ok allDone), GotAnalysis 1 (Ok old) ]
+                    |> doorAt gradedRollStep
+                    |> Expect.equal (ShareQuiet InAnalysis)
+        , test "the roll after a take points at the analysis board" <|
+            \_ ->
+                let
+                    line =
+                        gradedRollStep - 1
+
+                    tookFirst =
+                        analysis ReplayFixtures.analysisGame1
+                            |> (\a ->
+                                    { a
+                                        | review =
+                                            Maybe.map
+                                                (\r ->
+                                                    { r
+                                                        | turns =
+                                                            List.map
+                                                                (\t ->
+                                                                    if t.entry == Just line then
+                                                                        { t | answerEntry = Just (line - 1) }
+
+                                                                    else
+                                                                        t
+                                                                )
+                                                                r.turns
+                                                    }
+                                                )
+                                                a.review
+                                    }
+                               )
+                in
+                loaded (Just 1)
+                    |> run [ GotIndex (Ok allDone), GotAnalysis 1 (Ok tookFirst) ]
+                    |> doorAt gradedRollStep
+                    |> Expect.equal (ShareQuiet InAnalysis)
+        , test "a game whose review failed is not graded, not graded soon" <|
+            \_ ->
+                let
+                    failed =
+                        index (String.replace "\"done\"" "\"failed\"" ReplayFixtures.index)
+                in
+                Expect.all
+                    [ \m -> doorAt gradedRollStep m |> Expect.equal (ShareQuiet NotGraded)
+                    , \m ->
+                        m
+                            |> run [ GoTo gradedRollStep ]
+                            |> Page.view
+                            |> Query.fromHtml
+                            |> Query.find [ Selector.id "rp-share-soon" ]
+                            |> Query.has [ Selector.text "Not graded" ]
+                    ]
+                    (loaded (Just 1) |> run [ GotIndex (Ok failed) ])
+        , test "a double and its answer can be shared once graded" <|
+            \_ ->
+                let
+                    model =
+                        loaded (Just 1) |> run gotEverything
+
+                    cubeLines =
+                        review1.turns
+                            |> List.concatMap (\t -> List.filterMap identity [ t.doubleEntry, t.answerEntry ])
+                            |> List.filter (\line -> List.any (\t -> (t.doubleEntry == Just line || t.answerEntry == Just line) && t.cube /= Nothing) review1.turns)
+                in
+                ( cubeLines /= [], cubeLines |> List.map (\line -> doorAt (line + 1) model) |> List.all ((==) ShareReady) )
+                    |> Expect.equal ( True, True )
+        , test "ready, it is a button that posts; off, it keeps its place unseen" <|
+            \_ ->
+                let
+                    model =
+                        loaded (Just 1) |> run gotEverything
+                in
+                Expect.all
+                    [ \m ->
+                        m
+                            |> run [ GoTo gradedRollStep ]
+                            |> shareButton
+                            |> Query.has [ Selector.tag "button", Selector.text "SHARE", Selector.attribute (Html.Attributes.attribute "aria-label" "Share this position") ]
+                    , \m ->
+                        m
+                            |> run [ GoTo gradedRollStep ]
+                            |> shareButton
+                            |> Event.simulate Event.click
+                            |> Event.expect PressedSharePosition
+                    , \m ->
+                        m
+                            |> run [ GoTo 4 ]
+                            |> shareButton
+                            |> Expect.all [ Query.has [ Selector.tag "span", Selector.class "is-off" ], Query.hasNot [ Selector.tag "button" ] ]
+                    ]
+                    model
+        , test "pressed while graded soon, it says why in the floating line, and nothing is posted" <|
+            \_ ->
+                let
+                    ( pressed, _, _ ) =
+                        loaded (Just 1) |> run [ GoTo gradedRollStep ] |> Page.update PressedSharePosition
+                in
+                Expect.all
+                    [ \m -> Expect.equal False m.sharing
+                    , \m ->
+                        m
+                            |> Page.view
+                            |> Query.fromHtml
+                            |> Query.find [ Selector.id "rp-share-note" ]
+                            |> Query.has [ Selector.text "This position will be shareable once the game is graded." ]
+                    ]
+                    pressed
+        , test "a refusal is the server's sentence, on the step it was pressed at only" <|
+            \_ ->
+                let
+                    refused =
+                        loaded (Just 1)
+                            |> run gotEverything
+                            |> run
+                                [ GoTo gradedRollStep
+                                , PressedSharePosition
+                                , GotPosition 1 gradedRollStep (Err (Api.ApiError { code = "incomplete", message = "This position's answer is incomplete; open it in the analysis board instead." }))
+                                ]
+                in
+                Expect.all
+                    [ \m -> Expect.equal False m.sharing
+                    , \m ->
+                        m
+                            |> Page.view
+                            |> Query.fromHtml
+                            |> Query.find [ Selector.id "rp-share-note" ]
+                            |> Query.has [ Selector.text "This position's answer is incomplete; open it in the analysis board instead." ]
+                    , \m ->
+                        m
+                            |> run [ GoTo (gradedRollStep + 1) ]
+                            |> Page.view
+                            |> Query.fromHtml
+                            |> Query.findAll [ Selector.id "rp-share-note" ]
+                            |> Query.count (Expect.equal 0)
+                    ]
+                    refused
+        , test "the link copied says so" <|
+            \_ ->
+                loaded (Just 1)
+                    |> run gotEverything
+                    |> run [ GoTo gradedRollStep, PressedSharePosition, GotPosition 1 gradedRollStep (Ok "/puzzles/abc12345"), ShareReported "copied" ]
+                    |> Page.view
+                    |> Query.fromHtml
+                    |> Query.find [ Selector.id "rp-share-note" ]
+                    |> Query.has [ Selector.text "Link copied" ]
         ]

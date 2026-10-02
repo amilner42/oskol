@@ -165,7 +165,10 @@ GET  /papi/games/:slug/rooms/:id/reviews/:game_number  (open) one game
                                        {ok, game_number, status, turns, review}
                                          review is null unless status is done;
                                          when it is, {levels, timing_ms, players,
-                                         turns}; a turn names its record lines
+                                         turns, every_play}; every_play says the
+                                         stored answer carries every legal play
+                                         of each roll (what SHARE needs); a turn
+                                         names its record lines
                                          (entry, double_entry, answer_entry) and
                                          each candidate move its position and
                                          landings. A number the room has no game
@@ -195,11 +198,36 @@ GET  /papi/games/:slug/rooms/:id/ratings  (open) {ok, players: [{player_id,
                                        owns and under 5 games), and each graded
                                        game's PRs by seat, for the match panel
 GET  /papi/puzzles/:id                 (open) {ok, id, kind, question, tree,
-                                         prompt} -- the position, the sentence it
-                                         asks in, and for a checker play every
-                                         legal way to play the roll as a DAG of
-                                         boards. Never the answer, never a name,
-                                         never the game it came from
+                                         prompt, replay} -- the position, the
+                                         sentence it asks in, and for a checker
+                                         play every legal way to play the roll as
+                                         a DAG of boards. Never the answer, never
+                                         a name. `replay` is {path} for a position
+                                         somebody shared out of a replay
+                                         ("/backgammon/<id>/replay?game=n&step=s",
+                                         WATCH THE REPLAY), else null
+POST /papi/games/:slug/rooms/:id/positions  (open: anyone who can read the
+                                         replay) {game, step} -> {ok, id, url}
+                                         (url "/puzzles/<id>"). SHARE on the
+                                         replay: the step as a puzzle row
+                                         (origin "replay", `puzzles.replay` set
+                                         once, no source row, picture drawn),
+                                         from the game's stored answer -- never
+                                         engine time. 409 not_graded (no done
+                                         review for that game), incomplete (an
+                                         answer short of every play or the cube's
+                                         chances), no_decision (step 0, a
+                                         resignation, the result, a forced roll
+                                         or dance, an ungraded double); a roll
+                                         played after a taken double is also
+                                         409 incomplete (its stored question has
+                                         the pre-double cube); 404 for a room,
+                                         game or step that names nothing; 422
+                                         without {game, step}; 429 rate_limited
+                                         past 30 an hour per caller (account,
+                                         else guest) or 1000 an hour for
+                                         everybody, failing closed when the
+                                         limiter is down. Idempotent
 GET  /papi/puzzles/:id/tree?node=      (open) one level of a tree too big to send
                                          whole: {ok, node, tree: Node}
 POST /papi/puzzles/:id/attempts        {moves | band, key, s?, deck?} -> {ok, verdict, band,

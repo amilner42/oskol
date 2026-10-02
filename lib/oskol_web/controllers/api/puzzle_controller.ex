@@ -13,6 +13,8 @@ defmodule OskolWeb.Api.PuzzleController do
                                                      before the answer
       POST /papi/puzzles/:id/shares                  a share-with-my-story link
       GET  /papi/games/:slug/rooms/:id/puzzles?game= one game's mistakes
+      POST /papi/games/:slug/rooms/:id/positions     share a replay step as
+                                                     a puzzle ({game, step})
 
   Every decision -- what a puzzle says, whether an answer is right, what it
   does to a deck, who may see a memory line -- belongs to
@@ -59,6 +61,22 @@ defmodule OskolWeb.Api.PuzzleController do
 
   def share(conn, %{"id" => id}) do
     send_json(conn, :oskol@handlers@shares.mint_json(ctx(), session(conn), id))
+  end
+
+  # A replay step as a puzzle, written from the game's stored answer:
+  # `oskol/handlers/positions` decides everything, the engine is never
+  # asked. The body crosses as text; Gleam reads `{game, step}`.
+  def position(conn, %{"slug" => slug, "id" => game_id}) do
+    send_json(
+      conn,
+      :oskol@handlers@positions.share_json(
+        ctx(),
+        session(conn),
+        slug,
+        game_id,
+        Jason.encode!(conn.body_params)
+      )
+    )
   end
 
   def outcome(conn, %{"id" => id, "key" => key} = params) do
