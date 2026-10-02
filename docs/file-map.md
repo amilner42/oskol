@@ -56,8 +56,8 @@ src/oskol/handlers/practice.gleam  a practice session: an account's deck, a gues
                                 browser's timezone, burying one; the five decks
                                 (/papi/practice/decks), a deck's page, its head
                                 (`deck_head`) and the sitemap's sets (`indexed_slugs`)
-src/oskol/practice/catalog.gleam  the five decks side by side: the three tiers and the
-                                sets, each with its wire id and its page slug
+src/oskol/practice/catalog.gleam  the decks side by side: the three tiers, the sets and
+                                an account's own sets, each with its wire id and slug
 src/oskol/practice/cost.gleam   what your mistakes cost in PR: the home's window, minus
                                 their `puzzle_sources` rows by band, and minus the
                                 patched ones (the `analysis.mistake_costs` cap,
@@ -65,14 +65,21 @@ src/oskol/practice/cost.gleam   what your mistakes cost in PR: the home's window
 src/oskol/handlers/puzzles_hub.gleam  TRY ONE: a random puzzle whose answer stands
                                 clear, for a stranger on the practice home
 src/oskol/practice/decks.gleam  the universal sets (openings, replies): the registry,
-                                each set's retain scope, a player's standing, adding one
+                                each set's retain scope, a player's standing, adding one;
+                                an account's own sets (`own`, `find_for`, `enroll_one`)
 src/oskol/practice/openings.gleam  the 15 openings and 315 replies: positions, the
                                 engine request, and when an answer is trusted
 src/oskol/handlers/decks.gleam  /papi/decks: the sets on offer, a session, adding one
 src/oskol/handlers/decks_build.gleam  building the sets from the engine (the operator's
                                 mix oskol.decks.build): only what is missing is asked
+src/oskol/handlers/own_decks.gleam  a player's own sets: make, rename, delete, save a
+                                position (enrolled at once), take one out; private
 src/oskol/caps/decks.gleam      a set's members, its write, and the practice caps over
-                                a retain scope (lib/oskol/gleam/caps/decks.ex)
+                                a retain scope; own sets' rows and membership
+                                (lib/oskol/gleam/caps/decks.ex)
+lib/oskol/own_decks.ex          the `decks` table (own sets) and their membership writes
+lib/oskol_web/controllers/api/own_decks_controller.ex  /papi/decks/mine and
+                                /papi/decks/:id[/puzzles[/:puzzle_id]]
 lib/oskol/practice.ex           those decisions run with the real rows behind them
 lib/oskol/puzzles.ex            puzzles + puzzle_sources/attempts/shares/images tables;
                                 the one write, in one transaction with its marker

@@ -8,11 +8,16 @@ pub type IdsCaps {
     /// A share token: twelve crypto-random characters of the same alphabet.
     /// Nothing guarantees it is free either; the row's insert decides.
     share_token: fn() -> String,
+    /// An own set's id: eight crypto-random characters of the same
+    /// alphabet. The row's insert decides whether it is free.
+    deck_id: fn() -> String,
   )
 }
 
 pub fn stub() -> IdsCaps {
-  IdsCaps(game_code: fn() { panic as "stub ids.game_code" }, share_token: fn() {
-    panic as "stub ids.share_token"
-  })
+  IdsCaps(
+    game_code: fn() { panic as "stub ids.game_code" },
+    share_token: fn() { panic as "stub ids.share_token" },
+    deck_id: fn() { panic as "stub ids.deck_id" },
+  )
 }

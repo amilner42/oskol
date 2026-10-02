@@ -391,11 +391,11 @@ mistakes, worst first (`very_bad` / `very-bad` ??, `bad` / `bad` ?,
 (`openings`, `opening_replies` / `opening-replies`). Each has an `id` the
 wire speaks and a `slug` its page lives at (`/practice/<slug>`). A tier is a
 band of the one mistakes learner, never a scope of its own: the three share
-a ladder, a day and a budget.
+a ladder, a day and a budget. An account's own sets follow the five ([Own sets](#own-sets)).
 
 - **`GET /papi/practice/decks`** (`practice.decks_json`) is the hub's one
   answer: `{decks, lead, today, streak, patched_level, cost_all,
-  mistakes}`. Each deck is `{id, slug, kind (mistakes|set), name, mark,
+  mistakes}`. Each deck is `{id, slug, kind (mistakes|set|own), name, mark,
   blurb, size, pace, joined, standing, cost}`. `standing` (an account's;
   null otherwise) is counted from the deck's cells by `deck.standing`:
   `{total, untouched, in_progress, patched, due, new_left, done_today,
@@ -638,7 +638,8 @@ also somebody's mistake is one puzzle in two places).
   walks the default scope only.
 - **An answer names its set**: the attempt and the override carry `deck`
   (`handlers/puzzles.attempt_in_json` / `outcome_in_json`); none is the
-  player's mistakes, a name that is no set is a 422. The run carries it
+  player's mistakes, a name that is no set (or somebody else's own set) is
+  a 404. The run carries it
   (`Run.deck`), the strip names the set and draws its own ring, and the
   page asks no `/why` (a set's position came from no
   game). A set's position is "mastered", the mistakes' own word
@@ -647,7 +648,7 @@ also somebody's mistake is one puzzle in two places).
   enrols every member in the set's scope at its position, with the
   browser's zone; a guest, a stranger and an account that has not added
   it walk the set in order with nothing written. `POST /papi/practice/tz`
-  reaches every set the account has added and creates none. The streak
+  reaches every set the account has added (and its own sets) and creates none. The streak
   counts practice in every scope (`activity.practiced`).
 - **Budgets**: Openings five new a day, replies ten, and KEEP GOING
   through a set (`POST /papi/decks/:id/more`) starts that many again.
@@ -671,6 +672,60 @@ also somebody's mistake is one puzzle in two places).
   `/papi/decks` and `/papi/decks/:id` stay its session's endpoints. A new
   set is a registry entry (its slug is its id with `-` for `_`), a build for
   its positions, and nothing else.
+
+## Own sets
+
+A set an account makes for itself and saves positions into -- from the
+analysis board, or from any puzzle -- and practices exactly as it practices
+Openings. To a player it is a **set** ("Your sets", "Save to a set", "New
+set"); in code, URLs and the wire it is a deck, like the others. It is the
+universal-set machinery with an owner, so there are no new practice rules.
+
+- **Rows.** `decks(id, user_id, name, new_per_day, deleted_at)`
+  (`Oskol.OwnDecks`): the id is eight characters of the room-code alphabet
+  minted by the `ids.deck_id` cap, which no universal id ("openings",
+  "opening_replies") can be; the name is 1..40 characters, trimmed, unique
+  per owner in any case among live sets (a partial unique index on
+  `lower(name)`). Its positions are `deck_puzzles` rows under its id, as
+  Openings' are, and its owner's ladder is the retain scope `"deck:<id>"`,
+  as Openings' is, so `deck_members`, `deck_size`, `decks.queue`,
+  `decks.anyway`, `decks.standing` and `Caps.Practice.build(scope)` work
+  unchanged.
+- **Gleam.** `practice/decks.Deck` has `owner: Option(String)` (None for
+  the registry's two); `decks.own(ctx, uid)` reads the `decks.own` cap
+  (live rows, oldest first) and `decks.find_for(ctx, session, id)` is the
+  one lookup every door uses: the registry first (no IO), then the caller's
+  own sets. `practice/catalog.Kind` has `Own(set)`, and `catalog.all(ctx,
+  session)` is the five then an account's own sets (`catalog.five()` is
+  the five). `handlers/own_decks` makes, renames, deletes, fills and empties
+  one.
+- **Private.** Every door that names a set -- `/papi/decks/:id` and its
+  join and more, `/papi/practice/decks/:slug`, the page's head, an
+  attempt's or an override's `deck`, and every `/papi/decks/:id/...` of
+  its own -- answers somebody else's set with the same 404 as an id that
+  names nothing ("There is no such set of puzzles."). Its page is noindex
+  and never on the sitemap. Sharing a set is later; the row has room for a
+  token.
+- **Saving enrolls at once.** `POST /papi/decks/:id/puzzles {puzzle_id}`
+  writes the member at one past the set's highest position (`on conflict do
+  nothing`) and puts that one item in the owner's scope (`put_user(uid, "",
+  5)`, then `put_items` with tags `{deck, kind}` and the question as its
+  content, as `enroll` writes them), so it is due today as a new position.
+  Idempotent: the second time is `added: false`. Taking it out deletes the
+  member and suspends its card; saving it again resumes it at the level it
+  had. Joining an own set is a no-op: there is nothing to add.
+- **Origin is not touched.** A position somebody analyzed stays `origin:
+  analysis` when it is saved into a set, so it stays out of TRY ONE and
+  the status page (`Oskol.Puzzles.sample/1` takes `game` and `set` only).
+- **Pace and limits.** Five new a day, like Openings (`decks.new_per_day`,
+  one column if a set ever wants its own); at most fifty live sets an
+  account. Delete is soft (`deleted_at`): the row leaves every list and
+  door, its membership and ladder stay, and its name is free again.
+- **On the hub** an own set is a row after the five (`kind: "own"`,
+  `mark: ""`, `joined: true` even when empty, the set's own standing), and
+  its page (`/practice/<id>`) carries `members` for MANAGE. The client
+  draws one as a set for now (`Api.PracticeDecks` reads `"own"` as `Set`);
+  the save sheet and MANAGE are the `analysis-save-to-set` ticket.
 
 `POST /papi/practice/tz {tz}` writes the browser's zone onto the deck itself
 (no new column: retain already keeps a learner's timezone, and it is the

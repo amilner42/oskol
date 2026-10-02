@@ -10,6 +10,10 @@
 //// scope of the deck's own (`scope`), so no deck's budget, queue or levels
 //// can move another's.
 ////
+//// A player's own set (`own`) is a `Deck` with an `owner`: the same
+//// scope, queue, standing and enrolling, its positions written one at a
+//// time by its owner (`enroll_one`) rather than by an operator's build.
+////
 //// Everything here reads the caps it is given and decides; it writes only
 //// by enrolling, which a player asks for.
 
@@ -18,11 +22,12 @@ import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import oskol/caps/decks.{type Member}
+import oskol/caps/decks.{type Member, type OwnDeck}
 import oskol/caps/practice.{
-  type Card, type PracticeCaps, type PracticeError, Item,
+  type Card, type Cell, type PracticeCaps, type PracticeError, Item,
 }
 import oskol/core/ctx.{type Ctx, Ctx}
+import oskol/core/session.{type Session}
 import oskol/practice/deck
 import oskol/puzzles
 
@@ -38,6 +43,9 @@ pub type Deck {
     blurb: String,
     /// New positions a day. Everything due comes first, as with mistakes.
     new_per_day: Int,
+    /// The account a player's own set belongs to; None for the registry's,
+    /// which are everybody's.
+    owner: Option(String),
   )
 }
 
@@ -58,12 +66,14 @@ pub fn all() -> List(Deck) {
       name: "Openings",
       blurb: "The fifteen opening rolls, and the play for each.",
       new_per_day: 5,
+      owner: None,
     ),
     Deck(
       id: replies_id,
       name: "Opening replies",
       blurb: "Your first roll after each opening: 21 rolls against each of the 15.",
       new_per_day: 10,
+      owner: None,
     ),
   ]
 }
@@ -73,6 +83,41 @@ pub fn find(id: String) -> Result(Deck, Nil) {
 }
 
 pub const unknown_deck_message = "There is no such set of puzzles."
+
+/// An account's own sets, oldest first: the registry's machinery with an
+/// owner. Its id is the row's, its scope is `scope`'s like any deck's, and
+/// it has no blurb (a player names it, and the name says it).
+pub fn own(ctx: Ctx, uid: String) -> List(Deck) {
+  list.map(ctx.decks.own(uid), from_row)
+}
+
+/// An own set's row as a deck.
+pub fn from_row(row: OwnDeck) -> Deck {
+  Deck(
+    id: row.id,
+    name: row.name,
+    blurb: "",
+    new_per_day: row.new_per_day,
+    owner: Some(row.user_id),
+  )
+}
+
+/// A deck as this caller may reach it: one of the registry's, which is
+/// everybody's, or one of the caller's own sets. Somebody else's set is
+/// not found at all -- a set is private, so it does not say it exists.
+/// The registry is asked first, so a universal id never reads a row.
+pub fn find_for(ctx: Ctx, session: Session, id: String) -> Result(Deck, Nil) {
+  case find(id), session.user_id {
+    Ok(deck), _ -> Ok(deck)
+    Error(Nil), Some(uid) -> list.find(own(ctx, uid), fn(d) { d.id == id })
+    Error(Nil), None -> Error(Nil)
+  }
+}
+
+/// Is this a player's own set (rather than one of the registry's)?
+pub fn is_own(deck: Deck) -> Bool {
+  option.is_some(deck.owner)
+}
 
 /// The retain scope a deck's ladder lives in. Prefixed, so no deck id can
 /// ever be mistaken for the mistakes' own scope.
@@ -169,6 +214,28 @@ pub fn enroll(
   caps.put_items(uid, list.map(ctx.decks.members(deck.id), item(deck, _)))
 }
 
+/// Put one position of an own set into its owner's copy at once, so it is
+/// due as a new position today: the same item `enroll` writes for it. A
+/// position taken out of the set earlier was put away (suspended) and
+/// comes back at the level it left at. Idempotent.
+pub fn enroll_one(
+  ctx: Ctx,
+  deck: Deck,
+  uid: String,
+  member: Member,
+) -> Result(Nil, PracticeError) {
+  let caps = practice(ctx, deck)
+  use Nil <- result.try(caps.put_user(uid, "", deck.new_per_day))
+  use fresh <- result.try(caps.put_items(uid, [item(deck, member)]))
+  case fresh {
+    0 -> {
+      let _ = caps.resume(uid, [member.puzzle_id])
+      Ok(Nil)
+    }
+    _ -> Ok(Nil)
+  }
+}
+
 fn item(deck: Deck, member: Member) -> practice.Item {
   Item(
     key: member.puzzle_id,
@@ -183,7 +250,7 @@ fn item(deck: Deck, member: Member) -> practice.Item {
 /// deck counts in is the same day their mistakes count in. A deck they
 /// have not added is left alone rather than created.
 pub fn set_timezone(ctx: Ctx, uid: String, tz: String) -> Nil {
-  list.each(all(), fn(deck) {
+  list.each(list.append(all(), own(ctx, uid)), fn(deck) {
     let caps = practice(ctx, deck)
     case caps.summary(uid, []) {
       [] -> Nil
@@ -266,16 +333,39 @@ pub fn deck_json(deck: Deck, size: Int, standing: Option(Standing)) -> Json {
     #("size", json.int(size)),
     #("standing", case standing {
       None -> json.null()
-      Some(s) ->
-        json.object([
-          #("joined", json.bool(joined(s))),
-          #("total", json.int(s.total)),
-          #("in_progress", json.int(s.in_progress)),
-          #("patched", json.int(s.patched)),
-          #("left", json.int(left(s))),
-          #("due", json.int(s.due)),
-          #("new_left", json.int(s.new_left)),
-        ])
+      Some(s) -> standing_json(s)
     }),
+    #("own", json.bool(is_own(deck))),
   ])
+}
+
+pub fn standing_json(s: Standing) -> Json {
+  json.object([
+    #("joined", json.bool(joined(s))),
+    #("total", json.int(s.total)),
+    #("in_progress", json.int(s.in_progress)),
+    #("patched", json.int(s.patched)),
+    #("left", json.int(left(s))),
+    #("due", json.int(s.due)),
+    #("new_left", json.int(s.new_left)),
+  ])
+}
+
+/// An own set's positions for its owner, in the set's order, each with the
+/// rung its card stands on (0 for one never answered). `cells` are the
+/// owner's, read off the set's own ladder (`practice(ctx, deck).cells`).
+pub fn members_json(ctx: Ctx, deck: Deck, cells: List(Cell)) -> Json {
+  let levels = list.map(cells, fn(c) { #(c.key, c.level) })
+  json.array(ctx.decks.members(deck.id), fn(m) {
+    json.object([
+      #("id", json.string(m.puzzle_id)),
+      #("kind", json.string(m.kind)),
+      #("prompt", json.string(prompt(m.question_json))),
+      #("position", json.int(m.position)),
+      #(
+        "level",
+        json.int(list.key_find(levels, m.puzzle_id) |> result.unwrap(0)),
+      ),
+    ])
+  })
 }

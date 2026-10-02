@@ -467,7 +467,8 @@ pub fn decks_json(ctx: Ctx, session: Session, now_ms: Int) -> String {
     None, Some(guest_id) -> Some(guest_mistakes(ctx, guest_id))
     _, _ -> None
   }
-  let readings = read_decks(ctx, session, now_ms, offered_decks(ctx), mine)
+  let readings =
+    read_decks(ctx, session, now_ms, offered_decks(ctx, session), mine)
   let costing =
     costing(ctx, session, readings, fn() {
       readings
@@ -507,7 +508,7 @@ pub fn deck_page_json(
   now_ms: Int,
 ) -> Result(String, ApiError) {
   use found <- result.try(
-    catalog.find_slug(slug)
+    catalog.find_slug(ctx, session, slug)
     |> result.replace_error(error.NotFound(decks.unknown_deck_message)),
   )
   let size = size_of(ctx, found)
@@ -532,9 +533,16 @@ pub fn deck_page_json(
         // The three tiers are one learner, so a tier's month is the
         // mistakes' month.
         catalog.Mistakes(_) -> ctx.practice.days(uid, month)
-        catalog.Set(set) -> decks.practice(ctx, set).days(uid, month)
+        catalog.Set(set) | catalog.Own(set) ->
+          decks.practice(ctx, set).days(uid, month)
       }
     None -> list.repeat(False, month)
+  }
+  // An own set's page manages it, so it lists what is in it; only its
+  // owner ever reaches one.
+  let members = case found.kind, session.user_id {
+    catalog.Own(set), Some(_) -> decks.members_json(ctx, set, reading.cells)
+    _, _ -> json.null()
   }
   Ok(
     envelope.ok([
@@ -542,6 +550,7 @@ pub fn deck_page_json(
       #("cells", json.array(reading.cells, cell_json)),
       #("days", json.array(days, json.bool)),
       #("patched_level", json.int(deck.patched_level)),
+      #("members", members),
     ]),
   )
 }
@@ -555,15 +564,27 @@ pub type DeckHead {
   DeckHead(title: String, description: String, indexable: Bool)
 }
 
-/// The head for a slug: a 404 for a slug that is not one of the five, and
-/// for a set nobody has built (its page has nothing in it), exactly as the
-/// page's own `GET /papi/practice/decks/:slug` answers.
-pub fn deck_head(ctx: Ctx, slug: String) -> Result(DeckHead, ApiError) {
+/// The head for a slug: a 404 for a slug that is not one of the five or
+/// the caller's own set, and for a set nobody has built (its page has
+/// nothing in it), exactly as the page's own
+/// `GET /papi/practice/decks/:slug` answers. An own set is its owner's
+/// alone, so it is never indexable.
+pub fn deck_head(
+  ctx: Ctx,
+  session: Session,
+  slug: String,
+) -> Result(DeckHead, ApiError) {
   use found <- result.try(
-    catalog.find_slug(slug)
+    catalog.find_slug(ctx, session, slug)
     |> result.replace_error(error.NotFound(decks.unknown_deck_message)),
   )
   case found.kind, size_of(ctx, found) {
+    catalog.Own(_), _ ->
+      Ok(DeckHead(
+        title: found.name <> " · Practice",
+        description: "A set of your own, practiced like every other.",
+        indexable: False,
+      ))
     catalog.Set(_), 0 -> Error(error.NotFound(decks.unknown_deck_message))
     catalog.Set(set), _ ->
       Ok(DeckHead(
@@ -585,21 +606,24 @@ pub fn deck_head(ctx: Ctx, slug: String) -> Result(DeckHead, ApiError) {
 /// The deck pages a sitemap lists: the sets with something built, by
 /// slug. A tier is nobody's page but its own player's.
 pub fn indexed_slugs(ctx: Ctx) -> List(String) {
-  offered_decks(ctx)
+  // Nobody's session: an own set is its owner's page alone, never listed.
+  offered_decks(ctx, session.anonymous())
   |> list.filter_map(fn(pair) {
     let #(d, _) = pair
     case d.kind {
       catalog.Set(_) -> Ok(d.slug)
-      catalog.Mistakes(_) -> Error(Nil)
+      catalog.Mistakes(_) | catalog.Own(_) -> Error(Nil)
     }
   })
 }
 
-/// The five, less a set nobody has built yet: a page must not offer a set
-/// of puzzles with nothing in it. Each with the size a set's rows give it
-/// (a tier's is the caller's, worked out when it is read).
-fn offered_decks(ctx: Ctx) -> List(#(catalog.Deck, Int)) {
-  catalog.all()
+/// The caller's decks, less a universal set nobody has built yet: a page
+/// must not offer a set of puzzles with nothing in it. An own set is
+/// offered empty: its owner made it, and saves into it from elsewhere.
+/// Each with the size a set's rows give it (a tier's is the caller's,
+/// worked out when it is read).
+fn offered_decks(ctx: Ctx, session: Session) -> List(#(catalog.Deck, Int)) {
+  catalog.all(ctx, session)
   |> list.filter_map(fn(d) {
     case d.kind, size_of(ctx, d) {
       catalog.Set(_), 0 -> Error(Nil)
@@ -610,7 +634,7 @@ fn offered_decks(ctx: Ctx) -> List(#(catalog.Deck, Int)) {
 
 fn size_of(ctx: Ctx, d: catalog.Deck) -> Int {
   case d.kind {
-    catalog.Set(set) -> ctx.decks.size(set.id)
+    catalog.Set(set) | catalog.Own(set) -> ctx.decks.size(set.id)
     catalog.Mistakes(_) -> 0
   }
 }
@@ -618,7 +642,7 @@ fn size_of(ctx: Ctx, d: catalog.Deck) -> Int {
 fn is_tier(d: catalog.Deck) -> Bool {
   case d.kind {
     catalog.Mistakes(_) -> True
-    catalog.Set(_) -> False
+    catalog.Set(_) | catalog.Own(_) -> False
   }
 }
 
@@ -654,7 +678,8 @@ fn read_decks(
               [],
               0,
             )
-          catalog.Set(_) -> Reading(d, size, False, None, [], 0)
+          catalog.Set(_) | catalog.Own(_) ->
+            Reading(d, size, False, None, [], 0)
         }
       })
     }
@@ -697,7 +722,7 @@ fn account_readings(
           read.day.answered,
         )
       }
-      catalog.Set(set), _ -> {
+      catalog.Set(set), _ | catalog.Own(set), _ -> {
         let caps = decks.practice(ctx, set)
         let cells = caps.cells(uid)
         let day = caps.day(uid)
@@ -706,7 +731,9 @@ fn account_readings(
         Reading(
           d,
           size,
-          standing.total > 0,
+          // An own set is its owner's from the moment it is made: there is
+          // nothing to add.
+          standing.total > 0 || decks.is_own(set),
           Some(standing),
           cells,
           day.answered,
@@ -804,7 +831,7 @@ fn reading_json(r: Reading, costing: Costing) -> Json {
       "blurb",
       json.string(case r.deck.kind {
         catalog.Mistakes(_) -> ""
-        catalog.Set(set) -> set.blurb
+        catalog.Set(set) | catalog.Own(set) -> set.blurb
       }),
     ),
     #("size", json.int(r.size)),
@@ -814,7 +841,7 @@ fn reading_json(r: Reading, costing: Costing) -> Json {
       "pace",
       json.int(case r.deck.kind {
         catalog.Mistakes(_) -> deck.keep_going_new
-        catalog.Set(set) -> set.new_per_day
+        catalog.Set(set) | catalog.Own(set) -> set.new_per_day
       }),
     ),
     #("joined", json.bool(r.joined)),
@@ -826,7 +853,7 @@ fn reading_json(r: Reading, costing: Costing) -> Json {
     #("cost", case r.deck.kind {
       catalog.Mistakes(band) ->
         cost.tier_json(costing.window, costing.patched, band)
-      catalog.Set(_) -> json.null()
+      catalog.Set(_) | catalog.Own(_) -> json.null()
     }),
   ])
 }

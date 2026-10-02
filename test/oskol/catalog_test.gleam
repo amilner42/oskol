@@ -13,7 +13,7 @@ import gleam/result
 import gleam/string
 import oskol/caps/activity.{ActivityCaps}
 import oskol/caps/analysis.{AnalysisCaps, MistakeCost, RatedGame}
-import oskol/caps/decks.{DeckCaps}
+import oskol/caps/decks.{DeckCaps, Member, OwnDeck}
 import oskol/caps/practice.{
   type Cell, type Day, type PracticeCaps, Active, Card, Cell, Day, New,
   PracticeCaps, Session, Summary, Suspended,
@@ -21,6 +21,7 @@ import oskol/caps/practice.{
 import oskol/caps/puzzles.{DeckSource, PuzzlesCaps}
 import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/core/error
+import oskol/core/session
 import oskol/fakes
 import oskol/handlers/decks as decks_handler
 import oskol/handlers/practice
@@ -35,7 +36,7 @@ const ladder = [1, 1, 3, 7, 21, 58, 145, 365]
 // ---------- The catalog ----------
 
 pub fn the_five_decks_in_hub_order_test() {
-  assert list.map(catalog.all(), fn(d) { #(d.id, d.slug, d.name, d.mark) })
+  assert list.map(catalog.five(), fn(d) { #(d.id, d.slug, d.name, d.mark) })
     == [
       #("very_bad", "very-bad", "Very bad moves", "??"),
       #("bad", "bad", "Bad moves", "?"),
@@ -43,20 +44,25 @@ pub fn the_five_decks_in_hub_order_test() {
       #("openings", "openings", "Openings", ""),
       #("opening_replies", "opening-replies", "Opening replies", ""),
     ]
-  assert list.map(catalog.all(), catalog.kind_name)
+  assert list.map(catalog.five(), catalog.kind_name)
     == ["mistakes", "mistakes", "mistakes", "set", "set"]
 }
 
 pub fn a_deck_is_found_by_its_slug_and_by_its_id_test() {
-  let assert Ok(d) = catalog.find_slug("dubious")
+  let assert Ok(d) =
+    catalog.find_slug(fakes.ctx(), session.anonymous(), "dubious")
   assert d.id == "doubtful"
   assert d.kind == catalog.Mistakes("doubtful")
-  let assert Ok(r) = catalog.find_id("opening_replies")
+  let assert Ok(r) =
+    catalog.find_id(fakes.ctx(), session.anonymous(), "opening_replies")
   assert r.slug == "opening-replies"
   // The id is not a slug and the slug is not an id.
-  assert catalog.find_slug("doubtful") == Error(Nil)
-  assert catalog.find_id("very-bad") == Error(Nil)
-  assert catalog.find_slug("brilliant") == Error(Nil)
+  assert catalog.find_slug(fakes.ctx(), session.anonymous(), "doubtful")
+    == Error(Nil)
+  assert catalog.find_id(fakes.ctx(), session.anonymous(), "very-bad")
+    == Error(Nil)
+  assert catalog.find_slug(fakes.ctx(), session.anonymous(), "brilliant")
+    == Error(Nil)
 }
 
 // ---------- A world to read ----------
@@ -104,6 +110,10 @@ fn account(
     practice: reading(mistakes, day, by_band),
     decks: DeckCaps(
       ..fakes.ctx().decks,
+      own: fn(uid) {
+        assert uid == "u1"
+        []
+      },
       size: fn(id) { list.key_find(sizes, id) |> result.unwrap(0) },
       practice: fn(scope) {
         case list.find(sets, fn(s) { "deck:" <> s.0 == scope }) {
@@ -574,6 +584,7 @@ fn set_ctx(joined: Bool, started: fn(Int) -> Int) -> Ctx {
     ..fakes.ctx(),
     decks: DeckCaps(
       ..fakes.ctx().decks,
+      own: fn(_) { [] },
       size: fn(_) { 15 },
       practice: fn(scope) {
         assert scope == "deck:openings"
@@ -886,38 +897,48 @@ fn sized(built: List(#(String, Int))) -> Ctx {
 }
 
 pub fn a_tier_page_is_named_and_kept_out_of_search_test() {
-  let assert Ok(head) = practice.deck_head(sized(built()), "very-bad")
+  let assert Ok(head) =
+    practice.deck_head(sized(built()), session.anonymous(), "very-bad")
   assert head
     == practice.DeckHead(
       title: "Very bad moves · Practice",
       description: "Your very bad moves, and how many you have stopped making.",
       indexable: False,
     )
-  let assert Ok(dubious) = practice.deck_head(sized(built()), "dubious")
+  let assert Ok(dubious) =
+    practice.deck_head(sized(built()), session.anonymous(), "dubious")
   assert dubious.title == "Dubious moves · Practice"
   assert dubious.indexable == False
 }
 
 pub fn a_set_page_is_its_blurb_and_indexable_test() {
-  let assert Ok(head) = practice.deck_head(sized(built()), "openings")
+  let assert Ok(head) =
+    practice.deck_head(sized(built()), session.anonymous(), "openings")
   assert head
     == practice.DeckHead(
       title: "Openings · Practice",
       description: "The fifteen opening rolls, and the play for each.",
       indexable: True,
     )
-  let assert Ok(replies) = practice.deck_head(sized(built()), "opening-replies")
+  let assert Ok(replies) =
+    practice.deck_head(sized(built()), session.anonymous(), "opening-replies")
   assert replies.title == "Opening replies · Practice"
   assert replies.indexable
 }
 
 pub fn a_head_for_nothing_is_a_404_test() {
   let missing = Error(error.NotFound("There is no such set of puzzles."))
-  assert practice.deck_head(sized(built()), "nothing") == missing
+  assert practice.deck_head(sized(built()), session.anonymous(), "nothing")
+    == missing
   // A slug is not an id.
-  assert practice.deck_head(sized(built()), "very_bad") == missing
+  assert practice.deck_head(sized(built()), session.anonymous(), "very_bad")
+    == missing
   // A set nobody has built has no page.
-  assert practice.deck_head(sized([#("openings", 15)]), "opening-replies")
+  assert practice.deck_head(
+      sized([#("openings", 15)]),
+      session.anonymous(),
+      "opening-replies",
+    )
     == missing
 }
 
@@ -926,4 +947,116 @@ pub fn the_sitemap_lists_the_built_sets_only_test() {
     == ["openings", "opening-replies"]
   assert practice.indexed_slugs(sized([#("openings", 15)])) == ["openings"]
   assert practice.indexed_slugs(sized([])) == []
+}
+
+// ---------- A player's own sets ----------
+
+const own_id = "K7M2Q9XA"
+
+/// The account of `account`, with two sets of its own (the cap answers
+/// them oldest first): one with a position in it, one empty.
+fn with_own() -> Ctx {
+  let ctx =
+    account(
+      [],
+      Day(0, 0),
+      [],
+      [#(own_id, [cell("p1", "", 2, now + 9, Active)], Day(1, 4))],
+      [#("openings", 15), #("opening_replies", 315), #(own_id, 1)],
+    )
+  Ctx(
+    ..ctx,
+    decks: DeckCaps(
+      ..ctx.decks,
+      own: fn(uid) {
+        assert uid == "u1"
+        [
+          OwnDeck(own_id, "u1", "Back games", 5),
+          OwnDeck("Z3W8R1PB", "u1", "Primes", 5),
+        ]
+      },
+      members: fn(id) {
+        case id {
+          "K7M2Q9XA" -> [Member("p1", 1, "move", "{}")]
+          _ -> []
+        }
+      },
+    ),
+  )
+}
+
+pub fn an_account_has_the_five_then_its_own_sets_by_creation_test() {
+  assert list.map(catalog.all(with_own(), signed_in()), fn(d) { d.id })
+    == [
+      "very_bad", "bad", "doubtful", "openings", "opening_replies", own_id,
+      "Z3W8R1PB",
+    ]
+  // A guest and a stranger have the five, and nobody's sets are read.
+  assert list.length(catalog.all(fakes.ctx(), fakes.guest("g1"))) == 5
+  assert list.length(catalog.all(fakes.ctx(), session.anonymous())) == 5
+  let assert Ok(own) = catalog.find_slug(with_own(), signed_in(), own_id)
+  assert catalog.kind_name(own) == "own"
+  assert own.slug == own_id
+}
+
+pub fn the_hub_draws_an_own_set_as_kind_own_joined_even_empty_test() {
+  let body = practice.decks_json(with_own(), signed_in(), now)
+  let back = find(body, own_id)
+  assert back.kind == "own"
+  assert back.slug == own_id
+  assert back.size == 1
+  assert back.joined
+  let primes = find(body, "Z3W8R1PB")
+  assert primes.size == 0
+  assert primes.joined
+  assert string.contains(body, "\"name\":\"Back games\"")
+  assert string.contains(body, "\"mark\":\"\"")
+}
+
+pub fn an_own_set_s_page_lists_what_is_in_it_for_its_owner_test() {
+  let assert Ok(body) =
+    practice.deck_page_json(with_own(), signed_in(), own_id, now)
+  assert string.contains(
+    body,
+    "\"members\":[{\"id\":\"p1\",\"kind\":\"move\",\"prompt\":\"What's your play?\",\"position\":1,\"level\":2}]",
+  )
+  // An empty one has a page too, rather than a 404.
+  let assert Ok(empty) =
+    practice.deck_page_json(with_own(), signed_in(), "Z3W8R1PB", now)
+  assert string.contains(empty, "\"members\":[]")
+  // A universal set's page has no members list.
+  let assert Ok(openings) =
+    practice.deck_page_json(with_own(), signed_in(), "openings", now)
+  assert string.contains(openings, "\"members\":null")
+}
+
+pub fn an_own_set_s_page_is_its_owner_s_alone_test() {
+  let missing = Error(error.NotFound("There is no such set of puzzles."))
+  let stranger = fakes.signed_in("g2", "u2")
+  let ctx =
+    Ctx(
+      ..with_own(),
+      decks: DeckCaps(..with_own().decks, own: fn(uid) {
+        case uid {
+          "u1" -> [OwnDeck(own_id, "u1", "Back games", 5)]
+          _ -> []
+        }
+      }),
+    )
+  assert practice.deck_page_json(ctx, stranger, own_id, now) == missing
+  assert practice.deck_page_json(ctx, fakes.guest("g1"), own_id, now) == missing
+  let assert Error(error.NotFound(_)) =
+    practice.deck_head(ctx, stranger, own_id)
+  let assert Error(error.NotFound(_)) =
+    practice.deck_head(ctx, session.anonymous(), own_id)
+  // Its owner's head names it, and keeps it out of search.
+  let assert Ok(head) = practice.deck_head(ctx, signed_in(), own_id)
+  assert head.title == "Back games · Practice"
+  assert !head.indexable
+}
+
+pub fn the_sitemap_never_reads_an_own_set_test() {
+  // `sized`'s own cap panics: listing the sitemap asks nobody's sets.
+  assert practice.indexed_slugs(sized(built()))
+    == ["openings", "opening-replies"]
 }

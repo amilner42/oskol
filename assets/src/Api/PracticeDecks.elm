@@ -280,6 +280,11 @@ kindDecoder =
                     "set" ->
                         D.succeed Set
 
+                    -- A player's own set is practiced as a set is; the
+                    -- page that tells the two apart comes with saving one.
+                    "own" ->
+                        D.succeed Set
+
                     other ->
                         D.fail ("not a kind of deck: " ++ other)
             )

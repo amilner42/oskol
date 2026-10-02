@@ -152,11 +152,14 @@ defmodule OskolWeb.SpaController do
   mistakes, or one of the universal sets. `oskol/handlers/practice.deck_head`
   writes the title and description and says whether the page may be
   indexed: a set is the same page for everyone and is (with a canonical, and
-  in the sitemap); a tier is somebody's own mistakes and is not. A slug that
-  names no deck, and a set nobody has built, is a 404.
+  in the sitemap); a tier is somebody's own mistakes and is not, and nor is
+  a player's own set, which is its owner's page alone. A slug that names
+  no deck, a set nobody has built, and somebody else's own set are a 404.
   """
   def practice(conn, %{"slug" => slug}) do
-    case :oskol@handlers@practice.deck_head(Oskol.Gleam.CtxBuilder.build(), slug) do
+    ctx = Oskol.Gleam.CtxBuilder.build()
+
+    case :oskol@handlers@practice.deck_head(ctx, Oskol.Gleam.CtxBuilder.session(conn), slug) do
       {:ok, {:deck_head, title, description, true}} ->
         conn
         |> assign(:page_title, title)

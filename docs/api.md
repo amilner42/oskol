@@ -355,19 +355,25 @@ GET  /papi/practice/decks              {ok, decks: [{id, slug, kind, name, mark,
                                          {pr, pr_without, pr_patched} | null,
                                          mistakes: {puzzles, games} | null}
                                        -- the five decks (three tiers, the built
-                                       sets) for the hub; `standing` an
-                                       account's, `cost` an account's tier with 3+
-                                       graded games, `mistakes` a guest's. Writes
-                                       nothing ([puzzles.md](puzzles.md#the-five-decks))
+                                       sets) for the hub, then an account's own
+                                       sets (`kind: "own"`, `mark: ""`,
+                                       `joined: true`, offered empty); `standing`
+                                       an account's, `cost` an account's tier with
+                                       3+ graded games, `mistakes` a guest's.
+                                       Writes nothing ([puzzles.md](puzzles.md#the-five-decks))
 GET  /papi/practice/decks/:slug        {ok, deck, cells: [{id, level, due, status,
                                          position, band}], days: [30 bools],
-                                         patched_level} -- one deck's page; 404 for
-                                       an unknown slug or an unbuilt set
+                                         patched_level, members: [{id, kind, prompt,
+                                         position, level}] | null} -- one deck's
+                                       page; `members` only on an own set (its
+                                       slug is its id). 404 for an unknown slug,
+                                       an unbuilt set, or somebody else's set
 GET  /papi/decks                       {ok, decks: [{id, name, blurb, size, standing:
                                          {joined, total, in_progress, patched, left,
-                                         due, new_left} | null}], patched_level} --
-                                       the universal sets with positions built
-                                       (see [puzzles.md](puzzles.md#universal-sets));
+                                         due, new_left} | null, own}], patched_level}
+                                       -- the universal sets with positions built
+                                       (see [puzzles.md](puzzles.md#universal-sets)),
+                                       then the caller's own sets (`own: true`);
                                        `standing` is an account's
 GET  /papi/decks/:id[?all=1[&from=<n>]]  {ok, deck, puzzles: [{id, kind, prompt, due}],
                                          today} -- an account that added it gets
@@ -375,8 +381,8 @@ GET  /papi/decks/:id[?all=1[&from=<n>]]  {ok, deck, puzzles: [{id, kind, prompt,
                                        own budget); anybody else walks it in
                                        order, nothing written. `all=1&from=` is
                                        PRACTICE ANYWAY, as on /papi/practice.
-                                       404 for a set that names nothing or has
-                                       nothing built
+                                       404 for a set that names nothing, has
+                                       nothing built, or is somebody else's
 POST /papi/decks/:id/more              KEEP GOING through a set: its own pace
                                        again of positions never shown, over the
                                        day's budget, then the session (409
@@ -385,7 +391,35 @@ POST /papi/decks/:id/more              KEEP GOING through a set: its own pace
 POST /papi/decks/:id/join              {tz} -> the same session, once the set is
                                        added (an account's; 409 `sign_in` for
                                        anybody else). Idempotent: adding again
-                                       adds only positions built since
+                                       adds only positions built since. A no-op
+                                       for an own set (saving enrolls)
+GET  /papi/decks/mine                  {ok, decks: [{id, name, size, new_per_day,
+                                         standing}]} -- the caller's own sets,
+                                       oldest first; [] for a guest
+                                       ([puzzles.md](puzzles.md#own-sets))
+POST /papi/decks/mine                  {name} -> {ok, deck} (the same shape as one
+                                       of the list): make a set. 409 `sign_in`
+                                       for a guest; 422 `name_missing` "Give it a
+                                       name", `name_too_long` "40 characters at
+                                       most", `name_taken` "You already have a
+                                       set called that", `too_many_sets` "That
+                                       is a lot of sets" (50)
+PATCH /papi/decks/:id                  {name} -> {ok, deck}: rename (the same
+                                       422s); 404 unless it is the caller's
+DELETE /papi/decks/:id                 {ok}: delete (soft; the ladder is kept);
+                                       404 unless it is the caller's
+GET  /papi/decks/:id/puzzles           {ok, deck, members: [{id, kind, prompt,
+                                         position, level}]} -- the set and what is
+                                       in it, for its owner; 404 for anybody else
+POST /papi/decks/:id/puzzles           {puzzle_id} -> {ok, deck, added}: save a
+                                       stored puzzle at the end of the set and
+                                       enroll it at once (due today as new);
+                                       `added: false` when it was there already.
+                                       404 for a puzzle that is not stored, or a
+                                       set that is not the caller's
+DELETE /papi/decks/:id/puzzles/:puzzle_id  {ok, deck}: take it out; its card is
+                                       suspended, so saving it again keeps its
+                                       level
 GET  /papi/puzzles/random              {ok, id, kind, prompt}  TRY ONE: a
                                        random complete puzzle whose answer
                                        stands clear (a checker play whose

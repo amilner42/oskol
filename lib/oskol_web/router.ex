@@ -49,6 +49,15 @@ defmodule OskolWeb.Router do
     get "/practice/decks", PracticeController, :decks
     get "/practice/decks/:slug", PracticeController, :deck
     get "/decks", DecksController, :index
+    # A player's own sets: before "/decks/:id", or "mine" would be read as
+    # an id.
+    get "/decks/mine", OwnDecksController, :index
+    post "/decks/mine", OwnDecksController, :create
+    patch "/decks/:id", OwnDecksController, :update
+    delete "/decks/:id", OwnDecksController, :delete
+    get "/decks/:id/puzzles", OwnDecksController, :members
+    post "/decks/:id/puzzles", OwnDecksController, :add
+    delete "/decks/:id/puzzles/:puzzle_id", OwnDecksController, :remove
     get "/decks/:id", DecksController, :show
     post "/decks/:id/join", DecksController, :join
     post "/decks/:id/more", DecksController, :more

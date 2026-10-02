@@ -7,7 +7,16 @@ defmodule Oskol.Gleam.Caps.Ids do
   """
 
   def build(opts \\ []) do
-    {:ids_caps, Keyword.get(opts, :generate, &Oskol.Game.generate_game_id/0), &share_token/0}
+    {:ids_caps, Keyword.get(opts, :generate, &Oskol.Game.generate_game_id/0), &share_token/0,
+     &deck_id/0}
+  end
+
+  @doc """
+  An own set's id: eight characters of the code alphabet, a game code and
+  the first two characters of another.
+  """
+  def deck_id do
+    Oskol.Game.generate_game_id() <> String.slice(Oskol.Game.generate_game_id(), 0, 2)
   end
 
   @doc """
