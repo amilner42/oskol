@@ -1,7 +1,7 @@
 port module Page.Analysis exposing
     ( Model, Msg(..), Brush(..), Button(..), Target(..), Press, Asking(..), Refusal
     , init, update, view, title, withSession, subscriptions
-    , paint, line, analyzable, rolls, longPressMs, defaultMatch
+    , Off, paint, toPlace, offFrom, positionId, line, analyzable, rolls, longPressMs, defaultMatch
     , puzzleGone, pollLimit, tooLongMessage, depthLine, shownSetup
     )
 
@@ -16,9 +16,16 @@ those off instead, so a stack is painted over (black 3, 2, 1, then white 1,
 long press on a phone (`longPressMs`, without sliding) are the other
 colour's brush -- so with the white brush, left adds White and right adds
 Black, the way XG's editor is driven. The two halves of the bar take the
-same taps; the trays are what is left of fifteen and take none. A
-sixteenth checker of a colour is refused, and that colour's tray flashes
-once where it is.
+same taps.
+
+**Every checker is somewhere.** Each colour's fifteen are on the board,
+borne off, or not placed yet (`Off`, `toPlace`). A checker taken off the
+board is not placed, never silently borne off; each brush wears a badge
+of its colour's not placed. Bearing off is on purpose: a tap on a tray
+bears one of those not placed off ("1 off"), the other button or the x
+takes one back. A sixteenth checker, a tray with nothing to bear off or
+take back, is refused, and that colour's tray flashes once where it is.
+CLEAR makes every checker not placed, to build a position from scratch.
 
 **The settings strip.** Who is to play; what is asked (a roll to play,
 picked from a sheet of the 21; DOUBLE?; TAKE?); the cube's value and owner
@@ -28,9 +35,12 @@ or a match to 1..25 with both scores and Crawford, which can only be on
 while somebody is one away. Then OPENING, CLEAR, FLIP, and the position as
 an XGID: COPY, and IMPORT from one.
 
-**The line under the strip** is the first thing `Setup.check` says stops
-the position being asked, in the server's words; ANALYZE is disabled while
-it says anything.
+**The line under the strip** says the first thing left to do: "Place 3
+more White checkers" until every checker is placed or off, then the first
+thing `Setup.check` says ("Pick a roll", the cube and the match), in the
+server's words; ANALYZE is disabled while it says anything, so only a
+complete position (whose off is fifteen less the board, as the server
+reads it) is ever asked.
 
 **ANALYZE** posts the setup (`Api.Analysis.ask`). A position asked before
 comes back at once; otherwise the button's slot becomes a plate of the
@@ -92,6 +102,7 @@ type alias Model =
     { session : Session
     , origin : String -- scheme, host and port, for the link SHARE hands over
     , setup : Setup
+    , off : Off -- each colour's borne off: kept here, since `Setup` counts whatever is not on the board as off
     , brush : Brush
     , press : Maybe Press -- a finger or a button down on a place of the board
     , presses : Int -- every press is numbered, so a long-press timer knows its own
@@ -170,6 +181,7 @@ type Button
 type Target
     = Point Int
     | Bar Color
+    | Tray Color -- a colour's borne-off checkers
 
 
 type alias Press =
@@ -217,6 +229,7 @@ init session origin door =
             { session = session
             , origin = origin
             , setup = Setup.opening
+            , off = { white = 0, black = 0 }
             , brush = Paint White
             , press = Nothing
             , presses = 0
@@ -265,7 +278,7 @@ remembered : Model -> Model
 remembered incoming =
     let
         model =
-            { incoming | setup = normalize incoming.setup }
+            { incoming | setup = normalize incoming.setup, off = offFrom incoming.setup }
     in
     { model
         | lastRoll =
@@ -319,14 +332,69 @@ line model =
                 Just notice
 
             Nothing ->
-                Setup.check model.setup
+                case placeLine model of
+                    Just place ->
+                        Just place
+
+                    Nothing ->
+                        Setup.check model.setup
 
 
-{-| ANALYZE is enabled: the position can be asked as it stands.
+{-| "Place 3 more White checkers", "Place 1 more Black checker", "Place 3
+more White and 2 more Black checkers": what is left to put on the board
+or in a tray, or nothing once every checker is somewhere.
+-}
+placeLine : Model -> Maybe String
+placeLine model =
+    let
+        left color =
+            toPlace color ( model.setup, model.off )
+
+        more n color =
+            String.fromInt n ++ " more " ++ Setup.colorName color
+
+        checkers n =
+            if n == 1 then
+                " checker"
+
+            else
+                " checkers"
+    in
+    case ( left White, left Black ) of
+        ( 0, 0 ) ->
+            Nothing
+
+        ( w, 0 ) ->
+            Just ("Place " ++ more w White ++ checkers w)
+
+        ( 0, b ) ->
+            Just ("Place " ++ more b Black ++ checkers b)
+
+        ( w, b ) ->
+            Just ("Place " ++ more w White ++ " and " ++ more b Black ++ " checkers")
+
+
+{-| The position's XGID, once every checker is placed or borne off. An id
+has no "not placed": written earlier, it would quietly count those
+checkers as borne off.
+-}
+positionId : Model -> Maybe String
+positionId model =
+    if toPlace White ( model.setup, model.off ) == 0 && toPlace Black ( model.setup, model.off ) == 0 then
+        Just (Xgid.encode model.setup)
+
+    else
+        Nothing
+
+
+{-| ANALYZE is enabled: every checker is on the board or borne off, and
+the position can be asked as it stands (a roll picked for a move, the
+cube and the match as `Setup.check` wants them). Only then is the setup
+what the server will read: its off is fifteen less the board.
 -}
 analyzable : Model -> Bool
 analyzable model =
-    not model.loading && Setup.check model.setup == Nothing
+    not model.loading && placeLine model == Nothing && Setup.check model.setup == Nothing
 
 
 {-| The 21 rolls, high die first, as the sheet lays them out: one row per
@@ -342,15 +410,66 @@ rolls =
 -- PAINTING
 
 
-{-| What a press on `target` does with `brush`, or the colour it would have
-put a sixteenth of on the board (`Err`), which is refused.
+{-| Each colour's checkers borne off. The page keeps them, because
+`Setup` cannot: on the wire, and to the server, borne off is whatever is
+not on the board, which only holds once every checker is placed. While a
+position is being built a checker can also be **not placed** (taken off
+the board, or never put on), and that is not borne off.
+-}
+type alias Off =
+    { white : Int, black : Int }
 
-The other button is the other colour's brush; with the x, both buttons
-take one off.
+
+offOf : Color -> Off -> Int
+offOf color off =
+    case color of
+        White ->
+            off.white
+
+        Black ->
+            off.black
+
+
+withOff : Color -> Int -> Off -> Off
+withOff color n off =
+    case color of
+        White ->
+            { off | white = n }
+
+        Black ->
+            { off | black = n }
+
+
+{-| Borne off as the wire has it: whatever of fifteen is not on the board.
+What every door in (an id, a puzzle) reads, since neither has anything
+not placed.
+-}
+offFrom : Setup -> Off
+offFrom setup =
+    { white = max 0 (Setup.offWhite setup), black = max 0 (Setup.offBlack setup) }
+
+
+{-| A colour's checkers not placed yet: neither on the board nor borne off.
+-}
+toPlace : Color -> ( Setup, Off ) -> Int
+toPlace color ( setup, off ) =
+    max 0 (15 - onBoard color setup - offOf color off)
+
+
+{-| What a press on `target` does with `brush`, or the colour whose tray
+refuses it (`Err`, and the tray flashes): a sixteenth checker, a tray
+with none to take back, none left to bear off.
+
+On the board a checker comes from those not placed (or, with none, back
+from the tray), and a checker taken off the board is not placed again,
+not borne off. A tray is borne off on purpose: a tap bears one of the
+colour's not-placed checkers off; the other button, or the x, takes one
+back to be placed. The other button is the other colour's brush; with the
+x, both buttons take one off.
 
 -}
-paint : Brush -> Button -> Target -> Setup -> Result Color Setup
-paint brush button target setup =
+paint : Brush -> Button -> Target -> ( Setup, Off ) -> Result Color ( Setup, Off )
+paint brush button target ( setup, off ) =
     let
         effective =
             case ( brush, button ) of
@@ -360,8 +479,20 @@ paint brush button target setup =
                 _ ->
                     brush
 
-        full color =
-            onBoard color setup >= 15
+        -- one more of `color` on the board: from those not placed, or
+        -- back from the tray
+        taking color placed =
+            if toPlace color ( setup, off ) > 0 then
+                Ok ( placed, off )
+
+            else if offOf color off > 0 then
+                Ok ( placed, withOff color (offOf color off - 1) off )
+
+            else
+                Err color
+
+        removed placed =
+            Ok ( placed, off )
     in
     case target of
         Point p ->
@@ -370,34 +501,30 @@ paint brush button target setup =
                     pointCount p setup
 
                 set count =
-                    Ok
-                        { setup
-                            | points =
-                                List.indexedMap
-                                    (\i c ->
-                                        if i == p - 1 then
-                                            count
+                    { setup
+                        | points =
+                            List.indexedMap
+                                (\i c ->
+                                    if i == p - 1 then
+                                        count
 
-                                        else
-                                            c
-                                    )
-                                    setup.points
-                        }
+                                    else
+                                        c
+                                )
+                                setup.points
+                    }
             in
             case effective of
                 Erase ->
-                    set (n - sign n)
+                    removed (set (n - sign n))
 
                 Paint color ->
                     if n /= 0 && colorOf n /= color then
                         -- painting over the other colour: one of theirs off
-                        set (n - sign n)
-
-                    else if full color then
-                        Err color
+                        removed (set (n - sign n))
 
                     else
-                        set (n + unit color)
+                        taking color (set (n + unit color))
 
         Bar barColor ->
             let
@@ -407,25 +534,42 @@ paint brush button target setup =
                 set count =
                     case barColor of
                         White ->
-                            Ok { setup | whiteBar = count }
+                            { setup | whiteBar = count }
 
                         Black ->
-                            Ok { setup | blackBar = count }
+                            { setup | blackBar = count }
             in
             case effective of
                 Erase ->
-                    set (max 0 (n - 1))
+                    removed (set (max 0 (n - 1)))
 
                 Paint color ->
                     if color /= barColor then
                         -- the other colour's half: painting over it
-                        set (max 0 (n - 1))
-
-                    else if full color then
-                        Err color
+                        removed (set (max 0 (n - 1)))
 
                     else
-                        set (n + 1)
+                        taking color (set (n + 1))
+
+        Tray color ->
+            let
+                n =
+                    offOf color off
+            in
+            case ( brush, button ) of
+                ( Paint _, Primary ) ->
+                    if toPlace color ( setup, off ) > 0 then
+                        Ok ( setup, withOff color (n + 1) off )
+
+                    else
+                        Err color
+
+                _ ->
+                    if n > 0 then
+                        Ok ( setup, withOff color (n - 1) off )
+
+                    else
+                        Err color
 
 
 onBoard : Color -> Setup -> Int
@@ -496,6 +640,12 @@ targetOf zone =
         [ "bar", "black" ] ->
             Just (Bar Black)
 
+        [ "off", "white" ] ->
+            Just (Tray White)
+
+        [ "off", "black" ] ->
+            Just (Tray Black)
+
         _ ->
             Nothing
 
@@ -508,6 +658,9 @@ zoneId zone =
 
         Just (Bar color) ->
             "an-bar-" ++ Setup.colorId color
+
+        Just (Tray color) ->
+            "an-off-" ++ Setup.colorId color
 
         Nothing ->
             "an-" ++ zone
@@ -669,7 +822,7 @@ update msg model =
             )
 
         PressedOpening ->
-            ( edit
+            ( editWith { white = 0, black = 0 }
                 (\s ->
                     { s
                         | points = Setup.opening.points
@@ -683,23 +836,31 @@ update msg model =
             , Cmd.none
             )
 
+        -- Every checker not placed: a clean start to build from.
         PressedClear ->
-            ( edit (\s -> { s | points = Setup.empty.points, whiteBar = 0, blackBar = 0 }) model, Cmd.none )
+            ( editWith { white = 0, black = 0 } (\s -> { s | points = Setup.empty.points, whiteBar = 0, blackBar = 0 }) model
+            , Cmd.none
+            )
 
         PressedFlip ->
-            ( edit Setup.flip model, Cmd.none )
+            ( editWith { white = model.off.black, black = model.off.white } Setup.flip model, Cmd.none )
 
         PressedCopy ->
             let
                 n =
                     model.copied + 1
             in
-            ( { model | copied = n, copiedShown = True }
-            , Cmd.batch
-                [ copyText (Xgid.encode model.setup)
-                , Process.sleep 1500 |> Task.perform (\_ -> CopiedFaded n)
-                ]
-            )
+            case positionId model of
+                Just id ->
+                    ( { model | copied = n, copiedShown = True }
+                    , Cmd.batch
+                        [ copyText id
+                        , Process.sleep 1500 |> Task.perform (\_ -> CopiedFaded n)
+                        ]
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         CopiedFaded n ->
             if n == model.copied then
@@ -892,17 +1053,26 @@ any answer about the position before are gone with it.
 -}
 edit : (Setup -> Setup) -> Model -> Model
 edit change model =
+    editWith model.off change model
+
+
+{-| An edit that may also change what is borne off (a tray, CLEAR, FLIP):
+a checker borne off or taken back changes the position as much as one
+moved on the board.
+-}
+editWith : Off -> (Setup -> Setup) -> Model -> Model
+editWith off change model =
     let
         setup =
             normalize (change model.setup)
     in
-    if setup == model.setup then
+    if setup == model.setup && off == model.off then
         -- nothing changed (the turn already White, the roll already 3-1):
         -- the answer is still about the position on the board
         { model | notice = Nothing }
 
     else
-        { model | setup = setup, notice = Nothing, ask = NotAsked, showing = Nothing }
+        { model | setup = setup, off = off, notice = Nothing, ask = NotAsked, showing = Nothing }
 
 
 {-| ANALYZE (or TRY AGAIN): ask about the position as it stands. Each
@@ -1053,9 +1223,9 @@ press button target model =
 
 paintAt : Button -> Target -> Model -> Model
 paintAt button target model =
-    case paint model.brush button target model.setup of
-        Ok setup ->
-            edit (\_ -> setup) model
+    case paint model.brush button target ( model.setup, model.off ) of
+        Ok ( setup, off ) ->
+            editWith off (\_ -> setup) model
 
         Err color ->
             { model
@@ -1310,7 +1480,7 @@ still model =
     , cube = True
     , theme = theme model
     , key = 0
-    , position = Setup.snapshot (shownSetup model)
+    , position = snapshot model
     , mover =
         Just
             (Setup.colorId
@@ -1399,6 +1569,29 @@ shownSetup model =
             setup
 
 
+{-| The board as the slab draws it, with the trays holding what the page
+says is borne off rather than everything not on the board. A candidate's
+play on the board is of a complete position, whose off is the wire's.
+-}
+snapshot : Model -> Board.Snapshot
+snapshot model =
+    let
+        drawn =
+            Setup.snapshot (shownSetup model)
+
+        white =
+            drawn.white
+
+        black =
+            drawn.black
+    in
+    if shownCandidate model /= Nothing then
+        drawn
+
+    else
+        { drawn | white = { white | off = model.off.white }, black = { black | off = model.off.black } }
+
+
 viewBrushes : Model -> Html Msg
 viewBrushes model =
     let
@@ -1422,6 +1615,20 @@ viewBrushes model =
                 Erase ->
                     ( "takes one off", "takes one off" )
 
+        -- A colour's checkers not placed yet, on its brush: the pool a tap
+        -- paints from. Always there, hidden at none, so nothing moves.
+        left color =
+            let
+                n =
+                    toPlace color ( model.setup, model.off )
+            in
+            span
+                [ classList [ ( "an-left", True ), ( "is-none", n == 0 ) ]
+                , id ("an-left-" ++ Setup.colorId color)
+                , attribute "aria-label" (String.fromInt n ++ " to place")
+                ]
+                [ text (String.fromInt n) ]
+
         -- "adds White" -> "White": the narrow phone's hint
         short words =
             String.replace "adds " "" words
@@ -1435,8 +1642,8 @@ viewBrushes model =
                 ]
     in
     div [ class "an-brushes", id "an-brushes" ]
-        [ brushButton "an-brush-white" (Paint White) "White checkers" [ span [ class "an-chip white" ] [] ]
-        , brushButton "an-brush-black" (Paint Black) "Black checkers" [ span [ class "an-chip black" ] [] ]
+        [ brushButton "an-brush-white" (Paint White) "White checkers" [ span [ class "an-chip white" ] [], left White ]
+        , brushButton "an-brush-black" (Paint Black) "Black checkers" [ span [ class "an-chip black" ] [], left Black ]
         , brushButton "an-brush-remove" Erase "Take checkers off" [ span [ class "an-x" ] [ text "✕" ] ]
         , hint "an-hint-touch"
             (if model.brush == Erase then
@@ -1691,12 +1898,19 @@ viewQuick model =
                 [ id "an-xgid"
                 , class "q-field an-xgid"
                 , readonly True
-                , value (Xgid.encode model.setup)
+                , value (positionId model |> Maybe.withDefault "")
+                , Html.Attributes.placeholder "Place every checker first"
                 , attribute "aria-label" "Position id (XGID)"
                 , attribute "spellcheck" "false"
                 ]
                 []
-            , button [ type_ "button", id "an-xgid-copy", class "q-btn plain an-quick an-copy pixel", onClick PressedCopy ]
+            , button
+                [ type_ "button"
+                , id "an-xgid-copy"
+                , class "q-btn plain an-quick an-copy pixel"
+                , disabled (positionId model == Nothing)
+                , onClick PressedCopy
+                ]
                 [ text
                     (if model.copiedShown then
                         "COPIED"

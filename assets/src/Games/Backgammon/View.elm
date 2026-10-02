@@ -1592,17 +1592,29 @@ viewTray board ownerId isMine =
         holder index =
             div [ class "off-holder flex flex-row items-stretch" ]
                 (List.repeat (clamp 0 5 (count - 5 * index)) (div [ class ("off-stick " ++ color) ] []))
+
+        -- an editor board's tray is a place too (`viewEdit`), and says its
+        -- count in words, always, in a slot of its own
+        zone =
+            board.zone ("off:" ++ ownerId)
+
+        editing =
+            not (List.isEmpty zone)
     in
     div
         ([ class ("bg-tray relative flex flex-row items-center shrink-0 " ++ side)
          , title "Borne off"
          ]
             ++ click
+            ++ zone
         )
         (List.map holder [ 0, 1, 2 ]
             -- empty holders say what they are on their own; the count
             -- appears once there is one, and the bar has no room to spare
-            ++ (if count > 0 then
+            ++ (if editing then
+                    [ span [ class "off-count off-words pixel text-[8px]" ] [ text (String.fromInt count ++ " off") ] ]
+
+                else if count > 0 then
                     [ span [ class "off-count pixel text-[8px]" ] [ text (String.fromInt count) ] ]
 
                 else

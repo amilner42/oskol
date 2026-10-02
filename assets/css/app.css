@@ -3381,9 +3381,26 @@ oskol-demo-board {
    tall whether or not it says anything. */
 .an-board .edit-zone { cursor: pointer; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 @media (hover: hover) and (pointer: fine) {
-  .an-board .bg-point.edit-zone:hover, .an-board .bg-bar-row.edit-zone:hover { box-shadow: inset 0 0 0 2px rgba(255, 210, 63, 0.75); }
+  .an-board .bg-point.edit-zone:hover, .an-board .bg-bar-row.edit-zone:hover, .an-board .bg-tray.edit-zone:hover { box-shadow: inset 0 0 0 2px rgba(255, 210, 63, 0.75); }
 }
 .an-brushes { flex: none; display: flex; align-items: center; gap: 6px; height: 34px; min-width: 0; }
+/* A tray on the editor is a place: its count is said in words, always,
+   in a slot as wide as "15 off", so it never moves. */
+.an-board .bg-tray.edit-zone { padding: 2px 3px; margin: -2px -3px; border-radius: 4px; }
+.an-board .off-words { display: inline-block; min-width: 6ch; text-align: left; white-space: nowrap; }
+/* The pip count beside the tray changes with every checker: as wide as
+   "375 PIPS" always, so the tray beside it never moves. */
+.an-board .bar-pips { display: inline-block; min-width: 9.5ch; text-align: right; }
+/* The checkers of a colour not placed yet, on its brush: a badge that is
+   always there (hidden at none) and floats, so nothing moves. */
+.an-brush { position: relative; }
+.an-left {
+  position: absolute; top: -8px; right: -9px; width: 22px; height: 18px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; border-radius: 9px;
+  background: var(--highlighter); color: var(--ink); border: 1.5px solid var(--ink);
+  font: 700 10px/1 ui-sans-serif, system-ui, sans-serif; pointer-events: none;
+}
+.an-left.is-none { visibility: hidden; }
 .an-brush {
   flex: none; width: 42px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
   border: 1.5px solid var(--ink); border-radius: 7px; background: #fff; color: var(--ink); cursor: pointer;

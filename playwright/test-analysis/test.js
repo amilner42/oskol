@@ -60,6 +60,7 @@ const HELD = [
   '#an-turn', '#an-ask', '#an-dice', '#an-ask-double', '#an-ask-take', '#an-cube', '#an-cube-owner',
   '#an-length', '#an-game', '#an-score-white', '#an-score-black', '#an-crawford',
   '#an-opening', '#an-clear', '#an-flip', '#an-xgid', '#an-xgid-copy', '#an-xgid-import',
+  '#an-off-white', '#an-off-black', '#an-left-white', '#an-left-black',
 ];
 
 async function boxes(page) {
@@ -96,20 +97,21 @@ function settled(page) {
 
 const xgid = async (page) => { await settle(page); return page.inputValue('#an-xgid'); };
 
-// A point's count as the id has it: White positive, Black negative. 0 is
-// Black's bar (O's), 25 White's (X's), 1..24 the points.
-function countAt(id, index) {
-  const ch = id.slice(5).split(':')[0][index];
-  if (ch === '-') return 0;
-  if (ch >= 'A' && ch <= 'P') return ch.charCodeAt(0) - 64;
-  return -(ch.charCodeAt(0) - 96);
-}
-
 const field = (id, n) => id.slice(5).split(':')[n];
 
+// A place's count as the board draws it, numbered as an id numbers them:
+// White positive, Black negative; 0 is Black's bar, 25 White's. Read off
+// the board, not the id: while a checker is not placed there is no id.
+async function boardCount(page, index) {
+  await settle(page);
+  const sel = index === 0 ? '#an-bar-black' : index === 25 ? '#an-bar-white' : `#an-pt-${index}`;
+  const d = await drawnOn(page, sel);
+  return d.white - d.black;
+}
+
 async function expectCount(page, tag, index, want) {
-  const got = countAt(await xgid(page), index);
-  if (got !== want) throw new Error(`${tag}: index ${index} holds ${got}, not ${want} (${await xgid(page)})`);
+  const got = await boardCount(page, index);
+  if (got !== want) throw new Error(`${tag}: index ${index} holds ${got}, not ${want}`);
 }
 
 // What the board draws on a point: its white and black checkers (a stack
@@ -227,8 +229,13 @@ async function desktop(browser, errors) {
     const still = async (tag) => sameBoxes(`desktop ${tag}`, held, await boxes(page));
 
     await page.click('#an-clear');
-    if (field(await xgid(page), 0) !== '-'.repeat(26)) throw new Error(`CLEAR left ${await xgid(page)}`);
-    await expectLine(page, 'cleared', 'Put some White checkers on the board');
+    // Nothing placed: no id yet, and nothing to copy.
+    if ((await xgid(page)) !== '') throw new Error(`CLEAR left the id ${await xgid(page)}`);
+    if ((await page.getAttribute('#an-xgid', 'placeholder')) !== 'Place every checker first') throw new Error('the empty id field does not say why');
+    if (!(await page.isDisabled('#an-xgid-copy'))) throw new Error('COPY is on with checkers not placed');
+    if (await page.isDisabled('#an-xgid-import')) throw new Error('IMPORT is off with checkers not placed');
+    await expectLine(page, 'cleared', 'Place 15 more White and 15 more Black checkers');
+    if ((await page.innerText('#an-left-white')).trim() !== '15') throw new Error("White's brush does not say 15 to place");
     await still('CLEAR');
 
     // Left adds White, right adds Black.
@@ -269,6 +276,28 @@ async function desktop(browser, errors) {
     await page.click('#an-pt-10', { button: 'right' });
     if (!(await page.$('#analysis.an-flash-black-0'))) throw new Error("Black's tray did not flash for its sixteenth");
     await still('a sixteenth');
+
+    // A checker taken off is not placed, not borne off; the tray bears it
+    // off on purpose, and gives it back.
+    await page.click('#an-dice');
+    await page.click('#an-roll-31');
+    await page.click('#an-brush-remove');
+    await page.click('#an-pt-6');
+    await expectLine(page, 'one taken off', 'Place 1 more White checker');
+    if (!(await page.isDisabled('#an-analyze'))) throw new Error('ANALYZE is on with a checker not placed');
+    if ((await page.innerText('#an-left-white')).trim() !== '1') throw new Error("White's brush does not say 1 to place");
+    await page.click('#an-brush-white');
+    await page.click('#an-off-white');
+    if ((await page.innerText('#an-off-white .off-words')).trim() !== '1 off') throw new Error(`White's tray says ${await page.innerText('#an-off-white')}`);
+    await expectLine(page, 'borne off', '');
+    if (await page.isDisabled('#an-analyze')) throw new Error('ANALYZE is off with every checker placed or off');
+    await page.click('#an-off-white', { button: 'right' });
+    await expectLine(page, 'taken back', 'Place 1 more White checker');
+    await page.click('#an-pt-6');
+    if ((await xgid(page)).split(':')[0].slice(5) !== OPENING.split(':')[0].slice(5)) throw new Error(`the checker did not go back: ${await xgid(page)}`);
+    await page.waitForTimeout(800); // the sixteenth's flash, a moment ago, done
+    await page.screenshot({ path: `${SHOTS}/analysis-desktop-02b-tray.png` });
+    await still('the trays');
 
     // The roll.
     await page.click('#an-dice');
@@ -389,6 +418,8 @@ async function phone(browser, errors) {
     await longPress(page, cdp, '#an-bar-black');
     await expectCount(page, "a long press on Black's bar", 0, -1);
     await still('taps and long presses');
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: `${SHOTS}/analysis-390-01b-building.png`, fullPage: true });
 
     await page.tap('#an-opening');
     await page.tap('#an-dice');
@@ -437,10 +468,9 @@ async function aim(browser, errors, tag, viewport) {
         await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height * (p > 12 ? 0.25 : 0.75));
         await settle(page);
       }
-      const id = await xgid(page);
       for (let p = 1; p <= 24; p++) {
         const want = p >= half[0] && p <= half[1] ? 1 : 0;
-        if (countAt(id, p) !== want) throw new Error(`${tag}: taps on points ${half[0]}..${half[1]} gave ${id}`);
+        if ((await boardCount(page, p)) !== want) throw new Error(`${tag}: taps on points ${half[0]}..${half[1]} left ${await boardCount(page, p)} on ${p}`);
       }
     }
     await page.tap('#an-bar-white');
