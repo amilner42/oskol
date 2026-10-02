@@ -114,6 +114,26 @@ defmodule Oskol.Reviews do
   end
 
   @doc """
+  One game's row of `stored/1`, or nil: one game's answer and not a whole
+  match's.
+  """
+  def stored_one(game_id, game_number) do
+    from(r in Review,
+      where: r.game_id == ^game_id and r.game_number == ^game_number,
+      select: %{
+        game_number: r.game_number,
+        status: r.status,
+        attempts: r.attempts,
+        response: r.response,
+        error: r.error,
+        rendered: not is_nil(r.report),
+        turns: r.turns
+      }
+    )
+    |> Repo.one()
+  end
+
+  @doc """
   The same rows without either body: where each game's analysis stands, and
   nothing a read has to carry. This is what the index is built from, so
   asking for it is a few hundred bytes off disk however big the answers are.

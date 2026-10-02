@@ -7,7 +7,8 @@ defmodule Oskol.Gleam.Caps.Puzzles do
       sync_failed, deck_pending, guest_sources, get, mine, game_sources,
       put_attempt, attempt, settle_attempt, serialize, cached_tree, keep_tree,
       cached_moves, keep_moves, pictures, mint_share, share, sample, by_key,
-      store_one, pictures_one)
+      store_one, pictures_one, replay_of)
+      ReplayLink(slug, id, game, step)
       Keyed(stored, complete, evaluated_by_json)
       NewPuzzle(key, ids, kind, question_json, answer_json, evaluated_by_json,
       complete)
@@ -46,7 +47,7 @@ defmodule Oskol.Gleam.Caps.Puzzles do
      &sync_failed/2, &deck_pending/2, &guest_sources/1, &get/1, &mine/3, &game_sources/2,
      &put_attempt/5, &attempt/3, &settle_attempt/5, &serialize/3, &cached_tree/1, &keep_tree/2,
      &cached_moves/1, &keep_moves/2, &pictures/2, &Puzzles.mint_share/5, &share/1, &sample/1,
-     &by_key/1, &store_one/2, &pictures_one/1}
+     &by_key/1, &store_one/3, &pictures_one/1, &replay_of/1}
   end
 
   # A puzzle by its question key, with what the analysis board needs to
@@ -57,8 +58,25 @@ defmodule Oskol.Gleam.Caps.Puzzles do
     end)
   end
 
-  defp store_one(puzzle, origin) do
-    Puzzles.store_one(puzzle(puzzle), origin)
+  defp store_one(puzzle, origin, replay) do
+    Puzzles.store_one(puzzle(puzzle), origin, replay |> unopt() |> replay_link())
+  end
+
+  defp replay_link(nil), do: nil
+
+  defp replay_link({:replay_link, slug, id, game, step}),
+    do: %{"slug" => slug, "id" => id, "game" => game, "step" => step}
+
+  # A link as it was written, read back. One that will not read is no link.
+  defp replay_of(puzzle_id) do
+    case Puzzles.replay_of(puzzle_id) do
+      %{"slug" => slug, "id" => id, "game" => game, "step" => step}
+      when is_binary(slug) and is_binary(id) and is_integer(game) and is_integer(step) ->
+        {:some, {:replay_link, slug, id, game, step}}
+
+      _ ->
+        :none
+    end
   end
 
   # The picture of one analyzed position, now. A bonus like `pictures/2`:

@@ -49,6 +49,7 @@ suite =
         , runEnd
         , deckLine
         , memory
+        , fromReplay
         , sharing
         , story
         ]
@@ -1717,6 +1718,53 @@ memory =
                     |> hasNot [ id "pz-memory" ]
         , test "and never before the attempt" <|
             \_ -> rendered (page { hasNext = False } "move") |> hasNot [ id "pz-memory" ]
+        ]
+
+
+
+-- WATCH THE REPLAY
+
+
+{-| A page after a missed attempt, on the question named.
+-}
+afterAttempt : String -> Page.Model
+afterAttempt name =
+    let
+        model =
+            page { hasNext = False } name
+
+        ( path, _ ) =
+            aTurn model
+    in
+    model |> step (BoardOut (Puzzle.Stepped path)) |> revealed (reveal "move_fail")
+
+
+fromReplay : Test
+fromReplay =
+    describe "a position shared out of a replay"
+        [ test "after the reveal, the way back onto its step" <|
+            \_ ->
+                rendered (afterAttempt "replay")
+                    |> Expect.all
+                        [ \q -> q |> Query.find [ id "pz-from-replay" ] |> Query.has [ text "From a game on Oskol · " ]
+                        , \q ->
+                            q
+                                |> Query.find [ id "pz-replay" ]
+                                |> Query.has [ text "WATCH THE REPLAY →", attribute (Html.Attributes.href "/backgammon/821900/replay?game=3&step=17") ]
+                        ]
+        , test "not before the attempt" <|
+            \_ -> rendered (page { hasNext = False } "replay") |> hasNot [ id "pz-replay" ]
+        , test "a puzzle shared from nowhere has no such line" <|
+            \_ -> rendered (afterAttempt "move") |> hasNot [ id "pz-replay" ]
+        , test "a player of the game has the memory line instead, which links to the replay already" <|
+            \_ ->
+                case Api.parseBody Puzzle.memoryDecoder memoryJson of
+                    Ok m ->
+                        rendered (step (GotMemory (Ok m)) (afterAttempt "replay"))
+                            |> Expect.all [ hasNot [ id "pz-replay" ], \q -> q |> Query.has [ id "pz-memory-link" ] ]
+
+                    Err _ ->
+                        Expect.fail "the memory fixture decodes"
         ]
 
 

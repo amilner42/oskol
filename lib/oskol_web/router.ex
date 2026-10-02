@@ -86,6 +86,9 @@ defmodule OskolWeb.Router do
     # analysis engine nothing; what is written down is the deck's, and only
     # for a signed-in browser.
     get "/games/:slug/rooms/:id/puzzles", PuzzleController, :game
+    # SHARE POSITION on the replay: a step as a puzzle, from the game's
+    # stored answer. Open to anyone the replay is; never engine time.
+    post "/games/:slug/rooms/:id/positions", PuzzleController, :position
     # TRY ONE on the practice home: before "/puzzles/:id", or "random"
     # would be read as an id.
     get "/puzzles/random", PuzzlesHubController, :random

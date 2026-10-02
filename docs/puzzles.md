@@ -586,7 +586,12 @@ server: `handlers/practice` and `handlers/puzzles_hub` (TRY ONE's
 clear-answer rule, on the `puzzles.sample` cap: up to 40 complete puzzles in
 the database's random order, the first that qualifies). TRY ONE and the
 status page draw only rows whose `origin` is `game` or `set`, never a
-position somebody set up on the analysis board (`docs/analysis.md`).
+position somebody set up on the analysis board or shared from a replay
+(`docs/analysis.md`); TRY ONE also skips any row a replay share linked
+(`puzzles.replay`), so it never hands a stranger a door into a room.
+A position shared from a replay (`origin = 'replay'`, no source row, so in
+nobody's practice) shows "From a game on Oskol · WATCH THE REPLAY →" after
+the reveal (`docs/analysis.md`, "Share a position from the replay").
 
 **A deck's page** (`/practice/<slug>`, `assets/src/Page/Practice.elm`) is
 `GET /papi/practice/decks/:slug`: the same card at page size

@@ -195,11 +195,29 @@ GET  /papi/games/:slug/rooms/:id/ratings  (open) {ok, players: [{player_id,
                                        owns and under 5 games), and each graded
                                        game's PRs by seat, for the match panel
 GET  /papi/puzzles/:id                 (open) {ok, id, kind, question, tree,
-                                         prompt} -- the position, the sentence it
-                                         asks in, and for a checker play every
-                                         legal way to play the roll as a DAG of
-                                         boards. Never the answer, never a name,
-                                         never the game it came from
+                                         prompt, replay} -- the position, the
+                                         sentence it asks in, and for a checker
+                                         play every legal way to play the roll as
+                                         a DAG of boards. Never the answer, never
+                                         a name. `replay` is {path} for a position
+                                         somebody shared out of a replay
+                                         ("/backgammon/<id>/replay?game=n&step=s",
+                                         WATCH THE REPLAY), else null
+POST /papi/games/:slug/rooms/:id/positions  (open: anyone who can read the
+                                         replay) {game, step} -> {ok, id, url}
+                                         (url "/puzzles/<id>"). SHARE on the
+                                         replay: the step as a puzzle row
+                                         (origin "replay", `puzzles.replay` set
+                                         once, no source row, picture drawn),
+                                         from the game's stored answer -- never
+                                         engine time. 409 not_graded (no done
+                                         review for that game), incomplete (an
+                                         answer short of every play or the cube's
+                                         chances), no_decision (step 0, a
+                                         resignation, the result, a forced roll
+                                         or dance, an ungraded double); 404 for a
+                                         room, game or step that names nothing;
+                                         422 without {game, step}. Idempotent
 GET  /papi/puzzles/:id/tree?node=      (open) one level of a tree too big to send
                                          whole: {ok, node, tree: Node}
 POST /papi/puzzles/:id/attempts        {moves | band, key, s?, deck?} -> {ok, verdict, band,

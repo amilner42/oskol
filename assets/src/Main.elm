@@ -500,12 +500,12 @@ openRoute url oldModel =
 
                     else
                         Page.Replay.init model.session
-                            { slug = slug, gameId = gameId, game = game, step = step }
+                            { slug = slug, gameId = gameId, origin = model.origin, game = game, step = step }
                             |> wrap model Replay ReplayMsg
 
                 _ ->
                     Page.Replay.init model.session
-                        { slug = slug, gameId = gameId, game = game, step = step }
+                        { slug = slug, gameId = gameId, origin = model.origin, game = game, step = step }
                         |> wrap model Replay ReplayMsg
 
 

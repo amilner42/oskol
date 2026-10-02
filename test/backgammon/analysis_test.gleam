@@ -528,6 +528,121 @@ pub fn every_played_board_is_legal_in_unlimited_play_test() {
   random_games("unlimited", [1], ["resign", "close"])
 }
 
+// ---------- The same turns, from the stored record ----------
+
+/// Every finished game of a played room, its turns read off the record
+/// (`turns_from_record`) beside its turns replayed from the log (`games`):
+/// equal, but for the log index only the log knows. The entries go through
+/// `record.to_json` and back, as a stored row does. Returns what the games
+/// held, so the caller can say the cases were really there.
+fn record_turns_agree(
+  format: String,
+  seed: Int,
+  excluded: List(String),
+) -> #(Int, Int, Int, Int) {
+  let #(log, final) =
+    drive(format, seed, clock.NoClock, 3000, random_except(excluded))
+  let assert Ok(games) = analysis.games(backgammon.game(), log)
+  let by_game = record.by_game(state.record(final))
+  let target = final.config.target
+  let #(_, _, seen) =
+    list.fold(games, #([], [], #(0, 0, 0, 0)), fn(acc, g) {
+      let #(befores, last, seen) = acc
+      let assert Ok(entries) = list.drop(by_game, g.number - 1) |> list.first
+      let befores = list.append(befores, [last])
+      let crawford = record.crawford_game(target, befores)
+      let stored =
+        json.to_string(json.array(entries, record.to_json))
+        |> json.parse(decode.list(record.decoder()))
+      let assert Ok(read_back) = stored
+      assert list.map(read_back, scores_sorted)
+        == list.map(entries, scores_sorted)
+      let scores = case
+        list.filter_map(entries, fn(e) {
+          case e {
+            record.GameOver(scores: scores, ..) -> Ok(scores)
+            _ -> Error(Nil)
+          }
+        })
+      {
+        [s, ..] -> s
+        [] -> last
+      }
+      let seen = case g.finished {
+        False -> seen
+        True -> {
+          let ours =
+            analysis.turns_from_record(
+              read_back,
+              final.order,
+              target,
+              last,
+              crawford,
+            )
+          // The record writes a roll as it reads (high die first); the
+          // log has the order the dice landed in. A question sorts them
+          // anyway (`puzzles.question_of`).
+          let same = fn(t: analysis.Turn) {
+            analysis.Turn(
+              ..t,
+              log_index: -1,
+              dice: option.map(t.dice, fn(d) {
+                #(int.max(d.0, d.1), int.min(d.0, d.1))
+              }),
+            )
+          }
+          assert list.map(ours, same) == list.map(g.turns, same)
+          #(
+            seen.0
+              + case crawford {
+              True -> 1
+              False -> 0
+            },
+            seen.1 + list.count(g.turns, fn(t) { t.double == Some(Took) }),
+            seen.2 + list.count(g.turns, fn(t) { t.double == Some(Passed) }),
+            seen.3 + list.length(g.turns),
+          )
+        }
+      }
+      #(befores, scores, seen)
+    })
+  seen
+}
+
+/// `scores` reads back in no particular order: it is a lookup by player.
+fn scores_sorted(e: record.Entry) -> record.Entry {
+  case e {
+    record.GameOver(scores: scores, ..) ->
+      record.GameOver(
+        ..e,
+        scores: list.sort(scores, fn(a, b) { string.compare(a.0, b.0) }),
+      )
+    _ -> e
+  }
+}
+
+pub fn a_games_turns_read_off_its_record_are_the_replayed_ones_test() {
+  let total =
+    [
+      #("single", 1, []),
+      #("single", 2, ["resign"]),
+      #("match3", 1, []),
+      #("match3", 2, ["resign"]),
+      #("match5", 3, ["resign"]),
+      #("unlimited", 1, ["resign", "close"]),
+    ]
+    |> list.map(fn(c) { record_turns_agree(c.0, c.1, c.2) })
+    |> list.fold(#(0, 0, 0, 0), fn(a, b) {
+      #(a.0 + b.0, a.1 + b.1, a.2 + b.2, a.3 + b.3)
+    })
+  // The cases worth reading back were all there: a Crawford game, a double
+  // taken and one passed, and plenty of turns.
+  assert total.0 > 0
+  assert total.1 > 0
+  assert total.2 > 0
+  assert total.3 > 100
+}
+
 pub fn resignations_in_random_play_keep_the_turns_legal_test() {
   // Resigning is legal at every step, so these games end early, often in
   // the middle of a turn

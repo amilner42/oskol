@@ -130,19 +130,59 @@ const day_ms = 86_400_000
 pub fn puzzle_json(ctx: Ctx, id: String) -> Result(String, ApiError) {
   use stored <- result.try(fetch(ctx, id))
   use question <- result.try(question_of(stored))
-  Ok(body(stored.id, question, tree_of(ctx, stored.id, question)))
+  Ok(body(
+    stored.id,
+    question,
+    tree_of(ctx, stored.id, question),
+    ctx.puzzles.replay_of(stored.id),
+  ))
 }
 
 /// The same answer with the tree worked out fresh, for a caller that has no
 /// capabilities to read a cache with (the fixture task). What it renders is
 /// byte for byte what a page receives, which is the point of a fixture.
-pub fn puzzle_body(stored: caps.Stored) -> Result(String, ApiError) {
+pub fn puzzle_body(
+  stored: caps.Stored,
+  replay: Option(caps.ReplayLink),
+) -> Result(String, ApiError) {
   use question <- result.try(question_of(stored))
-  Ok(body(stored.id, question, fresh_tree(question)))
+  Ok(body(stored.id, question, fresh_tree(question), replay))
 }
 
-fn body(id: String, question: Question, tree: Json) -> String {
-  envelope.ok(fields(id, question, tree))
+/// The page's own fields and, for a position shared out of a replay, the
+/// way back to that step (`replay`, null otherwise). The link names the
+/// room, which names its players; it is there because somebody shared the
+/// step from a replay that link already opens, and the page itself still
+/// names nobody.
+fn body(
+  id: String,
+  question: Question,
+  tree: Json,
+  replay: Option(caps.ReplayLink),
+) -> String {
+  envelope.ok(
+    list.append(fields(id, question, tree), [
+      #(
+        "replay",
+        json.nullable(replay, fn(link) {
+          json.object([#("path", json.string(replay_path(link)))])
+        }),
+      ),
+    ]),
+  )
+}
+
+/// The replay step a shared position came from:
+/// `/<slug>/<id>/replay?game=n&step=s`.
+pub fn replay_path(link: caps.ReplayLink) -> String {
+  "/"
+  <> link.slug
+  <> "/"
+  <> link.id
+  <> "/replay?game="
+  <> int.to_string(link.game)
+  <> "&step="
+  <> int.to_string(link.step)
 }
 
 fn fields(id: String, question: Question, tree: Json) -> List(#(String, Json)) {

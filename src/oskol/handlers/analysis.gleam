@@ -525,6 +525,7 @@ pub fn store(
   use id <- result.try(ctx.puzzles.store_one(
     openings.new_puzzle(question, answer, review.levels),
     origin,
+    None,
   ))
   ctx.puzzles.pictures_one(id)
   Ok(id)

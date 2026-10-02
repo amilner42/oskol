@@ -223,6 +223,19 @@ fn ctx_with(rows: List(puzzles_caps.Stored)) -> Ctx {
       get: fn(id) {
         list.find(rows, fn(row) { row.id == id }) |> option.from_result
       },
+      // "r1" was shared out of a replay; nothing else was.
+      replay_of: fn(id) {
+        case id {
+          "r1" ->
+            Some(puzzles_caps.ReplayLink(
+              slug: "backgammon",
+              id: "ROOM01",
+              game: 2,
+              step: 14,
+            ))
+          _ -> None
+        }
+      },
       put_attempt: fn(puzzle_id, uid, key, answer, verdict) {
         case
           list.find(get_attempts("attempts"), fn(a) {
@@ -528,6 +541,22 @@ pub fn a_take_puzzle_is_shown_from_the_responders_side_test() {
       ),
     )
   assert list.drop(black, 11) |> list.first == Ok(2)
+}
+
+pub fn a_position_shared_from_a_replay_links_back_to_its_step_test() {
+  reset()
+  let ctx =
+    ctx_with([
+      stored("r1", move_question(), move_answer()),
+      stored("p1", move_question(), move_answer()),
+    ])
+  let assert Ok(shared) = handler.puzzle_json(ctx, "r1")
+  assert text_at(shared, ["replay", "path"])
+    == "/backgammon/ROOM01/replay?game=2&step=14"
+  // The page is the ordinary one: the same prompt, nobody named.
+  assert text_at(shared, ["prompt"]) == "White to play 6-4. What's your play?"
+  let assert Ok(plain) = handler.puzzle_json(ctx, "p1")
+  assert is_null(plain, "replay")
 }
 
 pub fn an_unknown_puzzle_is_a_404_test() {

@@ -71,6 +71,10 @@ defmodule Oskol.Puzzles do
       # Set once, by whichever wrote the key first. TRY ONE draws from
       # "game" and "set" only (`@tried`).
       field(:origin, :string, default: "game")
+      # The replay step this position was shared from, `%{"slug", "id",
+      # "game", "step"}`, or nil: what the page's WATCH THE REPLAY opens.
+      # Written once (`store_one/3`) and never moved.
+      field(:replay, :map)
 
       timestamps(type: :utc_datetime_usec)
     end
@@ -168,7 +172,8 @@ defmodule Oskol.Puzzles do
 
   @doc """
   Up to `n` puzzles whose answer is complete and that came from a game or a
-  set (never an analyzed position), in random order: what TRY ONE
+  set (never an analyzed position, and never one with a replay link), in
+  random order: what TRY ONE
   on the practice home draws from. Random order is the database's
   (`random()` over the complete rows); which of them stands clear enough to
   ask a stranger is Gleam's rule, applied to what comes back.
@@ -176,7 +181,10 @@ defmodule Oskol.Puzzles do
   def sample(n) when is_integer(n) and n > 0 do
     Repo.all(
       from(p in Puzzle,
-        where: p.complete and p.origin in @tried,
+        # Nor a position somebody shared out of a replay: its page leads
+        # back into that room, which its sharer sent to the people they
+        # chose, not to a stranger drawn at random.
+        where: p.complete and p.origin in @tried and is_nil(p.replay),
         order_by: fragment("random()"),
         limit: ^n
       )
@@ -603,15 +611,26 @@ defmodule Oskol.Puzzles do
   candidate ids no other key holds and is written with `origin`; a key
   already stored keeps its row, its id and its origin, its incomplete answer
   upgraded by a complete one.
+
+  `replay` (`%{slug, id, game, step}`, or nil) is the replay step a shared
+  position came from, written in the same transaction and only where the
+  row has none: a link is never moved once it is there. A set's own row
+  (`origin = 'set'`) is never linked -- the players drilling that set came
+  to it from the set, not from anybody's game.
   """
-  def store_one(puzzle, origin) when is_map(puzzle) and is_binary(origin) do
+  def store_one(puzzle, origin, replay \\ nil)
+      when is_map(puzzle) and is_binary(origin) and (is_map(replay) or is_nil(replay)) do
     Repo.transaction(fn ->
       {ids, _written} = resolve_ids([puzzle], origin, 0, 0)
       upgrade_answers([puzzle])
 
       case Map.get(ids, puzzle.key) do
-        nil -> Repo.rollback("every candidate id is taken")
-        id -> id
+        nil ->
+          Repo.rollback("every candidate id is taken")
+
+        id ->
+          link_replay(id, replay)
+          id
       end
     end)
     |> case do
@@ -620,6 +639,25 @@ defmodule Oskol.Puzzles do
     end
   rescue
     e -> {:error, Exception.message(e)}
+  end
+
+  # Set once: the first share of a key writes it, and a row that has one
+  # (or is a set's own) is left exactly as it is.
+  defp link_replay(_id, nil), do: :ok
+
+  defp link_replay(id, replay) do
+    from(p in Puzzle, where: p.id == ^id and is_nil(p.replay) and p.origin != "set")
+    |> Repo.update_all(set: [replay: replay, updated_at: DateTime.utc_now()])
+
+    :ok
+  end
+
+  @doc """
+  The replay step a puzzle was shared from, `%{"slug", "id", "game",
+  "step"}`, or nil.
+  """
+  def replay_of(id) when is_binary(id) do
+    Repo.one(from(p in Puzzle, where: p.id == ^id, select: p.replay))
   end
 
   @doc """

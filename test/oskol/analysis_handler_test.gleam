@@ -323,7 +323,7 @@ fn storing_ctx() -> Ctx {
     ..base,
     puzzles: puzzles_caps.PuzzlesCaps(
       ..base.puzzles,
-      store_one: fn(p: puzzles_caps.NewPuzzle, origin: String) {
+      store_one: fn(p: puzzles_caps.NewPuzzle, origin: String, _replay) {
         record("stored", origin <> ":" <> p.key)
         let _ = put("new_puzzle", p)
         Ok(p.ids |> list.first |> option.from_result |> option.unwrap(""))

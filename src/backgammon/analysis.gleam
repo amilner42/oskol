@@ -623,6 +623,209 @@ pub fn danced(turn: Turn) -> Bool {
   turn.dice != None && turn.played == Some(turn.position.board)
 }
 
+// ---------- One finished game, from its stored record ----------
+
+/// A finished game's turns read off its stored record instead of replayed
+/// from the room's log: the very turns `games` lists for that game, with
+/// `log_index` -1 (where an entry sits in the action log is the one thing
+/// a record does not know, and nothing sent to the engine carries it).
+///
+/// `entries` are the game's record lines, oldest first, as its
+/// `game_records` row holds them; `order` the seats' player ids, White
+/// first; `target` the match length (0 for unlimited play); `scores_before`
+/// the match score the game began at (the previous game's result line;
+/// empty for the first game); `crawford` whether it is the Crawford game
+/// (`record.crawford_game`).
+///
+/// Every record line a turn is made of is here: the board before each roll
+/// is the previous turn's snapshot (or the opening position), the cube the
+/// one that snapshot shows, a double and its answer are the lines they are,
+/// and a turn is closed exactly as `step` and `close` close one -- through
+/// the same `settle`, so a double the engine would not take is folded away
+/// the same way. `analysis_test` holds the two to each other over played
+/// games of every format.
+pub fn turns_from_record(
+  entries: List(record.Entry),
+  order: List(String),
+  target: Int,
+  scores_before: List(#(String, Int)),
+  crawford: Bool,
+) -> List(Turn) {
+  let start = record.snapshot(board.initial(), 1, None)
+  let pending_at = fn(snapshot: record.Snapshot, player_id: String) {
+    let seat = seat_of(order, player_id)
+    let color = case seat {
+      0 -> White
+      _ -> Black
+    }
+    Pending(
+      color: color,
+      player: seat,
+      player_id: player_id,
+      position: snapshot_position(
+        snapshot,
+        color,
+        player_id,
+        target,
+        scores_before,
+        crawford,
+      ),
+      offer: NoDouble,
+      dice: None,
+      double_entry: None,
+      answer_entry: None,
+    )
+  }
+  let #(_, pending, turns) =
+    entries
+    |> list.index_map(fn(e, i) { #(i, e) })
+    |> list.fold(
+      #(start, None, []),
+      fn(
+        acc: #(record.Snapshot, Option(Pending), List(Turn)),
+        line: #(Int, record.Entry),
+      ) {
+        let #(snapshot, pending, turns) = acc
+        let keep = fn(turn: Option(Turn)) {
+          case turn {
+            Some(t) -> [t, ..turns]
+            None -> turns
+          }
+        }
+        case line {
+          #(i, record.Turn(player: player_id, dice: dice, position: after, ..)) -> {
+            let p = case pending {
+              Some(p) if p.player_id == player_id -> p
+              _ -> pending_at(snapshot, player_id)
+            }
+            let p = Pending(..p, dice: pair_of(dice))
+            let played = Some(snapshot_board(after, p.color))
+            #(after, None, keep(settle(p, played, Some(i), -1)))
+          }
+          #(i, record.Double(player: player_id, ..)) -> #(
+            snapshot,
+            Some(
+              Pending(
+                ..pending_at(snapshot, player_id),
+                offer: Offered,
+                double_entry: Some(i),
+              ),
+            ),
+            turns,
+          )
+          #(i, record.Take(..)) -> #(
+            snapshot,
+            option.map(pending, fn(p) {
+              Pending(..p, offer: Answered(Took), answer_entry: Some(i))
+            }),
+            turns,
+          )
+          #(i, record.Drop(..)) ->
+            case pending {
+              Some(p) -> #(
+                snapshot,
+                None,
+                keep(settle(
+                  Pending(
+                    ..p,
+                    offer: Answered(Passed),
+                    dice: None,
+                    answer_entry: Some(i),
+                  ),
+                  None,
+                  None,
+                  -1,
+                )),
+              )
+              None -> acc
+            }
+          _ -> acc
+        }
+      },
+    )
+  // The game ended with a turn cut off (a resignation, a clock): an
+  // answered double stands, as `close` keeps it.
+  let cut_off = case pending {
+    Some(Pending(offer: Answered(_), ..) as p) ->
+      settle(Pending(..p, dice: None), None, None, -1)
+    _ -> None
+  }
+  let turns = case cut_off {
+    Some(t) -> [t, ..turns]
+    None -> turns
+  }
+  list.reverse(turns)
+}
+
+fn seat_of(order: List(String), player_id: String) -> Int {
+  order
+  |> list.index_map(fn(id, i) { #(id, i) })
+  |> list.find(fn(entry) { entry.0 == player_id })
+  |> result.map(fn(entry) { entry.1 })
+  |> result.unwrap(0)
+}
+
+fn pair_of(dice: List(Int)) -> Option(#(Int, Int)) {
+  case dice {
+    [a, b, ..] -> Some(#(a, b))
+    _ -> None
+  }
+}
+
+/// `position` for a board the record drew: the engine's board for `mover`,
+/// the snapshot's cube, and the score and Crawford flag the game began at.
+fn snapshot_position(
+  snapshot: record.Snapshot,
+  mover: Color,
+  mover_id: String,
+  target: Int,
+  scores_before: List(#(String, Int)),
+  crawford: Bool,
+) -> Position {
+  let score = fn(mine: Bool) {
+    scores_before
+    |> list.filter(fn(s) { { s.0 == mover_id } == mine })
+    |> list.first
+    |> result.map(fn(s) { s.1 })
+    |> result.unwrap(0)
+  }
+  let #(away1, away2) = case target > 0 {
+    True -> #(target - score(True), target - score(False))
+    False -> #(0, 0)
+  }
+  Position(
+    board: snapshot_board(snapshot, mover),
+    cube_value: snapshot.cube,
+    cube_owner: case snapshot.cube_owner {
+      None -> "centered"
+      Some(owner) if owner == mover_id -> "player"
+      Some(_) -> "opponent"
+    },
+    away1: away1,
+    away2: away2,
+    crawford: crawford,
+  )
+}
+
+/// `encode` for a board the record drew rather than a live one.
+fn snapshot_board(snapshot: record.Snapshot, mover: Color) -> List(Int) {
+  let #(mine, theirs) = case mover {
+    White -> #(snapshot.white, snapshot.black)
+    Black -> #(snapshot.black, snapshot.white)
+  }
+  let at = fn(side: record.Side, p: Int) {
+    list.drop(side.points, p - 1) |> list.first |> result.unwrap(0)
+  }
+  list.flatten([
+    [theirs.bar],
+    list.map(list.range(1, 24), fn(index) {
+      let p = oskol_point(mover, index)
+      at(mine, p) - at(theirs, p)
+    }),
+    [mine.bar],
+  ])
+}
+
 // ---------- One turn, as it is committed ----------
 
 /// The turn this step committed, if it committed one: exactly the `Turn`

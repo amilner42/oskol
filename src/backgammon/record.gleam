@@ -11,6 +11,8 @@
 import backgammon/board.{
   type Board, type Color, type Loc, Bar, Black, Off, Point, White,
 }
+import gleam/dict
+import gleam/dynamic/decode.{type Decoder}
 import gleam/int
 import gleam/json.{type Json}
 import gleam/list
@@ -423,4 +425,64 @@ pub fn side_to_json(side: Side) -> Json {
     #("off", json.int(side.off)),
     #("pips", json.int(side.pips)),
   ])
+}
+
+// ---------- Reading a stored record back ----------
+
+/// One entry as `to_json` wrote it, read back: what a finished game's
+/// stored row (`game_records`) is made of. A field `to_json` does not write
+/// is ignored, and `scores` comes back in no particular order (it is a
+/// lookup by player, never a list read by position).
+pub fn decoder() -> Decoder(Entry) {
+  use kind <- decode.field("kind", decode.string)
+  case kind {
+    "turn" -> {
+      use player <- decode.field("player", decode.string)
+      use dice <- decode.field("dice", decode.list(decode.int))
+      use moves <- decode.field("moves", decode.list(decode.string))
+      use position <- decode.field("position", snapshot_decoder())
+      use landed <- decode.optional_field("landed", [], decode.list(decode.int))
+      decode.success(Turn(player, dice, moves, position, landed))
+    }
+    "double" -> {
+      use player <- decode.field("player", decode.string)
+      use value <- decode.field("value", decode.int)
+      decode.success(Double(player, value))
+    }
+    "take" -> decode.map(decode.at(["player"], decode.string), Take)
+    "drop" -> decode.map(decode.at(["player"], decode.string), Drop)
+    "resign" -> decode.map(decode.at(["player"], decode.string), Resign)
+    "game_over" -> {
+      use number <- decode.field("number", decode.int)
+      use winner <- decode.field("winner", decode.string)
+      use result <- decode.field("result", decode.string)
+      use points <- decode.field("points", decode.int)
+      use cube <- decode.field("cube", decode.int)
+      use scores <- decode.field(
+        "scores",
+        decode.dict(decode.string, decode.int) |> decode.map(dict.to_list),
+      )
+      decode.success(GameOver(number, winner, result, points, cube, scores))
+    }
+    _ -> decode.failure(Resign(""), "a record entry")
+  }
+}
+
+fn snapshot_decoder() -> Decoder(Snapshot) {
+  use white <- decode.field("white", side_decoder())
+  use black <- decode.field("black", side_decoder())
+  use cube <- decode.subfield(["cube", "value"], decode.int)
+  use owner <- decode.subfield(
+    ["cube", "owner"],
+    decode.optional(decode.string),
+  )
+  decode.success(Snapshot(white, black, cube, owner))
+}
+
+fn side_decoder() -> Decoder(Side) {
+  use points <- decode.field("points", decode.list(decode.int))
+  use bar <- decode.field("bar", decode.int)
+  use off <- decode.field("off", decode.int)
+  use pips <- decode.field("pips", decode.int)
+  decode.success(Side(points, bar, off, pips))
 }

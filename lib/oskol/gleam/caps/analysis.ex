@@ -6,7 +6,7 @@ defmodule Oskol.Gleam.Caps.Analysis do
       AnalysisCaps(log, stored, ratings, summaries, report, save, backfill_turns,
       enqueue, review, report_turn, charge, replace, grades, forget_grades,
       graded_for, graded_rooms_for, mistake_costs, ask_budget, asking, submit,
-      allow_ask, release_ask)
+      allow_ask, release_ask, stored_one)
       RatedGame(game_id, game_number, seat, response_json, ended_at_ms)
       GameLog(slug, format, clock, seed, seats, entries, record_generation)
       LogEntry(kind, player_id, payload_json, at_ms)
@@ -56,7 +56,7 @@ defmodule Oskol.Gleam.Caps.Analysis do
      &backfill_turns/3, &enqueue/1, Keyword.get(opts, :review, &review/1), &report_turn/3,
      &charge/4, &replace/3, grades, &forget_grades/2, &graded_for/2, &graded_rooms_for/3,
      &mistake_costs/1, &ask_budget/0, &Oskol.Analysis.Asker.asking/1,
-     &Oskol.Analysis.Asker.submit/1, &Oskol.Limiter.allow/1, &release_ask/1}
+     &Oskol.Analysis.Asker.submit/1, &Oskol.Limiter.allow/1, &release_ask/1, &stored_one/2}
   end
 
   defp release_ask(buckets) do
@@ -178,6 +178,12 @@ defmodule Oskol.Gleam.Caps.Analysis do
 
   defp stored(game_id) do
     Enum.map(Reviews.stored(game_id), &stored_row/1)
+  end
+
+  # One game's row with its answer: what sharing a replay step reads,
+  # rather than every game of a match's.
+  defp stored_one(game_id, game_number) do
+    opt(Reviews.stored_one(game_id, game_number), &stored_row/1)
   end
 
   defp ratings(game_id) do

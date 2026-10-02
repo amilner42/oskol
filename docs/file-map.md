@@ -96,6 +96,10 @@ src/oskol/handlers/analysis.gleam POST/GET /papi/analysis: the cache by key, the
                                 /papi/analysis/moves, a set-up roll's legal plays
                                 (the puzzle tree, never the engine); its controller is
                                 lib/oskol_web/controllers/api/analysis_controller.ex
+src/oskol/handlers/positions.gleam POST .../rooms/:id/positions: a replay step
+                                written as a puzzle from the game's stored record
+                                and answer (never engine time); its action is
+                                PuzzleController.position
 src/oskol/handlers/puzzles.gleam the puzzle pages: the question, the grade, the
                                  reveal, what an answer does to a deck, the
                                  memory line, a game's own mistakes
