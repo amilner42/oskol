@@ -95,7 +95,7 @@ import Games.Backgammon.Replay as Replay
 import Games.Backgammon.View as Board
 import Games.Backgammon.Words as Words exposing (chanceCells, cubeChances, cubeLine, gradeTag, signed)
 import Html exposing (Html, a, button, div, h1, p, span, text)
-import Html.Attributes exposing (attribute, class, classList, disabled, href, id, type_)
+import Html.Attributes exposing (attribute, class, classList, disabled, href, id, rel, target, type_)
 import Html.Events exposing (on, onClick, onFocus)
 import Json.Decode as D
 import Json.Encode as E
@@ -2321,6 +2321,18 @@ viewControls model puzzle =
                         , text (Maybe.withDefault "SHARE" model.shareLabel)
                         ]
                  )
+                    -- Every puzzle opens on the analysis board, as this
+                    -- page shows it, in a new tab: this one stays put.
+                    :: a
+                        [ class "q-btn plain pz-action"
+                        , id "pz-analysis"
+                        , href (Route.href (Route.analysisPuzzle puzzle.id))
+                        , target "_blank"
+                        , rel "noopener"
+                        ]
+                        [ text "OPEN IN ANALYSIS"
+                        , span [ class "hero-arrow-top-right-on-square w-4 h-4", attribute "aria-hidden" "true" ] []
+                        ]
                     -- A run is open-ended: after every reveal, one more
                     -- or stop. Stopping is a finished thing to have
                     -- done, so I'M DONE is always offered and never

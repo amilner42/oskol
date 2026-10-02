@@ -59,12 +59,13 @@ import Browser.Dom
 import Browser.Events
 import Dict
 import Games.Backgammon.Replay as Replay exposing (Annotation(..), Candidate, Entry(..), Game, GameAnalysis, GameReview, Index, MoveReview(..), Record, Review, Status(..), TurnReview)
+import Games.Backgammon.Setup as Setup
 import Games.Backgammon.View as Board
 import Games.Backgammon.Words exposing (answerInWords, candidateInWords, chanceCells, cubeChances, cubeLine, doubleInWords, gradeMark, gradeOf, gradeTag, inWords, lost, moveInWords, noDoubleInWords, signed, verdictTag)
 import Api.Catalog as Catalog
 import Page.Play exposing (storePref)
-import Html exposing (Html, button, div, p, span, text)
-import Html.Attributes exposing (attribute, class, classList, disabled, href, id, style)
+import Html exposing (Html, a, button, div, p, span, text)
+import Html.Attributes exposing (attribute, class, classList, disabled, href, id, rel, style, target)
 import Html.Events exposing (on, onClick)
 import Json.Decode as D
 import Json.Encode as E
@@ -1105,7 +1106,7 @@ viewReplay model record game =
                     Nothing
 
         scores =
-            scoresBefore record game
+            Replay.scoresBefore record game
 
         board =
             Board.viewStill NoOp
@@ -1208,7 +1209,8 @@ viewSide model record game =
     in
     div [ class "rp-side" ]
         [ div [ class "rp-panel", id "rp-panel" ]
-            [ div [ class "rp-tabs", id "rp-tabs" ]
+            [ viewPanelHead record game model.step
+            , div [ class "rp-tabs", id "rp-tabs" ]
                 [ tab (model.tab == OverviewTab) True "rp-tab-overview" "OVERVIEW" (PickTab OverviewTab)
                 , tab (model.tab == MoveTab) (model.step > 0) "rp-note-move" "MOVE" (PickTab MoveTab)
                 , tab (model.tab == CubeTab) cubeOffered "rp-note-cube" "CUBE" (PickTab CubeTab)
@@ -1220,6 +1222,37 @@ viewSide model record game =
                 _ ->
                     viewNote model record game
             ]
+        ]
+
+
+{-| Over the tabs, on every one: the doors out of the replay at this step.
+OPEN IN ANALYSIS is a link (a new tab, so the replay stays where it was)
+to the analysis board on the step's decision, with its dice, cube, score
+and Crawford (`Setup.fromReplay`, carried as an XGID). A step that is no
+decision (a resignation, the result) keeps the link's place, unseen, so
+nothing moves as the reader steps through.
+-}
+viewPanelHead : Record -> Game -> Int -> Html Msg
+viewPanelHead record game step =
+    let
+        icon =
+            span [ class "hero-arrow-top-right-on-square w-3.5 h-3.5", attribute "aria-hidden" "true" ] []
+    in
+    div [ class "rp-panel-head" ]
+        [ case Setup.fromReplay record game step of
+            Just setup ->
+                a
+                    [ class "rp-door pixel text-[8px]"
+                    , id "rp-analysis"
+                    , href (Route.href (Route.analysisXgid setup))
+                    , target "_blank"
+                    , rel "noopener"
+                    ]
+                    [ text "OPEN IN ANALYSIS", icon ]
+
+            Nothing ->
+                span [ class "rp-door pixel text-[8px] is-off", id "rp-analysis", attribute "aria-hidden" "true" ]
+                    [ text "OPEN IN ANALYSIS", icon ]
         ]
 
 
@@ -1370,20 +1403,6 @@ touchAt toMsg =
 theme : Model -> String
 theme model =
     Dict.get "backgammon_theme" model.session.prefs |> Maybe.withDefault Board.defaultTheme
-
-
-{-| The match score as the game began: the result of the game before it, or
-nothing yet.
--}
-scoresBefore : Record -> Game -> List ( String, Int )
-scoresBefore record game =
-    record.games
-        |> List.filter (\g -> g.number < game.number)
-        |> List.filterMap resultOf
-        |> List.reverse
-        |> List.head
-        |> Maybe.map .scores
-        |> Maybe.withDefault []
 
 
 resultOf : Game -> Maybe { number : Int, winner : String, result : String, points : Int, scores : List ( String, Int ) }

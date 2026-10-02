@@ -2,10 +2,12 @@
 //// room's record, and what a game that keeps none answers.
 
 import gamekit/clock
+import gamekit/conformance
 import gamekit/game.{Seat}
 import gamekit/instance.{type Instance}
 import gamekit/registry
-import gleam/json
+import gleam/int
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
@@ -60,23 +62,108 @@ pub fn a_seat_reads_the_whole_record_test() {
   let ctx = room_with("backgammon", Ok(game))
   let assert Ok(body) =
     record.record_json(ctx, fakes.guest("g1"), "backgammon", "000007")
-  let assert Some(expected) = instance.record(game)
-  assert body
-    == json.to_string(
-      json.object([
-        #("ok", json.bool(True)),
-        #("slug", json.string("backgammon")),
-        #("id", json.string("000007")),
-        #("you", json.string("p1")),
-        #("seated", json.bool(True)),
-        #("accounts", json.array([], json.string)),
-        #("names", json.object([])),
-        #("record", expected),
-      ]),
-    )
+  assert string.starts_with(
+    body,
+    "{\"ok\":true,\"slug\":\"backgammon\",\"id\":\"000007\",\"you\":\"p1\","
+      <> "\"seated\":true,\"accounts\":[],\"names\":{},\"record\":{",
+  )
+  // The record is the game's own, its fields in key order and its games
+  // last (with whether each is the Crawford game).
+  assert string.contains(
+    body,
+    "{\"color\":\"white\",\"id\":\"p1\",\"name\":\"Alice\"}",
+  )
+  assert string.contains(body, "\"target\":5")
+  assert string.contains(body, "\"cube\":true")
+  assert string.contains(body, "\"start\":{")
   // A game whose first turn is not committed yet has nothing to list
-  assert string.contains(body, "\"target\":5,\"cube\":true,")
   assert string.contains(body, "\"games\":[]")
+}
+
+fn send(game: Instance, who: String, action: String) -> Instance {
+  let assert Ok(raw) = conformance.parse(action)
+  let assert Ok(#(next, _)) = instance.apply(game, who, raw, 0)
+  next
+}
+
+fn other(id: String) -> String {
+  case id {
+    "p1" -> "p2"
+    _ -> "p1"
+  }
+}
+
+/// `who` resigns at `stakes` and the other accepts; then both press READY
+/// for the next game.
+fn resigned(game: Instance, who: String, stakes: String) -> Instance {
+  let game =
+    send(
+      game,
+      who,
+      "{\"name\":\"resign\",\"params\":{\"stakes\":\"" <> stakes <> "\"}}",
+    )
+  let game =
+    send(game, other(who), "{\"name\":\"accept_resign\",\"params\":{}}")
+  let game = send(game, "p1", "{\"name\":\"ready\",\"params\":{}}")
+  send(game, "p2", "{\"name\":\"ready\",\"params\":{}}")
+}
+
+pub fn a_live_record_names_the_crawford_game_test() {
+  // A match to 3: the first mover resigns a gammon (2-0, one away), the
+  // leader resigns the next game (2-1, the Crawford game), and the third
+  // game begins.
+  let game = started("backgammon", "match3")
+  let assert [first] = instance.to_act(game)
+  let game = resigned(game, first, "gammon")
+  let game = resigned(game, other(first), "single")
+  let ctx = room_with("backgammon", Ok(game))
+  let assert Ok(body) =
+    record.record_json(ctx, fakes.guest("g1"), "backgammon", "000007")
+  assert string.contains(body, "{\"number\":1,\"crawford\":false,\"entries\"")
+  assert string.contains(body, "{\"number\":2,\"crawford\":true,\"entries\"")
+}
+
+/// One finished game's rows: a result line with the score it left.
+fn result_row(number: Int, p1: Int, p2: Int) -> records_caps.StoredRecord {
+  records_caps.StoredRecord(
+    number,
+    "[{\"kind\":\"take\",\"player\":\"p2\"},{\"kind\":\"game_over\",\"number\":"
+      <> int.to_string(number)
+      <> ",\"winner\":\"p1\",\"result\":\"single\",\"points\":1,\"cube\":1,"
+      <> "\"scores\":{\"p1\":"
+      <> int.to_string(p1)
+      <> ",\"p2\":"
+      <> int.to_string(p2)
+      <> "}}]",
+  )
+}
+
+pub fn a_stored_record_names_the_crawford_game_test() {
+  // A match to 3 played to 2-2: 2-0, the Crawford game to 2-1, 2-2, and
+  // the decider, which is no Crawford game though both are one away.
+  let ctx =
+    fakes.ctx()
+    |> fakes.with_records(
+      Some(records_caps.Setup(..finished_setup(), format: "match3")),
+      [
+        result_row(1, 2, 0),
+        result_row(2, 2, 1),
+        result_row(3, 2, 2),
+        result_row(4, 3, 2),
+      ],
+    )
+    |> fakes.with_room(None, None)
+  let assert Ok(body) =
+    record.record_json(ctx, fakes.guest("g1"), "backgammon", "000007")
+  assert string.contains(body, "\"target\":3")
+  let flags =
+    list.map([1, 2, 3, 4], fn(n) {
+      let on = "{\"number\":" <> int.to_string(n) <> ",\"crawford\":true,"
+      let off = "{\"number\":" <> int.to_string(n) <> ",\"crawford\":false,"
+      assert string.contains(body, on) != string.contains(body, off)
+      string.contains(body, on)
+    })
+  assert flags == [False, True, False, False]
 }
 
 pub fn a_guest_at_no_seat_here_still_reads_the_record_test() {
@@ -195,7 +282,7 @@ pub fn a_finished_room_reads_its_record_from_rows_test() {
   // ...and the games are the rows, verbatim.
   assert string.contains(
     body,
-    "\"games\":[{\"number\":1,\"entries\":[{\"kind\":\"result\",\"winner\":\"p1\"}]}]",
+    "\"games\":[{\"number\":1,\"crawford\":false,\"entries\":[{\"kind\":\"result\",\"winner\":\"p1\"}]}]",
   )
   assert string.contains(body, "\"seated\":true")
   assert string.contains(body, "\"you\":\"p1\"")

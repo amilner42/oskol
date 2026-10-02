@@ -327,3 +327,44 @@ and the column is beside both.
 - **Nothing moves**: the controls' widths, the line's two lines and the
   brushes' row are fixed, and the sheet and the dialog float over the
   page. `playwright/test-analysis` asserts the boxes across every change.
+
+## Open in analysis (the replay and every puzzle)
+
+Two doors onto the board, each a plain link in a new tab
+(`target="_blank" rel="noopener"`), so the page it was opened from stays
+where it was, and the position is in the URL (it survives a reload and
+pastes anywhere). Neither spends engine time.
+
+- **The record says which game is the Crawford game.**
+  `backgammon/record.crawford_game(target, scores_before)` is the rule
+  `state.next_game` applies (the first game after somebody reaches one
+  away, and only that one; never a match's first game, never unlimited
+  play), over the score each game began at. `handlers/record` writes
+  `crawford` on every game of the record, live or read from rows, from
+  the result lines' scores; `Replay.Game.crawford` reads it (false for an
+  answer without it). Tests: `record_test` (a match to 3 played to 2-2,
+  against the state's own flag) and `record_handler_test` (both paths).
+- **`Setup.fromReplay : Record -> Game -> Int -> Maybe Setup`** (in
+  `Setup.elm`, not `Replay.elm`: `Setup` imports `Puzzle`, which imports
+  `Replay`) is a step's decision, not the board it leaves: a turn is a
+  `Move` with its dice (high first) on the board the step before shows; a
+  double a `Double` for the doubler on the board before it; a take or a
+  drop a `Take` asked of the player who answered, the cube as it stood
+  before the double; step 0 the start for whoever moved first, a `Double`
+  where `canDouble` (the cube live) and else a `Move` with no roll ("Pick a
+  roll"); a resignation or a result line `Nothing`. The cube is the
+  snapshot's (a take turns it to the taker), the match is `record.target`
+  at `Replay.scoresBefore` with the game's `crawford`, and the colors are
+  the players' own (the replay's flip is the reader's). Every step's XGID
+  decodes back to the same setup (`ReplayTest`).
+- **The replay**: OPEN IN ANALYSIS (`#rp-analysis`) in a fixed-height row
+  over the panel's tabs (`.rp-panel-head`), on every tab, to
+  `Route.analysisXgid`; on a step that is no decision it keeps its place
+  unseen (`.is-off`, a span), so nothing moves as the reader steps. The
+  share-from-the-replay door belongs in the same row.
+- **Every puzzle page**: OPEN IN ANALYSIS (`#pz-analysis`) after the
+  reveal, beside SHARE, to `Route.analysisPuzzle id` (`/analysis?p=<id>`).
+- `playwright/test-backgammon-replay` opens a graded turn, a double, a
+  take, a turn of the Crawford game and one after it, and checks the new
+  tab's 24 points (read from the editor's targets), bars, dice, cube and
+  owner, score and Crawford against the record.

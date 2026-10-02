@@ -59,6 +59,8 @@ arrive at any of them cold, and moving between them afterwards is a
   current in the address bar (replaced, not pushed, so back still leaves
   the page), which is what makes a reload land on the same line and a
   link carry a move to a friend; `step` is omitted at the start of a game.
+  OPEN IN ANALYSIS over the panel's tabs opens the step's decision on
+  `/analysis?xgid=` in a new tab (`docs/analysis.md`).
 - `/puzzles` the practice home, PUZZLES on the home menu: the five decks
   (three tiers of the visitor's mistakes, the sets), one in front with the
   button that starts a run (see [puzzles.md](puzzles.md)). Open to anyone, indexable, in the sitemap; the
@@ -174,7 +176,14 @@ GET  /papi/games/:slug/rooms/:id/record  (open)
                                        {ok, slug, id, you, seated, accounts, record}  (the game's
                                        `record`; `you` is the seat the board faces --
                                        the reader's own, else the first -- and `seated`
-                                       says whether that seat is theirs)
+                                       says whether that seat is theirs). Each of
+                                       `record.games` is {number, crawford, entries}:
+                                       `crawford` is true on the match's Crawford game
+                                       (`backgammon/record.crawford_game`, the rule
+                                       `state.next_game` applies, over the scores the
+                                       result lines left; false in unlimited play and
+                                       on a match's first game), which the replay's
+                                       OPEN IN ANALYSIS carries
 GET  /papi/games/:slug/rooms/:id/ratings  (open) {ok, players: [{player_id,
                                        games, pr, career}], games:
                                        [{game_number, players: [{player_id,

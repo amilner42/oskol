@@ -217,8 +217,12 @@ node playwright/test-backgammon-landscape/test.js  # backgammon on a sideways ph
                                                # fits the screen height exactly, nothing scrolls
 node playwright/test-backgammon-replay/test.js  # the replay of a finished match (it arranges
                                                # the room): steps, keys, swipes, analysis
-                                               # pending -> done, retry, phones; the analysis
-                                               # is stubbed unless REPLAY_REAL=1
+                                               # pending -> done, retry, phones, OPEN IN
+                                               # ANALYSIS at a graded turn, a double, a take,
+                                               # the Crawford game and after it (the board,
+                                               # dice, cube, score in the new tab); the match
+                                               # is searched for one with all of those; the
+                                               # analysis is stubbed unless REPLAY_REAL=1
 node playwright/test-puzzle/test.js             # a puzzle from a link: setup.exs arranges a game,
                                                # grades it against a Req.Test engine in its own VM
                                                # (real legal plays, the played one a mistake) and

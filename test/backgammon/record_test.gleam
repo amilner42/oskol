@@ -855,3 +855,76 @@ fn player_json(id: String, name: String, color: String) -> json.Json {
     #("color", json.string(color)),
   ])
 }
+
+// ---------- The Crawford game ----------
+
+/// `color` bears off its last checker: a gammon for White (p1), a single
+/// for Black (p2).
+fn wins(s: state.GameState, color: board.Color) -> state.GameState {
+  let #(b, id, from) = case color {
+    White -> #(
+      setup([#(White, Off, 14), #(White, Point(1), 1), #(Black, Point(19), 15)]),
+      "p1",
+      Point(1),
+    )
+    Black -> #(
+      setup([
+        #(Black, Off, 14),
+        #(Black, Point(24), 1),
+        #(White, Point(6), 14),
+        #(White, Off, 1),
+      ]),
+      "p2",
+      Point(24),
+    )
+  }
+  let s =
+    state.GameState(
+      ..s,
+      board: b,
+      turn_board: b,
+      phase: state.Moving(color, [1, 2]),
+    )
+  apply(move(s, id, from, Off), id, engine.Play)
+}
+
+fn score_now(s: state.GameState) -> List(#(String, Int)) {
+  list.map(s.order, fn(id) { #(id, state.score_of(s, id)) })
+}
+
+/// A match to 3 played to 2-2: White wins a gammon (2-0, one away), Black
+/// wins the next game (the Crawford game) and the one after (2-2), and the
+/// fourth game decides it. At the start of every game the record's rule,
+/// over the scores so far, says what the state's own flag says, and only
+/// the second game is the Crawford game.
+pub fn the_crawford_game_is_the_one_the_match_plays_test() {
+  let s = new_game(17, "match3")
+  let winners = [White, Black, Black, White]
+  let #(s, _, flags) =
+    list.fold(winners, #(s, [], []), fn(acc, winner) {
+      let #(s, befores, flags) = acc
+      let befores = list.append(befores, [score_now(s)])
+      let crawford = record.crawford_game(3, befores)
+      assert crawford == s.crawford
+      let s = wins(s, winner)
+      let s = case s.phase {
+        state.BetweenGames(..) -> both_ready(s)
+        _ -> s
+      }
+      #(s, befores, list.append(flags, [crawford]))
+    })
+  assert flags == [False, True, False, False]
+  assert score_now(s) == [#("p1", 4), #("p2", 2)]
+}
+
+pub fn the_first_game_and_unlimited_play_are_never_crawford_test() {
+  // A match to 1 starts one away, and its only game is no Crawford game.
+  assert record.crawford_game(1, [[#("p1", 0), #("p2", 0)]]) == False
+  assert record.crawford_game(3, []) == False
+  // Unlimited play has no match to be one away from.
+  assert record.crawford_game(0, [[], [#("p1", 2)], [#("p1", 4)]]) == False
+  // Once played, never again, though the leader is still one away.
+  let match5 = [[], [#("p1", 4), #("p2", 0)], [#("p1", 4), #("p2", 2)]]
+  assert record.crawford_game(5, list.take(match5, 2))
+  assert record.crawford_game(5, match5) == False
+}

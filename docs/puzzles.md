@@ -489,7 +489,9 @@ laid out; `review-verdict/outcomes.js` and `test-puzzle` measure it). A schedule
 when that answer took the mistake to `deck.patched_level` from below (the
 level line then reads "Mastered. Four right in a row — back in 21 days",
 `.pz-level.is-patched`). SHARE is the table's `shareInvite` port on the
-clean URL.
+clean URL. Beside it, on every puzzle, OPEN IN ANALYSIS (`#pz-analysis`) is
+a link to `/analysis?p=<id>` in a new tab: the analysis board on the
+position as this page shows it (`docs/analysis.md`).
 
 **A run is the shell's** (`assets/src/Run.elm`, pure, kept by `Main` across
 `pushUrl`s because every page is rebuilt on one). `Run.Run` is `{ids, at,

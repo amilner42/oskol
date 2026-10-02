@@ -7,7 +7,7 @@ module Games.Backgammon.Setup exposing
     , cubeValueMessage, ownedAtOneMessage, unownedMessage, lengthMessage, scoreMessage
     , crawfordMessage, cubeOwnedMessage, crawfordDoubleMessage, deadCubeMessage, gameOverMessage
     , toJson, decoder
-    , fromQuestion
+    , fromQuestion, fromReplay
     , snapshot, colorId, colorName
     )
 
@@ -50,6 +50,7 @@ the board while the player sets it up, in the same sentences.
 -}
 
 import Games.Backgammon.Puzzle as Puzzle
+import Games.Backgammon.Replay as Replay
 import Games.Backgammon.View as View
 import Json.Decode as D
 import Json.Encode as E
@@ -646,6 +647,140 @@ fromQuestion kind q =
                     }
                 )
     }
+
+
+{-| The position at one step of a replay, as the analysis board opens it
+(OPEN IN ANALYSIS): the decision the step is about, not the board it
+leaves. The record numbers points as Oskol does (White 24 -> 1), so they
+map straight, and the colours are the players' own; the replay's flip is
+the reader's and plays no part.
+
+  - A turn is a `Move` with its dice, on the position before it (the board
+    the step before shows).
+  - A double is a `Double` for the doubler, on the position before it.
+  - A take or a drop is a `Take` asked of the player who answered, with
+    the cube as it stood before the double.
+  - Step 0 is the start position for whoever moved first: a `Double` where
+    the cube is live (`canDouble`), else a `Move` with no roll, which
+    `check` refuses with "Pick a roll" (the board opens anyway).
+  - A resignation or a result line is no decision: `Nothing`.
+
+The cube is the snapshot's, the match is `record.target` (0 unlimited) at
+the score the game began with (`Replay.scoresBefore`), and Crawford is the
+game's own flag.
+
+-}
+fromReplay : Replay.Record -> Replay.Game -> Int -> Maybe Setup
+fromReplay record game step =
+    let
+        colorOf id =
+            record.players
+                |> List.filter (\p -> p.id == id)
+                |> List.head
+                |> Maybe.andThen
+                    (\p ->
+                        case p.color of
+                            "white" ->
+                                Just White
+
+                            "black" ->
+                                Just Black
+
+                            _ ->
+                                Nothing
+                    )
+
+        scores =
+            Replay.scoresBefore record game
+
+        scoreOf color =
+            record.players
+                |> List.filter (\p -> colorOf p.id == Just color)
+                |> List.head
+                |> Maybe.andThen (\p -> scores |> List.filter (\( id, _ ) -> id == p.id) |> List.head)
+                |> Maybe.map Tuple.second
+                |> Maybe.withDefault 0
+
+        match =
+            if record.target <= 0 then
+                Nothing
+
+            else
+                Just
+                    { length = record.target
+                    , white = scoreOf White
+                    , black = scoreOf Black
+                    , crawford = game.crawford
+                    }
+
+        -- the board the step before shows, its cube as it then stood
+        at position toPlay ask =
+            { points = List.map2 (-) position.white.points position.black.points
+            , whiteBar = position.white.bar
+            , blackBar = position.black.bar
+            , toPlay = toPlay
+            , ask = ask
+            , cubeValue = position.cube.value
+            , cubeOwner = position.cube.owner |> Maybe.andThen colorOf
+            , match = match
+            }
+
+        before =
+            (Replay.stillAt record game (step - 1)).position
+
+        asked player ask =
+            colorOf player |> Maybe.map (\color -> at before color ask)
+    in
+    if step <= 0 then
+        game.entries
+            |> List.filterMap
+                (\e ->
+                    case e of
+                        Replay.TurnEntry t ->
+                            Just t.player
+
+                        Replay.DoubleEntry d ->
+                            Just d.player
+
+                        _ ->
+                            Nothing
+                )
+            |> List.head
+            |> Maybe.andThen colorOf
+            |> Maybe.map
+                (\mover ->
+                    let
+                        still =
+                            at record.start mover (Move Nothing)
+                    in
+                    if record.cube && canDouble mover still then
+                        { still | ask = Double }
+
+                    else
+                        still
+                )
+
+    else
+        case Replay.entryAt game step of
+            Just (Replay.TurnEntry t) ->
+                case t.dice of
+                    a :: b :: _ ->
+                        asked t.player (Move (Just ( max a b, min a b )))
+
+                    _ ->
+                        Nothing
+
+            Just (Replay.DoubleEntry d) ->
+                asked d.player Double
+
+            Just (Replay.TakeEntry taker) ->
+                asked taker Take
+
+            Just (Replay.DropEntry taker) ->
+                asked taker Take
+
+            _ ->
+                Nothing
 
 
 

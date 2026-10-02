@@ -19,6 +19,10 @@ import Dict
 import Expect
 import Html.Attributes
 import Games.Backgammon.Replay as Replay exposing (Annotation(..), Entry(..), MoveReview(..), Status(..))
+import Games.Backgammon.Setup as Setup exposing (Ask(..), Color(..))
+import Games.Backgammon.View as View
+import Games.Backgammon.Xgid as Xgid
+import Route
 import Json.Decode as D
 import Page.Replay as Page exposing (Loadable(..), Msg(..), Showing(..))
 import ReplayFixtures
@@ -44,6 +48,7 @@ suite =
         , practice
         , careers
         , phone
+        , openInAnalysis
         ]
 
 
@@ -450,7 +455,7 @@ boards =
             \_ ->
                 let
                     g =
-                        { number = 9, entries = [ DoubleEntry { player = "a", value = 2 }, TakeEntry "b" ] }
+                        { number = 9, crawford = False, entries = [ DoubleEntry { player = "a", value = 2 }, TakeEntry "b" ] }
                 in
                 Replay.stillAt record g 2
                     |> .position
@@ -1153,4 +1158,175 @@ careers =
                     |> Query.find [ Selector.id "rp-overview" ]
                     |> Query.findAll [ Selector.class "rp-career" ]
                     |> Query.count (Expect.equal 0)
+        ]
+
+
+
+-- OPEN IN ANALYSIS
+
+
+{-| P1 (white) and P2 (black) of the seeded match. -}
+p1 : String
+p1 =
+    "0bec7bb403d96f546cf96b17b2dffa9c"
+
+
+p2 : String
+p2 =
+    "3738dd2a34739c4a6869e09a05d35f7d"
+
+
+pointsOf : View.Snapshot -> List Int
+pointsOf position =
+    List.map2 (-) position.white.points position.black.points
+
+
+{-| What a setup says about the decision, in one comparable tuple. -}
+decision : Setup.Setup -> ( ( Color, Setup.Ask ), ( Int, Maybe Color ), Maybe Setup.Match )
+decision s =
+    ( ( s.toPlay, s.ask ), ( s.cubeValue, s.cubeOwner ), s.match )
+
+
+{-| After the Crawford game: a fourth game at 0-2 (the fixture's game 3 is
+cut before its result, so the score is game 2's): three of game 2's turns,
+then the trailer, P1, doubles and P2 takes. -}
+postCrawford : Replay.Game
+postCrawford =
+    { number = 4
+    , crawford = False
+    , entries = List.take 3 (game 2).entries ++ [ DoubleEntry { player = p1, value = 2 }, TakeEntry p2 ]
+    }
+
+
+{-| A take, and the turn after it, in game 2: the doubler P2 rolls on with
+the cube at 2 on P1's side. -}
+withTake : Replay.Game
+withTake =
+    let
+        g =
+            game 2
+    in
+    { g
+        | entries =
+            List.take 4 g.entries
+                ++ [ DoubleEntry { player = p2, value = 2 }, TakeEntry p1 ]
+                ++ List.take 1 g.entries
+    }
+
+
+openInAnalysis : Test
+openInAnalysis =
+    describe "OPEN IN ANALYSIS: the step's decision as a setup"
+        [ test "the record says which game is the Crawford game" <|
+            \_ ->
+                List.map (game >> .crawford) [ 1, 2, 3 ]
+                    |> Expect.equal [ False, False, True ]
+        , test "a turn is a Move with its dice on the board before it, at the game's score, Crawford" <|
+            \_ ->
+                Setup.fromReplay record (game 3) 1
+                    |> Maybe.map (\s -> ( decision s, s.points == pointsOf record.start ))
+                    |> Expect.equal
+                        (Just
+                            ( ( ( Black, Move (Just ( 6, 4 )) ), ( 1, Nothing ), Just { length = 3, white = 0, black = 2, crawford = True } )
+                            , True
+                            )
+                        )
+        , test "a later turn stands on the board the turn before it left" <|
+            \_ ->
+                Setup.fromReplay record (game 2) 2
+                    |> Maybe.map (\s -> ( decision s, s.points == pointsOf (Replay.stillAt record (game 2) 1).position, s.blackBar ))
+                    |> Expect.equal
+                        (Just
+                            ( ( ( White, Move (Just ( 6, 5 )) ), ( 1, Nothing ), Just { length = 3, white = 0, black = 1, crawford = False } )
+                            , True
+                            , 0
+                            )
+                        )
+        , test "a double is a Double for the doubler on the board before it" <|
+            \_ ->
+                Setup.fromReplay record (game 1) 2
+                    |> Maybe.map (\s -> ( decision s, s.points == pointsOf (Replay.stillAt record (game 1) 1).position ))
+                    |> Expect.equal
+                        (Just ( ( ( Black, Double ), ( 1, Nothing ), Just { length = 3, white = 0, black = 0, crawford = False } ), True ))
+        , test "a drop is a Take asked of the player who answered, the cube as it stood before the double" <|
+            \_ ->
+                Setup.fromReplay record (game 1) 3
+                    |> Maybe.map decision
+                    |> Expect.equal (Just ( ( White, Take ), ( 1, Nothing ), Just { length = 3, white = 0, black = 0, crawford = False } ))
+        , test "a take is the same Take; the turn after it has the cube turned to the taker" <|
+            \_ ->
+                ( Setup.fromReplay record withTake 6 |> Maybe.map decision
+                , Setup.fromReplay record withTake 7 |> Maybe.map decision
+                )
+                    |> Expect.equal
+                        ( Just ( ( White, Take ), ( 1, Nothing ), Just { length = 3, white = 0, black = 1, crawford = False } )
+                        , Just ( ( Black, Move (Just ( 6, 4 )) ), ( 2, Just White ), Just { length = 3, white = 0, black = 1, crawford = False } )
+                        )
+        , test "step 0 is the start for the first mover: a Double where the cube is live, a Move with no roll in the Crawford game" <|
+            \_ ->
+                ( Setup.fromReplay record (game 1) 0 |> Maybe.map (\s -> ( decision s, s.points == pointsOf record.start ))
+                , Setup.fromReplay record (game 3) 0 |> Maybe.map decision
+                )
+                    |> Expect.equal
+                        ( Just ( ( ( White, Double ), ( 1, Nothing ), Just { length = 3, white = 0, black = 0, crawford = False } ), True )
+                        , Just ( ( Black, Move Nothing ), ( 1, Nothing ), Just { length = 3, white = 0, black = 2, crawford = True } )
+                        )
+        , test "after the Crawford game the score stands and Crawford is off" <|
+            \_ ->
+                ( Setup.fromReplay record postCrawford 4 |> Maybe.map decision
+                , Setup.fromReplay record postCrawford 5 |> Maybe.map decision
+                )
+                    |> Expect.equal
+                        ( Just ( ( White, Double ), ( 1, Nothing ), Just { length = 3, white = 0, black = 2, crawford = False } )
+                        , Just ( ( Black, Take ), ( 1, Nothing ), Just { length = 3, white = 0, black = 2, crawford = False } )
+                        )
+        , test "a result line is no decision" <|
+            \_ ->
+                ( Setup.fromReplay record (game 1) 4, Setup.fromReplay record (game 2) 7 )
+                    |> Expect.equal ( Nothing, Nothing )
+        , test "every step's XGID decodes back to the same setup" <|
+            \_ ->
+                (List.map game [ 1, 2, 3 ] ++ [ postCrawford, withTake ])
+                    |> List.concatMap
+                        (\g ->
+                            List.range 0 (Replay.lastStep g)
+                                |> List.filterMap (Setup.fromReplay record g)
+                                |> List.filter (\s -> Xgid.decode (Xgid.encode s) /= Ok s)
+                                |> List.map (\s -> ( g.number, Xgid.encode s ))
+                        )
+                    |> Expect.equal []
+        , test "the panel's head links the step to the analysis board in a new tab" <|
+            \_ ->
+                case Setup.fromReplay record (game 3) 2 of
+                    Just setup ->
+                        Page.init session { slug = "backgammon", gameId = "000011", game = Just 3, step = Just 2 }
+                            |> Tuple.first
+                            |> Page.update (GotRecord (Ok record))
+                            |> first3
+                            |> Page.view
+                            |> Query.fromHtml
+                            |> Query.find [ Selector.id "rp-analysis" ]
+                            |> Query.has
+                                [ Selector.tag "a"
+                                , Selector.attribute (Html.Attributes.href (Route.href (Route.analysisXgid setup)))
+                                , Selector.attribute (Html.Attributes.target "_blank")
+                                , Selector.attribute (Html.Attributes.rel "noopener")
+                                , Selector.text "OPEN IN ANALYSIS"
+                                ]
+
+                    Nothing ->
+                        Expect.fail "a turn is a decision"
+        , test "a result step keeps the door's place, unseen and not a link" <|
+            \_ ->
+                Page.init session { slug = "backgammon", gameId = "000011", game = Just 1, step = Just 4 }
+                    |> Tuple.first
+                    |> Page.update (GotRecord (Ok record))
+                    |> first3
+                    |> Page.view
+                    |> Query.fromHtml
+                    |> Query.find [ Selector.id "rp-analysis" ]
+                    |> Expect.all
+                        [ Query.has [ Selector.tag "span", Selector.class "is-off" ]
+                        , Query.hasNot [ Selector.tag "a" ]
+                        ]
         ]
