@@ -342,6 +342,29 @@ defmodule OskolWeb.SpaControllerTest do
     end
   end
 
+  describe "GET /analysis" do
+    test "the analysis board is its own page, indexable, with one head for every position",
+         %{conn: conn} do
+      for path <- [
+            "/analysis",
+            "/analysis?xgid=XGID%3D-b----E-C---eE---c-e----B-%3A0%3A0%3A1%3A31%3A0%3A0%3A1%3A0%3A10",
+            "/analysis?p=abc12345"
+          ] do
+        html = conn |> get(path) |> html_response(200)
+        assert html =~ ~s(id="elm-app")
+        assert html =~ ~s(>Analysis · Oskol</title>)
+        assert html =~ ~s(<meta property="og:title" content="Analysis")
+        assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/analysis")
+
+        assert html =~
+                 ~s(<meta name="description" content="Set up any backgammon position and ask the engine what it would play.")
+
+        refute html =~ ~s(name="robots")
+        refute html =~ ~s(summary_large_image)
+      end
+    end
+  end
+
   describe "the card a link unfurls as" do
     test "every page without a picture of its own is the plain summary card, as it always was",
          %{conn: conn} do

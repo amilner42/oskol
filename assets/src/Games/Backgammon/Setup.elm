@@ -8,6 +8,7 @@ module Games.Backgammon.Setup exposing
     , crawfordMessage, cubeOwnedMessage, crawfordDoubleMessage, deadCubeMessage, gameOverMessage
     , toJson, decoder
     , fromQuestion
+    , snapshot, colorId, colorName
     )
 
 {-| A position a player sets up on the analysis board: the checkers, who
@@ -49,6 +50,7 @@ the board while the player sets it up, in the same sentences.
 -}
 
 import Games.Backgammon.Puzzle as Puzzle
+import Games.Backgammon.View as View
 import Json.Decode as D
 import Json.Encode as E
 
@@ -416,6 +418,8 @@ check setup =
         |> List.head
 
 
+{-| "White", "Black": the colour as a sentence names it.
+-}
 colorName : Color -> String
 colorName color =
     case color of
@@ -642,3 +646,50 @@ fromQuestion kind q =
                     }
                 )
     }
+
+
+
+-- ON THE BOARD
+
+
+{-| The setup as the slab draws it (`View.viewStill` and `View.viewEdit`):
+White and Black as the two players, whose ids are `colorId`, each colour's
+counts in White's numbering (which is how the slab numbers both), borne off
+derived, the pip counts, and the cube as it stands -- before the double, on
+a take, as the setup keeps it; the board parks it in the middle at twice
+that while the double is on offer.
+-}
+snapshot : Setup -> View.Snapshot
+snapshot setup =
+    let
+        whitePoints =
+            List.map (max 0) setup.points
+
+        blackPoints =
+            List.map (negate >> max 0) setup.points
+
+        -- White runs 24 -> 1 and Black 1 -> 24; off the bar each is 25 from home
+        pipsOf weight points bar =
+            (points |> List.indexedMap (\i n -> n * weight (i + 1)) |> List.sum) + bar * 25
+    in
+    { white =
+        { points = whitePoints
+        , bar = setup.whiteBar
+        , off = max 0 (offWhite setup)
+        , pips = pipsOf identity whitePoints setup.whiteBar
+        }
+    , black =
+        { points = blackPoints
+        , bar = setup.blackBar
+        , off = max 0 (offBlack setup)
+        , pips = pipsOf (\p -> 25 - p) blackPoints setup.blackBar
+        }
+    , cube = { value = setup.cubeValue, owner = Maybe.map colorId setup.cubeOwner }
+    }
+
+
+{-| The id a colour has as a player on the board: "white", "black".
+-}
+colorId : Color -> String
+colorId =
+    colorWire

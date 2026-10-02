@@ -4,7 +4,9 @@ defmodule OskolWeb.PageControllerTest do
   # `/` and `/:slug` belong to `OskolWeb.SpaController` now; their heads are
   # covered in `spa_controller_test.exs`.
 
-  test "the sitemap lists the library, the game and the practice home", %{conn: conn} do
+  test "the sitemap lists the library, the game, the practice home and the analysis board", %{
+    conn: conn
+  } do
     # It asks which sets have something built (none here: see
     # practice_page_test.exs for the sets).
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Oskol.Repo, shared: true)
@@ -22,6 +24,9 @@ defmodule OskolWeb.PageControllerTest do
     # too, but there are too many to list.
     assert body =~ "<loc>http://localhost:4002/puzzles</loc>"
     refute body =~ "/puzzles/"
+    # The analysis board is one page, whatever position it opens on.
+    assert body =~ "<loc>http://localhost:4002/analysis</loc>"
+    refute body =~ "/analysis?"
   end
 
   test "robots allows crawling and points at the sitemap", %{conn: conn} do

@@ -158,6 +158,7 @@ type Msg
     | OpenedSignIn
     | SignInMsg SignIn.Msg
     | PressedPuzzles
+    | PressedAnalysis
     | PressedLogOut
     | LoggedOut (Result Api.Error ())
     | ToggledMenu PickMenu
@@ -350,6 +351,9 @@ update msg model =
 
         PressedPuzzles ->
             ( { model | navOpen = False }, Cmd.none, Go (Route.href Route.puzzles) )
+
+        PressedAnalysis ->
+            ( { model | navOpen = False }, Cmd.none, Go (Route.href Route.analysis) )
 
         -- The guest's bar menu: the same sign-in, in a dialog of its own.
         PressedSignInMenu ->
@@ -922,7 +926,7 @@ closeBar model =
 stay: they are the fun one, and seen they get pressed), and this menu holds
 the rest -- PLAY first for an account (it opens CREATE GAME; a guest has
 PLAY NOW under the home's board), the
-live games (and a dot on ☰ when there are any), Puzzles, JOIN, and signing
+live games (and a dot on ☰ when there are any), Puzzles, Analysis, JOIN, and signing
 in or the account with Log out.
 -}
 navMenu : Model -> Html Msg
@@ -983,6 +987,7 @@ navMenu model =
                             ]
                      )
                         ++ [ navItem "nav-puzzles" PressedPuzzles [ navIcon "hero-puzzle-piece", Html.text "Puzzles" ]
+                           , navItem "nav-analysis" PressedAnalysis [ navIcon "hero-magnifying-glass", Html.text "Analysis" ]
                            , navItem "nav-join-game" PressedNavJoin [ navIcon "hero-hashtag", Html.text "Join a game" ]
                            , menuRule
                            ]

@@ -145,6 +145,8 @@ and the `D` turn.
 
 Oskol's choices on top of the format:
 
+- A cube at 1 (exponent 0) is in the middle whatever the owner field
+  says: an id naming an owner there reads as centered.
 - Unlimited play writes flags 1 and length 0. Any money id is read as
   unlimited play (Jacoby, no beavers), the only money game Oskol plays.
 - `Move Nothing` writes `00`. `00` reads back as `Double` where the player
@@ -174,8 +176,10 @@ parsed before the `/:slug` catch-alls. The builders are `Route.analysis`,
 `Route.analysisPuzzle : String -> Route`. `href` percent-encodes the id's
 `=` and `:`, and `fromUrl` reads them back. It also reads a hand-typed
 `?xgid=XGID=...` with a bare `=` the same way; `Url.Parser.Query` alone
-would drop it. Main shows the not-found page for the route until the page
-lands (analysis-page-editor).
+would drop it. The server serves the shell for `/analysis`
+(`SpaController.analysis`: title "Analysis", one head and one canonical
+for every position, indexable, in the sitemap); ☰ has Analysis right after
+Puzzles (`nav-analysis`).
 
 ## Asking the engine (`src/oskol/handlers/analysis.gleam`, `Oskol.Analysis.Asker`)
 
@@ -252,3 +256,74 @@ lands (analysis-page-editor).
   n_legal, levels}`; `best`, `top` and `cube` come from the same
   `answer_fields` an attempt's reveal is rendered with, so a page draws an
   analysis and an answered puzzle with one renderer.
+
+## The board (`assets/src/Page/Analysis.elm`)
+
+The page wears the site's bar and the replay's page (`.rp-*`), the board
+the puzzle page's size upright, in the visitor's board colours, White at
+the bottom. Upright: the brushes, the board, then the settings strip, the
+quick starts and the position id, the line, ANALYZE, and the answer's
+place (`#an-panel`). Sideways the board takes the screen's height and the
+rest is the column beside it; on a desktop the brushes sit over the board
+and the column is beside both.
+
+- **The board** is `View.viewEdit`: the still slab (`Setup.snapshot`: the
+  two colours as players `white` and `black`, the cube as the setup has
+  it, a take's double parked in the middle, the dice of a picked roll)
+  whose points and bar halves are the slab's own elements, each with an id
+  (`#an-pt-1`..`#an-pt-24`, `#an-bar-white`, `#an-bar-black`) and pointer
+  listeners, so a tap lands where the point is drawn at every size.
+- **Brushes** (`#an-brush-white`, `-black`, `-remove`): a tap or left
+  click adds one checker of the brush's colour; on the other colour it
+  takes one of those off (painting over: black 3, 2, 1, then white 1, 2);
+  the x takes one off whatever is there. A right click (contextmenu
+  prevented) and a long press (500 ms without sliding 10 px) are the other
+  colour's brush; with the x both buttons remove. A phone that also sends
+  contextmenu for a long press acts once, whichever comes first, and a
+  late contextmenu for a finger's press that was dropped (a scroll, a
+  pointercancel) paints nothing. The hint beside the brushes has a short
+  form for phones under 360px, so it is never cut off. A mouse
+  acts on release over the point it pressed; a finger that slides is a
+  scroll. A sixteenth checker is refused and that colour's tray flashes
+  (`an-flash-<color>-<parity>` on the page). `Page.Analysis.paint` is the
+  rule, pure.
+- **The strip** (`#an-strip`), two rows at every width, every control a
+  fixed width: TO PLAY (`#an-turn`); the ask (`#an-ask`): ROLL
+  (`#an-dice`, opening `#an-roll-sheet`, the 21 rolls, a bottom sheet on a
+  phone and a card wider; stored high die first), DOUBLE?
+  (`#an-ask-double`), TAKE? (`#an-ask-take`); CUBE (`#an-cube` cycles 1, 2
+  ... 64) and its owner (`#an-cube-owner`, disabled at CENTER at 1; a cube
+  turned off 1 goes to whoever is acting, the player to play or for a take
+  the doubler, so the strip never makes a cube `check` refuses); GAME
+  (`#an-game`, UNLIMITED or MATCH TO n, inside the `#an-length` stepper,
+  1..25), the scores (`#an-score-white`, `#an-score-black`, 0..n-1) and
+  CRAWFORD (`#an-crawford`, which can be turned on only while somebody is
+  one away and off at any time; it is turned off when nobody is). The
+  match's controls stay in place, disabled, in unlimited play. Every door
+  in (`?xgid=`, `?p=`, IMPORT, MATCH TO coming back) and every edit runs
+  the same `normalize`: Crawford only one away, a cube at 1 centered.
+- **Quick starts**: OPENING (`#an-opening`: the checkers where a game
+  starts, the cube in the middle; who is to play, the ask and the match
+  stay), CLEAR (`#an-clear`: no checkers, the rest kept), FLIP
+  (`#an-flip`, `Setup.flip`). The position id: `#an-xgid` (read-only, the
+  live `Xgid.encode`), COPY (`#an-xgid-copy`, the `copyText` port: the
+  clipboard, or the field selected where the browser refuses), IMPORT
+  (`#an-xgid-import`, a `Ui.Dialog` `#an-import` with `#an-import-text`
+  and `#an-import-go`; "That is not a position id" in its fixed line).
+- **The line** (`#an-check`, two lines tall, always there): "Opening the
+  puzzle…" while `?p=` is read, a door's refusal ("That puzzle is gone.",
+  "That is not a position id") until the first edit, else the first
+  sentence of `Setup.check`. ANALYZE (`#an-analyze`) is disabled while
+  `check` says anything; pressing it is `PressedAnalyze`, which does
+  nothing yet (analysis-page-verdict). Every edit goes through one
+  function (`edit`) that clears the notice and the `ask` slot.
+- **Doors in.** `/analysis` is `Setup.opening`. `?xgid=` opens on the id
+  as it is: an id with Black on roll stays Black to play (the board is
+  not turned round, so COPY gives back the id that was pasted; FLIP turns
+  it). `?p=` reads `GET /papi/puzzles/:id` and opens
+  `Setup.fromQuestion kind question` (the solver White at the bottom, a
+  take from the taker's side); a missing puzzle opens the opening and says
+  "That puzzle is gone." Nothing on the page spends engine time.
+- **Nothing moves**: the controls' widths, the line's two lines and the
+  brushes' row are fixed, and the sheet and the dialog float over the
+  page. `playwright/test-analysis` asserts the boxes across every change.

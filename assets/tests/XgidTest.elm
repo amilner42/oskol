@@ -94,7 +94,11 @@ suite =
                         |> Expect.equal "XGID=aC----B-------------b---dB:0:0:1:31:0:0:1:0:10"
             ]
         , describe "decode"
-            [ test "the opening, White to play 3-1" <|
+            [ test "a cube at 1 with an owner named is read as centered" <|
+                \_ ->
+                    Xgid.decode "XGID=-b----E-C---eE---c-e----B-:0:1:1:31:0:0:1:0:10"
+                        |> Expect.equal (Ok opening31)
+            , test "the opening, White to play 3-1" <|
                 \_ ->
                     Xgid.decode "XGID=-b----E-C---eE---c-e----B-:0:0:1:31:0:0:1:0:10"
                         |> Expect.equal (Ok opening31)
