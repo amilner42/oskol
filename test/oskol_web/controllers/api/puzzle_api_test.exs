@@ -406,6 +406,24 @@ defmodule OskolWeb.Api.PuzzleApiTest do
       assert Repo.aggregate(Puzzles.Share, :count) == 0
     end
 
+    test "an analyzed position came from nobody's game: nobody can mint a story for it", %{
+      conn: conn
+    } do
+      {id, _} = seed_puzzle("move")
+
+      Repo.update_all(Ecto.Query.from(p in Puzzles.Puzzle, where: p.id == ^id),
+        set: [origin: "analysis"]
+      )
+
+      conn
+      |> put_req_cookie(@cookie, new_guest_id())
+      |> with_csrf()
+      |> post(~p"/papi/puzzles/#{id}/shares", %{})
+      |> json_response(403)
+
+      assert Repo.aggregate(Puzzles.Share, :count) == 0
+    end
+
     test "a puzzle nobody stored is a 404, and a GET mints nothing", %{conn: conn} do
       {id, _} = seed_puzzle("move")
       %{arie: arie} = a_source_game(id)

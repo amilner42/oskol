@@ -1,11 +1,11 @@
 module Games.Backgammon.Puzzle exposing
     ( Puzzle, Question, Cube, Score, Board, Side
     , Tree, Node, Child, Moved
-    , decoder, treeDecoder, nodeDecoder
+    , decoder, questionDecoder, treeDecoder, nodeDecoder
     , Table, Seat, Out(..), view
     , nodeAt, played, snapshot, pips, pipsAgainst
     , Reveal, Verdict(..), Candidate, CubeReveal, Schedule, Memory, Story, Why
-    , revealDecoder, scheduleDecoder, memoryDecoder, whyDecoder, storyDecoder, verdictName
+    , revealDecoder, candidateDecoder, cubeRevealDecoder, scheduleDecoder, memoryDecoder, whyDecoder, storyDecoder, verdictName
     , asReplayCandidate, gradeOf, optimalOf, bands, answers
     )
 
@@ -52,7 +52,7 @@ opened from a story link (`?s=`) gets the sharer's `Story` on the reveal
 too, and only there.
 
 @docs Reveal, Verdict, Candidate, CubeReveal, Schedule, Memory, Story, Why
-@docs revealDecoder, scheduleDecoder, memoryDecoder, whyDecoder, storyDecoder, verdictName
+@docs revealDecoder, candidateDecoder, cubeRevealDecoder, scheduleDecoder, memoryDecoder, whyDecoder, storyDecoder, verdictName
 @docs asReplayCandidate, gradeOf, optimalOf, bands, answers
 
 -}
@@ -74,6 +74,7 @@ type alias Puzzle =
     , question : Question
     , tree : Maybe Tree -- "move" only
     , prompt : String
+    , replay : Maybe String -- the replay step it was shared from, for WATCH THE REPLAY
     }
 
 
@@ -151,12 +152,15 @@ type alias Child =
 
 decoder : D.Decoder Puzzle
 decoder =
-    D.map5 Puzzle
+    D.map6 Puzzle
         (D.field "id" D.string)
         (D.field "kind" D.string)
         (D.field "question" questionDecoder)
         (optional "tree" treeDecoder)
         (D.field "prompt" D.string)
+        -- Only `GET /papi/puzzles/:id` says; a puzzle inside another
+        -- answer (the analysis board's) has no way back to a replay.
+        (optional "replay" (D.field "path" D.string))
 
 
 questionDecoder : D.Decoder Question
@@ -350,6 +354,7 @@ type alias Table =
     , theme : String
     , swaps : Int
     , key : Int
+    , moverColor : String -- "white"; "black" where the mover really is Black (the analysis board's line)
     }
 
 
@@ -398,23 +403,57 @@ whose node has not arrived.
 playBoard : Table -> Node -> Bool -> View.PlayBoard
 playBoard table node current =
     let
+        -- A mover drawn as Black runs 1 -> 24 on the slab, which numbers
+        -- both colours White's way: every point the tree names from the
+        -- mover's side is 25 - p there, and the two sides change colour.
+        black =
+            table.moverColor == "black"
+
+        turn p =
+            if black then
+                25 - p
+
+            else
+                p
+
+        point loc =
+            String.toInt loc |> Maybe.map (turn >> String.fromInt) |> Maybe.withDefault loc
+
         stepsOf n =
-            n.children |> List.map (\c -> { move = { from = c.from, to = c.to, die = c.die }, node = c.node })
+            n.children |> List.map (\c -> { move = { from = point c.from, to = point c.to, die = c.die }, node = c.node })
+
+        ( moverColor, opponentColor ) =
+            if black then
+                ( "black", "white" )
+
+            else
+                ( "white", "black" )
+
+        drawn =
+            snapshot table.question.cube table.mover table.opponent node.board
+
+        turned side =
+            { side | points = List.reverse side.points }
     in
     { still =
         { players =
-            [ { id = table.mover.id, name = table.mover.name, color = "white" }
-            , { id = table.opponent.id, name = table.opponent.name, color = "black" }
+            [ { id = table.mover.id, name = table.mover.name, color = moverColor }
+            , { id = table.opponent.id, name = table.opponent.name, color = opponentColor }
             ]
         , viewer = table.mover.id
         , scores = table.scores
         , cube = not table.question.crawford
         , theme = table.theme
         , key = table.key
-        , position = snapshot table.question.cube table.mover table.opponent node.board
+        , position =
+            if black then
+                { white = turned drawn.black, black = turned drawn.white, cube = drawn.cube }
+
+            else
+                drawn
         , mover = Just table.mover.id
         , dice = table.question.dice
-        , landed = landedOn table.tree table.path
+        , landed = landedOn table.tree table.path |> List.map turn
         , offer = Nothing
         , accounts = Nothing
         }

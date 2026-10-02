@@ -44,7 +44,7 @@ async function checkPhoneBar(page, tag, live) {
   await page.click('#nav-more');
   await page.waitForSelector('#nav-menu');
   const items = await page.$$eval('#nav-menu button', (bs) => bs.map((b) => b.id));
-  const want = [...(live ? ['nav-live'] : []), 'nav-puzzles', 'nav-join-game', 'nav-signin'];
+  const want = [...(live ? ['nav-live'] : []), 'nav-puzzles', 'nav-analysis', 'nav-join-game', 'nav-signin'];
   if (JSON.stringify(items) !== JSON.stringify(want))
     throw new Error(`${tag}: ☰'s menu has ${JSON.stringify(items)}, not ${JSON.stringify(want)}`);
   if (live) {

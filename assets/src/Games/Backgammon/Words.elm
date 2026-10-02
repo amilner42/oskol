@@ -1,6 +1,7 @@
 module Games.Backgammon.Words exposing
     ( answerInWords
     , answerWhy
+    , bestInWords
     , candidateInWords
     , chanceCells
     , cubeChances
@@ -8,16 +9,16 @@ module Games.Backgammon.Words exposing
     , cubeVerdict
     , doubleInWords
     , doubleWhy
+    , givesUp
     , gradeMark
     , gradeOf
-    , givesUp
     , gradeTag
     , inWords
     , lost
     , moveInWords
+    , nearlyBest
     , noDoubleInWords
     , noDoubleWhy
-    , nearlyBest
     , properDouble
     , signed
     , spoken
@@ -102,22 +103,28 @@ cubeVerdict who did verdict =
             who ++ " correctly " ++ did ++ "."
 
         Just _ ->
-            let
-                size =
-                    case verdict.grade of
-                        "doubtful" ->
-                            "a dubious"
+            who ++ " " ++ did ++ ", " ++ aMistake verdict.grade ++ "."
 
-                        "bad" ->
-                            "a bad"
 
-                        "very_bad" ->
-                            "a very bad"
+{-| A mistake named by its grade, in the words its badge uses: "a dubious
+mistake", "a bad mistake", "a very bad mistake" ("a small mistake" under
+the bands). The replay's cube verdict and a puzzle's reveal both say it
+this way, so the sentence never names another grade than the badge.
+-}
+aMistake : String -> String
+aMistake grade =
+    case grade of
+        "doubtful" ->
+            "a dubious mistake"
 
-                        _ ->
-                            "a small"
-            in
-            who ++ " " ++ did ++ ", " ++ size ++ " mistake."
+        "bad" ->
+            "a bad mistake"
+
+        "very_bad" ->
+            "a very bad mistake"
+
+        _ ->
+            "a small mistake"
 
 
 {-| Too good to double: the engine says "no double" for that too, but
@@ -175,10 +182,39 @@ doubleWhy who opp cube =
                     standing who win ++ ", but not by enough to make the cube worth turning: " ++ opp ++ " has an easy take, and waiting keeps the chance to double later."
 
             DoublePass ->
-                standing who win ++ " by enough that " ++ opp ++ " should pass."
+                passWhy who opp win ++ "."
 
             _ ->
                 properDouble who win
+
+
+{-| Why the taker should pass. Well ahead, that is the doubler's chances;
+but a double can be a pass with the game close or the doubler behind (the
+doubler's gammons, the match score), and then "close ... by enough that
+they should pass" would contradict itself, so the sentence says what the
+pass is really about.
+-}
+passWhy : String -> String -> Float -> String
+passWhy who opp win =
+    if win >= 0.55 then
+        standing who win ++ " by enough that " ++ opp ++ " should pass"
+
+    else
+        opp
+            ++ " should pass even though "
+            ++ (if win >= 0.45 then
+                    "the game is close"
+
+                else
+                    who ++ " is behind"
+               )
+            ++ " ("
+            ++ Replay.formatPercent win
+            ++ " to win for "
+            ++ who
+            ++ "): counting "
+            ++ who
+            ++ "'s gammons and the score, a take would cost more than the point a pass gives up"
 
 
 {-| The engine's word on a cube that stayed where it was: the verdict,
@@ -204,7 +240,11 @@ noDoubleWhy who opp cube =
     else
         case cube.optimal of
             DoublePass ->
-                standing who win ++ " by enough that " ++ opp ++ " should pass: doubling would have taken the point."
+                if win >= 0.55 then
+                    passWhy who opp win ++ ": doubling would have taken the point."
+
+                else
+                    passWhy who opp win ++ ". Doubling would have taken the point."
 
             NoDouble ->
                 if win < 0.5 then
@@ -250,7 +290,21 @@ answerWhy taker cube =
             cube.probs |> Maybe.map (\p -> 1 - p.win) |> Maybe.withDefault 0.5
     in
     if shouldPass then
-        taker ++ " is losing here by too much to take: a pass gives up one point rather than risking two or more."
+        if win < 0.45 then
+            taker ++ " is losing here by too much to take: a pass gives up one point rather than risking two or more."
+
+        else
+            -- a pass with the game close: the gammons or the score, not
+            -- the chances, make the take too costly
+            taker
+                ++ (if win < 0.55 then
+                        " should pass even though the game is close ("
+
+                    else
+                        " should pass even though " ++ taker ++ " is ahead ("
+                   )
+                ++ Replay.formatPercent win
+                ++ " to win): counting the gammons and the score, a take would cost more than the point a pass gives up."
 
     else if win >= 0.5 then
         taker ++ " is the favorite here, double or not: an easy take."
@@ -357,6 +411,37 @@ candidateInWords c best =
         ]
 
 
+{-| The engine's best play and its chances, in one sentence: "The best
+play is 8/5 6/5: 54.1% wins, 15.3% gammons, 10.2% gammons against." The
+analysis board's answer, where nothing was played to compare it with.
+-}
+bestInWords : Candidate -> Html msg
+bestInWords best =
+    let
+        percent x =
+            Replay.fixed1 (x * 100) ++ "%"
+    in
+    div [ class "rp-words" ]
+        [ text
+            ("The best play is "
+                ++ best.notation
+                ++ (case best.probs of
+                        Just p ->
+                            ": "
+                                ++ percent p.win
+                                ++ " wins, "
+                                ++ percent p.gammonWin
+                                ++ " gammons, "
+                                ++ percent p.gammonLoss
+                                ++ " gammons against."
+
+                        Nothing ->
+                            "."
+                   )
+            )
+        ]
+
+
 {-| What the best move has over a play, in points of a percent: nothing
 for the best move itself, "a shade better" for an ok one, else the gains
 and the costs spoken.
@@ -440,19 +525,21 @@ againstBest grade played best =
 
 
 {-| What a puzzle's reveal says of an answer that missed: what it gave up,
-to two places, and -- when the answer is on the player's schedule -- that
-it is coming back. 0.02 or more is a mistake by the same bands the replay
-marks, so the sentence calls it one.
+to two places, the grade its badge shows (`aMistake band`, so "?? VERY
+BAD" is never beside a plainer word), and -- when the answer is on the
+player's schedule -- that it is coming back.
 -}
-givesUp : Float -> Bool -> String
-givesUp cost comesBack =
+givesUp : String -> Float -> Bool -> String
+givesUp band cost comesBack =
     "Gives up "
         ++ Replay.fixed 2 cost
+        ++ " — "
+        ++ aMistake band
         ++ (if comesBack then
-                " — a mistake, so it comes back."
+                ", so it comes back."
 
             else
-                " — a mistake."
+                "."
            )
 
 

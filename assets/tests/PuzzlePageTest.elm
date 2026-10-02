@@ -10,7 +10,7 @@ a tap walks the board and PLAY posts exactly the path walked with the
 page's key, the verdict and the move played are shown, the cube scale
 marks the engine's band, the level line reads each schedule right, NEXT
 follows the shell, and the memory line appears on a 200 and never on a
-404.
+
 
 -}
 
@@ -26,8 +26,10 @@ import Json.Encode as E
 import Page.Puzzle as Page exposing (Attempt(..), Msg(..))
 import PuzzleApiFixtures
 import PuzzleRevealFixtures
+import Route
 import Session
 import Test exposing (Test, describe, test)
+import Test.Html.Event as Event
 import Test.Html.Query as Query
 import Test.Html.Selector exposing (attribute, class, id, tag, text)
 import Time
@@ -48,6 +50,7 @@ suite =
         , runEnd
         , deckLine
         , memory
+        , fromReplay
         , sharing
         , story
         ]
@@ -284,6 +287,7 @@ staging =
                         , \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "White 3 away, Black 5 away · cube centered" ]
                         , hasNot [ id "pz-reveal" ]
                         , hasNot [ id "pz-share" ]
+                        , hasNot [ id "pz-analysis" ]
                         ]
         , test "one point each way is a single game; marked Crawford it is a match; no score is unlimited" <|
             \_ ->
@@ -531,7 +535,7 @@ revealing =
                     |> Expect.all
                         [ \q -> q |> Query.find [ id "pz-verdict" ] |> Query.has [ attribute (Html.Attributes.attribute "data-verdict" "fail"), attribute (Html.Attributes.attribute "data-band" "doubtful"), text "?! DUBIOUS" ]
                         , \q -> q |> Query.find [ id "pz-verdict" ] |> Query.find [ class "pz-verdict-word" ] |> Query.has [ class "g-doubtful" ]
-                        , \q -> q |> Query.find [ id "pz-verdict" ] |> Query.has [ text "Gives up 0.07 — a mistake." ]
+                        , \q -> q |> Query.find [ id "pz-verdict" ] |> Query.has [ text "Gives up 0.07 — a dubious mistake." ]
                         , \q -> q |> Query.find [ id "pz-reveal" ] |> Query.has [ text "You played a dubious move." ]
                         , \q -> q |> Query.findAll [ class "rp-cand" ] |> Query.count (Expect.equal 3)
                         , \q -> q |> Query.findAll [ class "rp-cand", attribute (Html.Attributes.attribute "data-yours" "true") ] |> Query.count (Expect.equal 1)
@@ -541,15 +545,41 @@ revealing =
                         , has [ id "pz-share" ]
                         , hasNot [ id "pz-level" ]
                         ]
+        , test "after the reveal, OPEN IN ANALYSIS beside SHARE opens this puzzle on the analysis board in a new tab" <|
+            \_ ->
+                rendered (after "move_dubious")
+                    |> Query.find [ id "pz-analysis" ]
+                    |> Query.has
+                        [ tag "a"
+                        , attribute (Html.Attributes.href (Route.href (Route.analysisPuzzle "fixmove1")))
+                        , attribute (Html.Attributes.href "/analysis?p=fixmove1")
+                        , attribute (Html.Attributes.target "_blank")
+                        , attribute (Html.Attributes.rel "noopener")
+                        , text "ANALYSIS"
+                        ]
+        , test "after the reveal, SAVE beside SHARE opens the save sheet for this puzzle" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> rendered (after "move_dubious") |> Query.find [ id "pz-save" ] |> Query.has [ tag "button", text "SAVE" ]
+                    , \_ -> rendered (after "move_dubious") |> Query.find [ id "pz-save" ] |> Event.simulate Event.click |> Event.expect PressedSave
+                    , \_ -> rendered (after "move_dubious") |> Query.hasNot [ id "save-modal" ]
+                    , \_ -> (step PressedSave (after "move_dubious")).save |> Maybe.map .puzzleId |> Expect.equal (Just "fixmove1")
+                    , \_ -> rendered (step PressedSave (after "move_dubious")) |> Query.find [ id "save-modal" ] |> Query.has [ text "SAVE TO A SET" ]
+                    , \_ -> (step PressedSave (after "move_dubious")).save |> Maybe.andThen .signIn |> Maybe.map .next |> Expect.equal (Just "/puzzles/fix")
+                    ]
+                    ()
+        , test "before the reveal there is no SAVE" <|
+            \_ ->
+                rendered (page { hasNext = False } "move") |> Query.hasNot [ id "pz-save" ]
         , test "a pass and a miss wear their colours" <|
             \_ ->
                 Expect.all
                     [ \_ -> rendered (after "move_pass") |> Query.find [ id "pz-verdict" ] |> Query.has [ class "is-pass", text "RIGHT", text "That is the play." ]
-                    , \_ -> rendered (after "move_fail") |> Query.find [ id "pz-verdict" ] |> Query.has [ class "is-fail", attribute (Html.Attributes.attribute "data-band" "bad"), text "? BAD", text "Gives up 0.14 — a mistake." ]
+                    , \_ -> rendered (after "move_fail") |> Query.find [ id "pz-verdict" ] |> Query.has [ class "is-fail", attribute (Html.Attributes.attribute "data-band" "bad"), text "? BAD", text "Gives up 0.14 — a bad mistake." ]
                     , \_ ->
                         rendered (afterBody (String.replace "\"cost\":0.14" "\"cost\":0.4" (String.replace "\"band\":\"bad\"" "\"band\":\"very_bad\"" (reveal "move_fail"))))
                             |> Query.find [ id "pz-verdict" ]
-                            |> Query.has [ attribute (Html.Attributes.attribute "data-band" "very_bad"), text "?? VERY BAD", text "Gives up 0.40 — a mistake." ]
+                            |> Query.has [ attribute (Html.Attributes.attribute "data-band" "very_bad"), text "?? VERY BAD", text "Gives up 0.40 — a very bad mistake." ]
                     ]
                     ()
         , test "a miss on the player's schedule says it comes back" <|
@@ -557,7 +587,7 @@ revealing =
                 afterBody (revealWith "move_dubious" "schedule_amendable")
                     |> rendered
                     |> Query.find [ id "pz-verdict" ]
-                    |> Query.has [ text "?! DUBIOUS", text "Gives up 0.07 — a mistake, so it comes back." ]
+                    |> Query.has [ text "?! DUBIOUS", text "Gives up 0.07 — a dubious mistake, so it comes back." ]
         , test "right but not the best: within 0.02, not a mistake" <|
             \_ ->
                 page { hasNext = False } "take"
@@ -1520,7 +1550,8 @@ runEnd =
         ]
 
 
-{-| The end card's way on: a run is never the last word. -}
+{-| The end card's way on: a run is never the last word.
+-}
 wayOn : Test
 wayOn =
     let
@@ -1703,6 +1734,53 @@ memory =
                     |> hasNot [ id "pz-memory" ]
         , test "and never before the attempt" <|
             \_ -> rendered (page { hasNext = False } "move") |> hasNot [ id "pz-memory" ]
+        ]
+
+
+
+-- WATCH THE REPLAY
+
+
+{-| A page after a missed attempt, on the question named.
+-}
+afterAttempt : String -> Page.Model
+afterAttempt name =
+    let
+        model =
+            page { hasNext = False } name
+
+        ( path, _ ) =
+            aTurn model
+    in
+    model |> step (BoardOut (Puzzle.Stepped path)) |> revealed (reveal "move_fail")
+
+
+fromReplay : Test
+fromReplay =
+    describe "a position shared out of a replay"
+        [ test "after the reveal, the way back onto its step" <|
+            \_ ->
+                rendered (afterAttempt "replay")
+                    |> Expect.all
+                        [ \q -> q |> Query.find [ id "pz-from-replay" ] |> Query.has [ text "From a game on Oskol · " ]
+                        , \q ->
+                            q
+                                |> Query.find [ id "pz-replay" ]
+                                |> Query.has [ text "WATCH THE REPLAY →", attribute (Html.Attributes.href "/backgammon/821900/replay?game=3&step=17") ]
+                        ]
+        , test "not before the attempt" <|
+            \_ -> rendered (page { hasNext = False } "replay") |> hasNot [ id "pz-replay" ]
+        , test "a puzzle shared from nowhere has no such line" <|
+            \_ -> rendered (afterAttempt "move") |> hasNot [ id "pz-replay" ]
+        , test "a player of the game has the memory line instead, which links to the replay already" <|
+            \_ ->
+                case Api.parseBody Puzzle.memoryDecoder memoryJson of
+                    Ok m ->
+                        rendered (step (GotMemory (Ok m)) (afterAttempt "replay"))
+                            |> Expect.all [ hasNot [ id "pz-replay" ], \q -> q |> Query.has [ id "pz-memory-link" ] ]
+
+                    Err _ ->
+                        Expect.fail "the memory fixture decodes"
         ]
 
 

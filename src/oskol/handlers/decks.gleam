@@ -12,6 +12,9 @@
 //// written -- the same promise a guest's mistakes make. Adding it is an
 //// account's, and is what puts it on the ladder.
 ////
+//// A player's own set answers here too, for its owner alone: anybody
+//// else asking for it is told there is no such set.
+////
 //// A deck nobody has built yet (no positions) is not offered at all, so the
 //// page cannot show a set of puzzles with nothing in it.
 
@@ -29,12 +32,16 @@ import oskol/practice/decks.{type Deck}
 pub const sign_in_message = "Sign in to keep your place in these."
 
 pub fn list_json(ctx: Ctx, session: Session) -> String {
+  let own = case session.user_id {
+    Some(uid) -> decks.own(ctx, uid)
+    None -> []
+  }
   let offered =
-    decks.all()
+    list.append(decks.all(), own)
     |> list.filter_map(fn(d) {
-      case ctx.decks.size(d.id) {
-        0 -> Error(Nil)
-        size ->
+      case ctx.decks.size(d.id), decks.is_own(d) {
+        0, False -> Error(Nil)
+        size, _ ->
           Ok(decks.deck_json(
             d,
             size,
@@ -78,7 +85,7 @@ pub fn session_from_json(
   all: Bool,
   from: Int,
 ) -> Result(String, ApiError) {
-  use d <- result.try(offered(ctx, id))
+  use d <- result.try(offered(ctx, session, id))
   Ok(session_body(ctx, session, d, all, from))
 }
 
@@ -92,7 +99,7 @@ pub fn more_json(
   session: Session,
   id: String,
 ) -> Result(String, ApiError) {
-  use d <- result.try(offered(ctx, id))
+  use d <- result.try(offered(ctx, session, id))
   use uid <- result.try(
     session.user_id
     |> option.to_result(error.Conflict("sign_in", sign_in_message)),
@@ -113,24 +120,31 @@ pub fn join_json(
   id: String,
   tz: String,
 ) -> Result(String, ApiError) {
-  use d <- result.try(offered(ctx, id))
+  use d <- result.try(offered(ctx, session, id))
   use uid <- result.try(
     session.user_id
     |> option.to_result(error.Conflict("sign_in", sign_in_message)),
   )
-  use _ <- result.try(
-    decks.enroll(ctx, d, uid, tz)
-    |> result.map_error(fn(e) { error.Internal(deck.message(e)) }),
-  )
+  // An own set is enrolled a position at a time as its owner saves each
+  // one (`handlers/own_decks.add`), so there is nothing to add.
+  use _ <- result.try(case decks.is_own(d) {
+    True -> Ok(0)
+    False ->
+      decks.enroll(ctx, d, uid, tz)
+      |> result.map_error(fn(e) { error.Internal(deck.message(e)) })
+  })
   Ok(session_body(ctx, session, d, False, 0))
 }
 
-fn offered(ctx: Ctx, id: String) -> Result(Deck, ApiError) {
-  case decks.find(id) {
+/// A deck this caller may play: a universal one with positions in it, or
+/// one of their own sets, empty or not. Anybody else's set is no deck at
+/// all.
+fn offered(ctx: Ctx, session: Session, id: String) -> Result(Deck, ApiError) {
+  case decks.find_for(ctx, session, id) {
     Ok(d) ->
-      case ctx.decks.size(d.id) {
-        0 -> Error(error.NotFound(decks.unknown_deck_message))
-        _ -> Ok(d)
+      case ctx.decks.size(d.id), decks.is_own(d) {
+        0, False -> Error(error.NotFound(decks.unknown_deck_message))
+        _, _ -> Ok(d)
       }
     Error(Nil) -> Error(error.NotFound(decks.unknown_deck_message))
   }

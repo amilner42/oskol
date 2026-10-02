@@ -22,6 +22,22 @@
  *    shows its content alone; on a phone the page scrolls rather than
  *    any panel.
  * 5. The table offers REPLAY at game over, and it opens this page.
+ * 6. OPEN IN ANALYSIS (`#rp-analysis`, over the tabs) opens the step's
+ *    decision on the analysis board in a new tab: at a graded turn, then
+ *    at the first double, the first take, a turn of the Crawford game and
+ *    a turn after it, the board's point counts (read from the editor's
+ *    targets), the bars, the dice, the cube and its owner, the score and
+ *    Crawford are the record's, worked out here from the record's JSON.
+ *    A result line keeps the link's place, unseen, and the panel does not
+ *    move as the reader steps on and off it.
+ * 7. SHARE (`#rp-share-position`, beside OPEN IN ANALYSIS) on the seeded
+ *    match at 821900, really graded (`share_setup.exs`; no stub, and no
+ *    engine either -- the share is written from the stored answer): at a
+ *    graded roll it copies `/puzzles/<id>`; the doors and the panel hold
+ *    their boxes at a start, a roll, a double, a result and a game that is
+ *    not graded ("Graded soon"); a stranger opening the link plays it and
+ *    gets the reveal, under which WATCH THE REPLAY lands back on
+ *    `?game=n&step=s`. Screenshots of that page at 390x844 and desktop.
  *
  * The analysis is stubbed by default (`lib/replay-stub.js`): `/reviews`
  * (the index: a status and a turn count per game) and `/reviews/<n>` (one
@@ -39,6 +55,7 @@ const fs = require('fs');
 const { execFileSync } = require('child_process');
 const { resultLine } = require('../lib/flows');
 const { stubAnalysis } = require('../lib/replay-stub');
+const { stageATurn } = require('../lib/puzzles');
 
 const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const SHOTS = process.env.SHOTS_DIR || 'playwright/screenshots/test-backgammon-replay';
@@ -155,6 +172,83 @@ async function onePanel(page, what, { phone }) {
   must(Number(await page.getAttribute('.rp-controls-wrap', 'data-step')) === roll && await page.locator('#rp-note .rp-grade').count() === 1, `${what}: MOVE comes back to step ${roll}'s verdict`);
 }
 
+// ---------- OPEN IN ANALYSIS ----------
+
+/** The decision at `step` of `game`, worked out from the record's JSON as
+ * the analysis board should open it: the board and cube before the step,
+ * who is asked, the dice (`00` a double, `D` a take), the score the game
+ * began at and Crawford. Null for a step that is no decision. */
+function decisionAt(record, game, step) {
+  const colorOf = (id) => record.players.find((p) => p.id === id).color;
+  let position = record.start;
+  let cube = record.start.cube;
+  let double = null;
+  for (const e of game.entries.slice(0, step - 1)) {
+    if (e.kind === "turn") { position = e.position; cube = e.position.cube; }
+    if (e.kind === "double") double = e;
+    if (e.kind === "take") cube = { value: double.value, owner: e.player };
+  }
+  const entry = game.entries[step - 1];
+  const other = (color) => (color === "white" ? "black" : "white");
+  let turn, dice;
+  if (entry.kind === "turn") { turn = colorOf(entry.player); dice = [...entry.dice].slice(0, 2).sort((a, b) => b - a).join(""); }
+  else if (entry.kind === "double") { turn = colorOf(entry.player); dice = "00"; }
+  else if (entry.kind === "take" || entry.kind === "drop") { turn = other(colorOf(entry.player)); dice = "D"; }
+  else return null;
+  const prior = record.games.filter((g) => g.number < game.number).map((g) => g.entries[g.entries.length - 1]).filter((e) => e && e.kind === "game_over");
+  const scores = prior.length ? prior[prior.length - 1].scores : {};
+  const scoreOf = (color) => scores[record.players.find((p) => p.color === color).id] || 0;
+  return {
+    points: position.white.points.map((w, i) => ({ white: w, black: position.black.points[i] })),
+    bars: { white: position.white.bar, black: position.black.bar },
+    cube: { value: cube.value, owner: cube.owner ? colorOf(cube.owner) : null },
+    turn, dice,
+    score: { white: scoreOf("white"), black: scoreOf("black") },
+    crawford: game.crawford,
+  };
+}
+
+/** Click OPEN IN ANALYSIS on the replay page as it stands, and check the
+ * board that opens in the new tab against `want`. Closes the tab. */
+async function openedInAnalysis(context, page, want, what) {
+  const link = page.locator("#rp-analysis");
+  must(await link.getAttribute("target") === "_blank" && await link.getAttribute("rel") === "noopener", `${what}: OPEN IN ANALYSIS opens a new tab`);
+  const [an] = await Promise.all([context.waitForEvent("page"), link.click()]);
+  await an.waitForSelector("#an-pt-24", { timeout: 20000 });
+  must(/\/analysis\?xgid=/.test(an.url()), `${what}: the new tab is /analysis?xgid=`);
+  must(/\/replay/.test(page.url()), `${what}: the replay stays where it was`);
+  await an.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  for (let p = 1; p <= 24; p++) {
+    const drawn = await an.$eval(`#an-pt-${p}`, (el) => {
+      const count = (color) => {
+        const label = el.querySelector(`.checker.${color} .checker-count`);
+        return label ? Number(label.textContent) : el.querySelectorAll(`.checker.${color}`).length;
+      };
+      return { white: count("white"), black: count("black") };
+    });
+    const w = want.points[p - 1];
+    if (drawn.white !== w.white || drawn.black !== w.black)
+      throw new Error(`${what}: point ${p} draws ${JSON.stringify(drawn)}, the replay has ${JSON.stringify(w)}`);
+  }
+  log(`ok: ${what}: all 24 points draw the replay's checkers`);
+  // the position the replay opened, as the link carries it (the page shows no id)
+  const id = new URL(an.url()).searchParams.get("xgid");
+  const f = id.slice(5).split(":");
+  const at = (i) => { const ch = f[0][i]; return ch === "-" ? 0 : ch >= "A" && ch <= "P" ? ch.charCodeAt(0) - 64 : -(ch.charCodeAt(0) - 96); };
+  const got = {
+    bars: { white: at(25), black: -at(0) },
+    cube: { value: 2 ** Number(f[1]), owner: { "0": null, "1": "white", "-1": "black" }[f[2]] },
+    turn: { "1": "white", "-1": "black" }[f[3]],
+    dice: f[4],
+    score: { white: Number(f[5]), black: Number(f[6]) },
+    crawford: f[7] === "1",
+    length: Number(f[8]),
+  };
+  const expected = { bars: want.bars, cube: want.cube, turn: want.turn, dice: want.dice, score: want.score, crawford: want.crawford, length: 3 };
+  must(JSON.stringify(got) === JSON.stringify(expected), `${what}: bars, cube, owner, turn, dice, score and Crawford are the replay's (${id})`);
+  return an;
+}
+
 async function swipe(page, dx) {
   await page.evaluate((dx) => {
     const el = document.getElementById('rp-board');
@@ -239,8 +333,11 @@ async function main() {
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowLeft');
     { const c = await count(page, `4 / ${last.entries.length}`); must(c === `4 / ${last.entries.length}`, `buttons and arrow keys step one line at a time (${c})`); }
+    // The room is random play: line 4 may be a turn, a dance or a cube line.
+    const fourth = last.entries[3];
     const landed = await page.locator('.bg-still .checker.just-moved').count();
-    must(landed > 0, 'a turn marks the checkers it landed');
+    if (fourth.kind === 'turn' && fourth.landed.length > 0) must(landed > 0, `a turn marks the checkers it landed (${landed})`);
+    else must(landed === 0, `a line that landed nothing (${fourth.kind}) marks nothing`);
 
     // The analysis lands while the viewer is on step 4.
     await page.waitForSelector('#rp-note .rp-grade', { timeout: REAL ? 180000 : 15000 });
@@ -263,6 +360,16 @@ async function main() {
     await page.waitForSelector('.rp-board.is-proposed', { state: 'detached', timeout: 2000 }).catch(() => {});
     must(await page.locator('.rp-board.is-proposed').count() === 0, 'and the played move comes back');
     await page.screenshot({ path: `${SHOTS}/03-desktop-graded.png` });
+
+    // ---------- 6. OPEN IN ANALYSIS, at the graded turn ----------
+    {
+      const graded = Number(await page.getAttribute('.rp-controls-wrap', 'data-step'));
+      const want = decisionAt(record, last, graded);
+      must(want && last.entries[graded - 1].kind === 'turn', `step ${graded} of game ${last.number} is a graded turn`);
+      const an = await openedInAnalysis(desktop, page, want, `graded turn (game ${last.number}, step ${graded})`);
+      await an.screenshot({ path: `${SHOTS}/07-analysis-from-replay.png` });
+      await an.close();
+    }
 
     await page.click('#rp-tab-overview');
     await page.waitForSelector('#rp-overview .rp-pr');
@@ -288,6 +395,39 @@ async function main() {
       const asked = counts.get;
       await sleep(7000);
       must(counts.get === asked, `nothing pending: no more asks (${asked} in all)`);
+    }
+    // ---------- 6. OPEN IN ANALYSIS, at every kind of step ----------
+    {
+      const find = (pick) => {
+        for (const g of record.games) for (let s = 1; s <= g.entries.length; s++) if (pick(g, g.entries[s - 1])) return { g, s };
+        return null;
+      };
+      const crawfordAt = record.games.findIndex((g) => g.crawford);
+      must(crawfordAt > 0 && record.games.filter((g) => g.crawford).length === 1, `the record marks one game, game ${crawfordAt + 1}, as the Crawford game`);
+      const cases = [
+        ['a double', find((g, e) => e.kind === 'double')],
+        ['a take', find((g, e) => e.kind === 'take')],
+        ['a turn of the Crawford game', find((g, e) => g.crawford && e.kind === 'turn')],
+        ['a turn after the Crawford game', find((g, e) => g.number > record.games[crawfordAt].number && e.kind === 'turn')],
+      ];
+      for (const [what, at] of cases) {
+        must(at !== null, `the match has ${what}`);
+        await page.goto(url(`&game=${at.g.number}&step=${at.s}`));
+        await page.waitForSelector('#rp-analysis[href]', { timeout: 20000 });
+        const an = await openedInAnalysis(desktop, page, decisionAt(record, at.g, at.s), `${what} (game ${at.g.number}, step ${at.s})`);
+        await an.close();
+      }
+      // A result line is no decision: the link keeps its place, unseen, and
+      // stepping on and off it moves nothing in the panel.
+      const g = record.games[0];
+      await page.goto(url(`&game=${g.number}&step=${g.entries.length - 1}`));
+      await page.waitForSelector('#rp-analysis[href]', { timeout: 20000 });
+      const box = async () => JSON.stringify(await Promise.all(['#rp-analysis', '#rp-tabs', '#rp-panel'].map((sel) => page.locator(sel).boundingBox())));
+      const on = await box();
+      await page.click('#rp-next');
+      await page.waitForSelector('#rp-analysis.is-off', { state: 'attached', timeout: 2000 });
+      must(await page.locator('#rp-analysis').isVisible() === false && await page.locator('a#rp-analysis').count() === 0, 'a result line has no door to the analysis board');
+      must(await box() === on, 'and the link, the tabs and the panel stay where they were');
     }
     await page.close();
     await desktop.close();
@@ -345,10 +485,112 @@ async function main() {
     must(/\/replay\?game=\d+$/.test(t.url()), 'REPLAY at game over opens this game\'s replay, with no token in the link');
     await table.close();
 
+    await sharePosition(browser, watch);
+
     must(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
     log('all replay checks passed');
   } finally {
     await browser.close();
+  }
+}
+
+// ---------- 7. SHARE POSITION ----------
+
+async function sharePosition(browser, watch) {
+  log('arranging the seeded match (mix run playwright/test-backgammon-replay/share_setup.exs)');
+  const room = JSON.parse(resultLine(execFileSync(
+    'mix',
+    ['run', '-e', 'Code.eval_file("playwright/test-backgammon-replay/share_setup.exs")'],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }
+  )));
+  const code = room.game_id;
+  const record = await (await fetch(`${BASE}/papi/games/backgammon/rooms/${code}/record`)).json();
+  const game1 = record.record.games.find((g) => g.number === 1);
+  const at = (kind) => game1.entries.findIndex((e) => e.kind === kind) + 1;
+  // Game 1's second roll: a checker play with plenty of ways to play it.
+  const rollStep = 2;
+  const replayAt = (game, step) => `${BASE}/backgammon/${code}/replay?game=${game}&step=${step}`;
+
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+  await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  // The last game is told it is still being graded, in the browser only:
+  // what a game whose review has not landed looks like.
+  await ctx.route(new RegExp(`/papi/games/backgammon/rooms/${code}/reviews$`), async (route) => {
+    const res = await route.fetch();
+    const body = await res.json();
+    const last = body.games[body.games.length - 1];
+    last.status = 'pending';
+    await route.fulfill({ response: res, json: body });
+  });
+  const page = await ctx.newPage();
+  watch(page, 'share');
+  const lastGame = record.record.games[record.record.games.length - 1].number;
+  // Where the doors and the tabs sit within the panel, and the panel's
+  // size: a page loaded on another step may put the panel elsewhere on the
+  // screen (a verdict over the board), but nothing inside it may move.
+  const boxes = async () => {
+    const [panel, ...rest] = await Promise.all(['#rp-panel', '#rp-share-position', '#rp-analysis', '#rp-tabs'].map((sel) => page.locator(sel).boundingBox()));
+    return JSON.stringify([Math.round(panel.width), ...rest.map((r) => [r.x - panel.x, r.y - panel.y, r.width, r.height].map(Math.round))]);
+  };
+  await page.goto(replayAt(1, rollStep));
+  await page.waitForSelector('button#rp-share-position:not(.is-soon)', { timeout: 20000 });
+  const on = await boxes();
+  for (const [what, game, step, state] of [
+    ['the start', 1, 0, 'off'],
+    ['the first double', 1, at('double'), 'ready'],
+    ['the result', 1, game1.entries.length, 'off'],
+    ['a roll of a game not graded yet', lastGame, 2, 'soon'],
+  ]) {
+    await page.goto(replayAt(game, step));
+    await page.waitForSelector('#rp-panel', { timeout: 20000 });
+    const sel = { off: '#rp-share-position.is-off', ready: 'button#rp-share-position:not(.is-soon)', soon: 'button#rp-share-position.is-soon' }[state];
+    await page.waitForSelector(sel, { state: 'attached', timeout: 20000 });
+    must(await boxes() === on, `${what}: SHARE is ${state}, and the doors, the tabs and the panel hold their boxes`);
+    if (state === 'soon') {
+      must(await page.isVisible('#rp-share-soon'), `${what}: "Graded soon" says so beside it`);
+      // aria-disabled, which a pointer still presses.
+      await page.click('#rp-share-position', { force: true });
+      await page.waitForSelector('#rp-share-note');
+      must((await page.textContent('#rp-share-note')).includes('shareable once the game is graded'), `${what}: pressed, it says why, and asks nobody`);
+      must(await boxes() === on, `${what}: the line floats, and moves nothing`);
+    }
+  }
+
+  await page.goto(replayAt(1, rollStep));
+  await page.waitForSelector('button#rp-share-position:not(.is-soon)', { timeout: 20000 });
+  await page.click('#rp-share-position');
+  await page.waitForSelector('#rp-share-note', { timeout: 10000 });
+  must((await page.textContent('#rp-share-note')).trim() === 'Link copied', 'SHARE copies the link, and says so');
+  must(await boxes() === on, 'and nothing moved');
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  must(new RegExp(`^${BASE}/puzzles/[A-Za-z0-9]+$`).test(copied), `the link is the puzzle's own: ${copied}`);
+  await page.screenshot({ path: `${SHOTS}/07-share-copied.png` });
+  await ctx.close();
+
+  // A stranger with the link: the ordinary puzzle page, then the way back.
+  for (const vp of [{ name: 'desktop', width: 1440, height: 900 }, { name: 'phone', width: 390, height: 844, mobile: true }]) {
+    const sctx = await browser.newContext({ viewport: { width: vp.width, height: vp.height }, isMobile: !!vp.mobile, hasTouch: !!vp.mobile, deviceScaleFactor: 2 });
+    await sctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    const p = await sctx.newPage();
+    watch(p, `shared-${vp.name}`);
+    await p.goto(copied);
+    await p.waitForSelector('#pz-prompt, .pz-prompt', { timeout: 20000 }).catch(() => {});
+    must(/What's your play\?/.test(await p.title()), `${vp.name}: the page asks the question, naming nobody`);
+    must(!(await p.isVisible('#pz-replay')), `${vp.name}: no way back before the attempt`);
+    await stageATurn(p);
+    await p.click('#bg-action-play');
+    await p.waitForSelector('#pz-reveal');
+    await p.waitForSelector('#pz-replay');
+    must((await p.textContent('#pz-from-replay')).includes('From a game on Oskol'), `${vp.name}: the reveal says where it came from`);
+    await p.locator('#pz-replay').scrollIntoViewIfNeeded();
+    await p.screenshot({ path: `${SHOTS}/07-shared-${vp.name}.png` });
+    await p.click('#pz-replay');
+    await p.waitForSelector('.bg-still .bg-board', { timeout: 20000 });
+    must(p.url().endsWith(`/backgammon/${code}/replay?game=1&step=${rollStep}`), `${vp.name}: WATCH THE REPLAY lands on the very step (${p.url()})`);
+    const landed = await p.waitForFunction((want) => document.querySelector('.rp-controls-wrap')?.dataset.step === want, String(rollStep), { timeout: 5000 }).then(() => true, () => false);
+    must(landed, `${vp.name}: and the replay shows it`);
+    await sctx.close();
   }
 }
 

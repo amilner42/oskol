@@ -1,5 +1,8 @@
 module Route exposing
     ( Route(..)
+    , analysis
+    , analysisPuzzle
+    , analysisXgid
     , fromUrl
     , gameLanding
     , login
@@ -24,6 +27,9 @@ module Route exposing
     /puzzles/:id one puzzle: a position and its question (`?s=` a story
                  token: the same puzzle, with the sharer's story after
                  the attempt)
+    /analysis    the analysis board: a position set up and asked about
+                 (`?xgid=` a position id to open, `?p=` a puzzle to open as
+                 its page shows it; bare, the opening position)
     /:slug/:id   a running game
     /:slug/:id/replay   a game played again, turn by turn, with its analysis
                         (`?game=` which game of the match, `?step=` the line
@@ -40,6 +46,8 @@ what a page shows, exactly as they did in the LiveView's `handle_params`.
 
 -}
 
+import Games.Backgammon.Setup exposing (Setup)
+import Games.Backgammon.Xgid as Xgid
 import Url exposing (Url)
 import Url.Parser as Parser exposing ((</>), (<?>), Parser, map, oneOf, s, string, top)
 import Url.Parser.Query as Query
@@ -57,6 +65,8 @@ type Route
     | Puzzle String (Maybe String)
       -- a deck's page, by its slug (very-bad, openings...)
     | Practice String
+      -- the analysis board: ?xgid= (an XGID, `XGID=` and all), ?p= (a puzzle id)
+    | Analysis (Maybe String) (Maybe String)
       -- slug, game id
     | Play String String
       -- slug, game id, ?game= (a game's number), ?step= (a line of its record)
@@ -76,6 +86,9 @@ parser =
         , map Puzzle (s "puzzles" </> string <?> Query.string "s")
         -- And "practice": /practice/:slug is a deck, not a room.
         , map Practice (s "practice" </> string)
+        -- And "analysis": before both catch-alls, or /analysis would be
+        -- a game's start page.
+        , map Analysis (s "analysis" <?> Query.string "xgid" <?> Query.string "p")
         , map Play (string </> string)
         , map Replay (string </> string </> s "replay" <?> Query.int "game" <?> Query.int "step")
         , map GameLanding (string <?> Query.string "game")
@@ -87,8 +100,32 @@ fromUrl url =
     if url.path == "/sitemap.xml" || String.startsWith "/dev/" url.path then
         Nothing
 
+    else if url.path == "/analysis" then
+        Parser.parse parser { url | query = Maybe.map bareEquals url.query }
+
     else
         Parser.parse parser url
+
+
+{-| An XGID typed or pasted into the address bar keeps its own `=`
+(`?xgid=XGID=-b----E...`), and `Url.Parser.Query` drops any parameter with
+a second one. Everything after a parameter's first `=` is its value, so it
+is encoded before the parser reads it.
+-}
+bareEquals : String -> String
+bareEquals rawQuery =
+    rawQuery
+        |> String.split "&"
+        |> List.map
+            (\param ->
+                case String.split "=" param of
+                    key :: ((_ :: _ :: _) as rest) ->
+                        key ++ "=" ++ String.join "%3D" rest
+
+                    _ ->
+                        param
+            )
+        |> String.join "&"
 
 
 library : Route
@@ -137,6 +174,28 @@ practice slug =
     Practice slug
 
 
+{-| The analysis board on the opening position.
+-}
+analysis : Route
+analysis =
+    Analysis Nothing Nothing
+
+
+{-| The analysis board open on a position: what the replay links and a
+pasted id opens. The URL carries the XGID, so it pastes anywhere.
+-}
+analysisXgid : Setup -> Route
+analysisXgid setup =
+    Analysis (Just (Xgid.encode setup)) Nothing
+
+
+{-| The analysis board open on a puzzle, as its page shows it.
+-}
+analysisPuzzle : String -> Route
+analysisPuzzle id =
+    Analysis Nothing (Just id)
+
+
 {-| The practice home.
 -}
 puzzles : Route
@@ -168,6 +227,11 @@ href route =
 
         Practice slug ->
             "/practice/" ++ slug
+
+        -- `query` percent-encodes the `=` and the `:`s of an XGID, and the
+        -- parser decodes them again.
+        Analysis xgid p ->
+            "/analysis" ++ query [ ( "xgid", xgid ), ( "p", p ) ]
 
         Play slug gameId ->
             "/" ++ slug ++ "/" ++ gameId

@@ -11,6 +11,8 @@
 import backgammon/board.{
   type Board, type Color, type Loc, Bar, Black, Off, Point, White,
 }
+import gleam/dict
+import gleam/dynamic/decode.{type Decoder}
 import gleam/int
 import gleam/json.{type Json}
 import gleam/list
@@ -310,6 +312,38 @@ pub fn by_game(oldest_first: List(Entry)) -> List(List(Entry)) {
   list.reverse([list.reverse(open), ..done])
 }
 
+/// Whether a game of a match is the Crawford game, from the score before
+/// each game so far: `scores_before` holds one score per game, oldest
+/// first, ending with the game asked about (the first game's is empty, or
+/// every seat at 0). It is the rule `state.next_game` applies, so a client
+/// can name the game without knowing it: the first game after somebody
+/// reaches one away is the Crawford game, and only that one; the match's
+/// first game never is (no game came before it), and unlimited play
+/// (`target` 0) has none.
+pub fn crawford_game(
+  target: Int,
+  scores_before: List(List(#(PlayerId, Int))),
+) -> Bool {
+  let one_away = fn(scores: List(#(PlayerId, Int))) {
+    target > 0 && list.any(scores, fn(s) { s.1 == target - 1 })
+  }
+  case scores_before {
+    [] | [_] -> False
+    [_, ..later] -> {
+      // The games after the first, in order: the first of them to start
+      // one away is the Crawford game. Is it the last one?
+      let n = list.length(later)
+      case
+        list.index_map(later, fn(scores, i) { #(i, one_away(scores)) })
+        |> list.find(fn(pair) { pair.1 })
+      {
+        Ok(#(i, _)) -> i == n - 1
+        Error(_) -> False
+      }
+    }
+  }
+}
+
 /// The finished games' result lines, oldest first.
 pub fn results(entries: List(Entry)) -> List(Entry) {
   list.filter(entries, fn(e) {
@@ -391,4 +425,64 @@ pub fn side_to_json(side: Side) -> Json {
     #("off", json.int(side.off)),
     #("pips", json.int(side.pips)),
   ])
+}
+
+// ---------- Reading a stored record back ----------
+
+/// One entry as `to_json` wrote it, read back: what a finished game's
+/// stored row (`game_records`) is made of. A field `to_json` does not write
+/// is ignored, and `scores` comes back in no particular order (it is a
+/// lookup by player, never a list read by position).
+pub fn decoder() -> Decoder(Entry) {
+  use kind <- decode.field("kind", decode.string)
+  case kind {
+    "turn" -> {
+      use player <- decode.field("player", decode.string)
+      use dice <- decode.field("dice", decode.list(decode.int))
+      use moves <- decode.field("moves", decode.list(decode.string))
+      use position <- decode.field("position", snapshot_decoder())
+      use landed <- decode.optional_field("landed", [], decode.list(decode.int))
+      decode.success(Turn(player, dice, moves, position, landed))
+    }
+    "double" -> {
+      use player <- decode.field("player", decode.string)
+      use value <- decode.field("value", decode.int)
+      decode.success(Double(player, value))
+    }
+    "take" -> decode.map(decode.at(["player"], decode.string), Take)
+    "drop" -> decode.map(decode.at(["player"], decode.string), Drop)
+    "resign" -> decode.map(decode.at(["player"], decode.string), Resign)
+    "game_over" -> {
+      use number <- decode.field("number", decode.int)
+      use winner <- decode.field("winner", decode.string)
+      use result <- decode.field("result", decode.string)
+      use points <- decode.field("points", decode.int)
+      use cube <- decode.field("cube", decode.int)
+      use scores <- decode.field(
+        "scores",
+        decode.dict(decode.string, decode.int) |> decode.map(dict.to_list),
+      )
+      decode.success(GameOver(number, winner, result, points, cube, scores))
+    }
+    _ -> decode.failure(Resign(""), "a record entry")
+  }
+}
+
+fn snapshot_decoder() -> Decoder(Snapshot) {
+  use white <- decode.field("white", side_decoder())
+  use black <- decode.field("black", side_decoder())
+  use cube <- decode.subfield(["cube", "value"], decode.int)
+  use owner <- decode.subfield(
+    ["cube", "owner"],
+    decode.optional(decode.string),
+  )
+  decode.success(Snapshot(white, black, cube, owner))
+}
+
+fn side_decoder() -> Decoder(Side) {
+  use points <- decode.field("points", decode.list(decode.int))
+  use bar <- decode.field("bar", decode.int)
+  use off <- decode.field("off", decode.int)
+  use pips <- decode.field("pips", decode.int)
+  decode.success(Side(points, bar, off, pips))
 }

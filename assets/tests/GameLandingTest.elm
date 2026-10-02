@@ -332,6 +332,29 @@ homeBoard =
                 GameLanding.update GameLanding.PressedPuzzles loadedModel
                     |> (\( _, _, out ) -> out)
                     |> Expect.equal (GameLanding.Go "/puzzles")
+        , test "ANALYSIS, right after PUZZLES, opens the analysis board" <|
+            \_ ->
+                home (send GameLanding.ToggledNav loadedModel)
+                    |> Query.find [ id "nav-analysis" ]
+                    |> Expect.all
+                        [ Query.has [ text "Analysis" ]
+                        , Event.simulate Event.click >> Event.expect GameLanding.PressedAnalysis
+                        ]
+        , test "and the shell is told to go to /analysis" <|
+            \_ ->
+                GameLanding.update GameLanding.PressedAnalysis loadedModel
+                    |> (\( _, _, out ) -> out)
+                    |> Expect.equal (GameLanding.Go "/analysis")
+        , test "the menu's ways in, in order: Puzzles, Analysis, Join a game" <|
+            \_ ->
+                home (send GameLanding.ToggledNav loadedModel)
+                    |> Query.find [ id "nav-menu" ]
+                    |> Query.findAll [ tag "button" ]
+                    |> Expect.all
+                        [ Query.index 0 >> Query.has [ id "nav-puzzles" ]
+                        , Query.index 1 >> Query.has [ id "nav-analysis" ]
+                        , Query.index 2 >> Query.has [ id "nav-join-game" ]
+                        ]
         , test "the bar is the bird, the themes and ☰, and nothing else, at every width" <|
             \_ ->
                 home loadedModel
@@ -355,6 +378,7 @@ homeBoard =
                             >> Query.find [ id "nav-menu" ]
                             >> Expect.all
                                 [ Query.has [ id "nav-puzzles", text "Puzzles" ]
+                                , Query.has [ id "nav-analysis", text "Analysis" ]
                                 , Query.has [ id "nav-join-game", text "Join a game" ]
                                 , Query.hasNot [ id "nav-themes" ]
                                 , Query.has [ id "nav-signin", text "Sign in" ]

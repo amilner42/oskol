@@ -1656,6 +1656,14 @@ a.bg-match-door:hover { background: var(--paper-2); }
 .rp-page.pz-page { height: auto; min-height: var(--page-h); overflow: visible; }
 /* A puzzle is one position, not a match: the bars' score chips say nothing. */
 .pz-page .score-chip { display: none; }
+
+/* The analysis board (`Page/Analysis.elm`): the replay's page and board
+   (`.rp-*`, `.bg-still`), the puzzle page's size upright. `:where` keeps
+   this under the sideways and desktop rules below, as the puzzle's is. */
+:where(.an-page) .bg-still { --bg-point-h: 9rem; }
+.rp-page.an-page { height: auto; min-height: var(--page-h); overflow: visible; }
+/* The scores are the strip's: the bars' chips would say them twice. */
+.an-page .score-chip { display: none; }
 /* Where this session is, over the question (`Page.Puzzle.viewProgress`).
    One row that is 28px tall at every width and never wraps: the deck's
    mark or name, today's ring for that deck with "3/5" beside it, then a
@@ -1957,6 +1965,19 @@ button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shado
 .pz-controls { padding-top: 0.4rem; }
 .pz-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .pz-action { gap: 6px; padding: 7px 14px; font-family: "Press Start 2P", monospace; font-size: 8px; }
+/* SHARE, SAVE and ANALYSIS: one row at every width, each a fixed box, so
+   SHARE's "Copied" / "Copy failed" moves nothing beside it. */
+.pz-act-share, .pz-act-save, .pz-act-analysis { justify-content: center; height: 32px; padding: 0 6px; white-space: nowrap; overflow: hidden; }
+.pz-act-share { width: 124px; }
+.pz-act-save { width: 76px; }
+.pz-act-analysis { width: 106px; }
+@media (max-width: 359px) {
+  .pz-actions { gap: 6px; }
+  .pz-act-share, .pz-act-save, .pz-act-analysis { gap: 4px; padding: 0 4px; font-size: 7px; }
+  .pz-act-share { width: 110px; }
+  .pz-act-save { width: 64px; }
+  .pz-act-analysis { width: 90px; }
+}
 
 .rp-page {
   height: var(--page-h);
@@ -2159,6 +2180,28 @@ a.rp-match-row:hover { color: var(--ink); }
   flex: 1; min-height: 0; display: flex; flex-direction: column;
   background: #fff; border: 3px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink);
 }
+/* Over the tabs: the doors out of the replay at this step (SHARE
+   POSITION, OPEN IN ANALYSIS), one fixed-height row; a step with no
+   decision keeps the doors' places, unseen. */
+.rp-panel-head { position: relative; flex: none; display: flex; justify-content: flex-end; align-items: center; gap: 6px; height: 30px; padding: 0 6px; border-bottom: 2px solid var(--ink); background: var(--paper-2); }
+.rp-door { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 4px; color: var(--ink); text-decoration: none; white-space: nowrap; }
+.rp-door:hover { background: #fff; }
+.rp-door:focus-visible { outline: 2px solid var(--pen); outline-offset: 1px; }
+.rp-door.is-off { visibility: hidden; }
+/* SHARE is a button that reads as the link beside it. Not graded yet,
+   it is quiet, and "Graded soon" sits to its left where the row has room
+   for it (a container query: on the smallest phone it does not). */
+.rp-panel-head { container-type: inline-size; }
+.rp-share { border: 0; background: transparent; cursor: pointer; }
+.rp-share.is-busy { cursor: progress; opacity: 0.6; }
+.rp-share.is-soon { color: var(--pencil); opacity: 0.7; }
+.rp-share.is-soon:hover { background: transparent; }
+.rp-share-soon { flex: 1; min-width: 0; font-size: 11px; color: var(--pencil); white-space: nowrap; overflow: hidden; }
+.rp-share-soon.is-hidden { visibility: hidden; }
+@container (max-width: 330px) { .rp-share-soon { visibility: hidden; } }
+/* What a share did, for a moment: floating under the head, over the tabs,
+   so it moves nothing. */
+.rp-share-note { position: absolute; top: calc(100% + 4px); right: 6px; z-index: 5; max-width: calc(100% - 12px); padding: 5px 8px; background: var(--ink); color: var(--paper); border-radius: 4px; font-size: 12px; line-height: 1.3; box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.15); pointer-events: none; }
 .rp-tabs { flex: none; display: flex; border-bottom: 2px solid var(--ink); }
 .rp-tab { flex: 1; padding: 7px 6px; background: #fff; color: var(--ink); border: 0; cursor: pointer; }
 .rp-tab + .rp-tab { border-left: 2px solid var(--ink); }
@@ -3340,3 +3383,451 @@ oskol-demo-board {
   /* no room above the sentence: a menu is the bottom sheet, as on a phone */
   .lh-pick-menu { position: fixed; left: auto; right: 12px; bottom: 12px; width: min(340px, calc(100vw - 24px)); transform: none; min-width: 0; max-height: calc(100svh - 24px); overflow-y: auto; }
 }
+
+/* ---------- The analysis board (`Page/Analysis.elm`) ----------
+   Upright: the brushes, the board, then the strip, the quick starts and
+   the position id, the line and ANALYZE, then the answer's place. Sideways
+   the board takes the screen's height and the rest is the column beside
+   it; on a desktop the brushes sit over the board and the column beside
+   both. Every control has a fixed size, so nothing moves when one changes:
+   the strip is three rows at every width, its labels and buttons never
+   change width with what they say, and the line under it is two lines
+   tall whether or not it says anything. */
+.an-board .edit-zone { cursor: pointer; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+@media (hover: hover) and (pointer: fine) {
+  .an-board .bg-point.edit-zone:hover, .an-board .bg-bar-row.edit-zone:hover, .an-board .bg-tray.edit-zone:hover { box-shadow: inset 0 0 0 2px rgba(255, 210, 63, 0.75); }
+}
+.an-brushes { flex: none; display: flex; align-items: center; gap: 6px; height: 34px; min-width: 0; }
+/* A tray on the editor is a place: its count is said in words, always,
+   in a slot as wide as "15 off", so it never moves. */
+.an-board .bg-tray.edit-zone { padding: 2px 3px; margin: -2px -3px; border-radius: 4px; }
+.an-board .off-words { display: inline-block; min-width: 6ch; text-align: left; white-space: nowrap; }
+/* The pip count beside the tray changes with every checker: as wide as
+   "375 PIPS" always, so the tray beside it never moves. */
+.an-board .bar-pips { display: inline-block; min-width: 9.5ch; text-align: right; }
+/* The checkers of a colour not placed yet, on its brush: a badge that is
+   always there (hidden at none) and floats, so nothing moves. */
+.an-brush { position: relative; }
+.an-left {
+  position: absolute; top: -8px; right: -9px; width: 22px; height: 18px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; border-radius: 9px;
+  background: var(--highlighter); color: var(--ink); border: 1.5px solid var(--ink);
+  font: 700 10px/1 ui-sans-serif, system-ui, sans-serif; pointer-events: none;
+}
+.an-left.is-none { visibility: hidden; }
+.an-brush {
+  flex: none; width: 42px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink); border-radius: 7px; background: #fff; color: var(--ink); cursor: pointer;
+  transition: background 0.12s;
+}
+.an-brush:hover:not(.is-on) { background: var(--paper-2); }
+/* Chosen -- a brush, who is to play, a step of the line -- is the
+   highlighter under the thing with an ink ring round it, never an
+   inverted tile: a white checker on a dark square reads as the other
+   colour. A checker is always drawn as the board draws it. */
+.an-brush.is-on, .an-who.is-on, .an-plate.is-on { background: var(--highlighter); box-shadow: inset 0 0 0 1.5px var(--ink); }
+.an-chip { display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--ink); flex: none; }
+.an-chip.white { background: #f6f1e4; }
+.an-chip.black { background: #2b2c40; }
+/* TO PLAY: each colour's checker with its word; the chosen one's word in
+   ink and underlined, the other's in pencil. */
+.an-whos { display: flex; gap: 4px; height: 30px; }
+.an-who {
+  flex: none; width: 70px; height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0;
+  border: 1.5px solid var(--ink); border-radius: 7px; background: #fff; color: var(--pencil); cursor: pointer;
+  transition: background 0.12s;
+}
+.an-who:hover:not(.is-on):not(:disabled) { background: var(--paper-2); }
+.an-who .an-chip { width: 14px; height: 14px; }
+.an-who-word { font-size: 7px; line-height: 1; letter-spacing: 0.02em; text-underline-offset: 3px; }
+.an-who.is-on .an-who-word { color: var(--ink); text-decoration: underline; text-decoration-thickness: 2px; }
+.an-strip.is-locked .an-who { cursor: default; }
+/* The step of the line's colour, as a checker in place of W or B. */
+.an-plate { display: inline-flex; align-items: center; gap: 5px; }
+.an-plate .an-chip { width: 12px; height: 12px; border-width: 1.2px; }
+/* On the analysis board the bar of the player to move says so in words. */
+.an-board .player-bar.active .bar-name::after { content: " to play"; font-weight: 500; opacity: 0.85; }
+/* The bars never set the slab's width (sideways the slab is as wide as
+   its content): whatever a bar says -- "to play", a count -- it fits the
+   board's width, so the board never moves when the turn changes. */
+.an-board .bg-still .player-bar { width: 0; min-width: 100%; }
+.an-x { font-size: 15px; line-height: 1; font-weight: 700; }
+.an-hint { flex: 1; min-width: 0; font-size: 12px; color: var(--pencil); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-hint-mouse { display: none; }
+.an-hint-short { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .an-hint-mouse { display: block; }
+  .an-hint-touch { display: none; }
+}
+/* The mouse's hint is the longer one: in a narrow window (or a phone whose
+   browser reports a fine pointer, as headless Chromium on Linux does) its
+   short form, whole, rather than the long one cut off. */
+@media (hover: hover) and (pointer: fine) and (max-width: 479px) {
+  .an-hint-mouse .an-hint-long { display: none; }
+  .an-hint-mouse .an-hint-short { display: inline; }
+}
+
+.an-side { gap: 10px; }
+.an-strip { flex: none; display: flex; flex-direction: column; gap: 8px; }
+/* The strip and the quick starts are fieldsets, so PLAY disables them at
+   once (the position is edited in SET UP only): no fieldset frame, and
+   locked the strip fades where it is, its settings still readable, while
+   the quick starts and IMPORT wear a disabled button's grey. Nothing is
+   resized either way. */
+fieldset.an-strip, fieldset.an-quick-row { margin: 0; padding: 0; border: 0; min-width: 0; }
+.an-strip { transition: opacity 0.15s; }
+.an-strip.is-locked { opacity: 0.4; }
+.an-strip.is-locked .an-seg, .an-strip.is-locked .an-step { cursor: default; }
+.an-strip.is-locked .an-seg.is-on { color: #fff; }
+.an-strip.is-locked .an-who.is-on .an-who-word { color: var(--ink); }
+.an-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
+.an-group { display: flex; flex-direction: column; gap: 4px; flex: none; }
+.an-label { font-size: 6px; line-height: 7px; height: 7px; color: var(--pencil); letter-spacing: 0.04em; white-space: nowrap; }
+.an-controls { display: flex; gap: 4px; height: 30px; }
+.an-segs, .an-stepper {
+  display: flex; height: 30px; border: 1.5px solid var(--ink); border-radius: 7px; overflow: hidden; background: #fff; flex: none;
+}
+.an-seg, .an-step {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; height: 100%; padding: 0;
+  border: 0; background: #fff; color: var(--ink); cursor: pointer; white-space: nowrap;
+  font-family: "Press Start 2P", monospace; font-size: 7px; line-height: 1;
+  transition: background 0.12s, color 0.12s;
+}
+.an-seg + .an-seg, .an-stepper > * + * { border-left: 1.5px solid var(--ink); }
+.an-seg:hover:not(:disabled):not(.is-on), .an-step:hover:not(:disabled) { background: var(--paper-2); }
+.an-seg.is-on { background: var(--ink); color: #fff; }
+.an-seg:disabled, .an-step:disabled { color: #a9a9b2; cursor: default; }
+.an-step { width: 20px; font-family: inherit; font-size: 15px; font-weight: 700; }
+#an-dice { width: 46px; }
+#an-ask-double { width: 57px; }
+#an-ask-take { width: 43px; }
+#an-cube { width: 30px; font-size: 8px; }
+#an-cube-owner { width: 50px; }
+#an-game { width: 85px; }
+#an-crawford { width: 34px; }
+.an-score-value {
+  display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 100%; font-size: 8px;
+}
+.an-score-value.white { background: #f6f1e4; color: var(--ink); }
+.an-score-value.black { background: #2b2c40; color: #fff; }
+.an-dice { display: inline-flex; gap: 3px; }
+.an-die {
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 1px;
+  width: 15px; height: 15px; padding: 2px; border: 1.2px solid var(--ink); border-radius: 3px; background: #fff; flex: none;
+}
+.an-pip.on { background: var(--ink); border-radius: 50%; }
+.an-die.blank { display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.an-die-q { font-size: 7px; color: var(--pencil); }
+
+.an-quicks { flex: none; display: flex; flex-direction: column; gap: 8px; }
+.an-quick-row { display: flex; gap: 8px; align-items: center; }
+.an-quick { height: 30px; padding: 0 8px; font-size: 7px; border-radius: 7px; box-shadow: 2px 2px 0 0 var(--ink); white-space: nowrap; }
+.an-quick-row .an-quick { flex: 1 1 0; }
+.an-check {
+  flex: none; height: 2.7em; margin: 0; overflow: hidden;
+  font-size: 13px; line-height: 1.35; font-weight: 600; color: var(--ink);
+}
+.an-analyze { flex: none; width: 100%; height: 44px; font-size: 11px; letter-spacing: 0.06em; border-radius: 10px; }
+/* While the press is out, ANALYZE's slot is a plate of its own size: the
+   seconds counting, and the loading bar (`.boot-fill`'s motion, slower). */
+.an-asking {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink); background: var(--paper-2); color: var(--ink); overflow: hidden;
+}
+.an-asking-text { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.an-asking-track { position: absolute; left: 14px; right: 14px; bottom: 7px; height: 3px; border-radius: 999px; background: rgba(35, 36, 58, 0.1); overflow: hidden; }
+.an-asking-fill {
+  display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--ink);
+  transform-origin: left center; transform: scaleX(0); animation: boot-fill 12s linear forwards;
+}
+/* The answer's place: a height of its own at every size, so the page is
+   as tall before the answer as after it, and filling or clearing it
+   moves nothing. The heights hold the tallest answer: a move's sentence
+   over five candidates, the depth line and the buttons. */
+.an-panel { flex: none; display: flex; flex-direction: column; min-height: 28rem; }
+.an-panel-hint { margin: 0; padding: 10px 12px; font-size: 13px; line-height: 1.4; color: var(--pencil); border: 1.5px dashed color-mix(in oklab, var(--ink) 30%, transparent); border-radius: 8px; }
+.an-answer.rp-note { min-height: 0; max-height: none; overflow: visible; padding: 8px 10px 10px; }
+.an-answer .rp-words:first-child { margin-top: 0; }
+.an-answer .rp-cube { margin-top: 6px; }
+.an-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; height: 1.5em; margin-top: 8px; font-size: 12px; color: var(--pencil); }
+.an-depth { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-share-note { flex: none; font-weight: 700; color: var(--ink); white-space: nowrap; }
+/* Six tracks: PLAY THIS spans them all (row 1); SAVE, SHARE and OPEN AS
+   PUZZLE take two each (row 2) where the grid is 420px or wider, else SAVE
+   and SHARE take three each and OPEN AS PUZZLE the row under them. */
+.an-actions { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-top: 6px; container-type: inline-size; }
+.an-action-third { grid-column: span 3; }
+.an-action-last { grid-column: span 6; }
+@container (min-width: 420px) {
+  .an-action-third, .an-action-last { grid-column: span 2; }
+}
+.an-action { height: 36px; padding: 0 6px; font-size: 8px; border-radius: 8px; box-shadow: 2px 2px 0 0 var(--ink); white-space: nowrap; text-decoration: none; }
+.an-refused { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 3px solid var(--ink); background: #fff; box-shadow: 3px 3px 0 0 var(--ink); }
+.an-refused-text { margin: 0; font-size: 14px; line-height: 1.4; font-weight: 600; color: var(--ink); }
+/* A fixed width, so the countdown in its label never changes its size. */
+.an-retry { width: 11.5rem; height: 38px; font-size: 8px; border-radius: 8px; box-shadow: 2px 2px 0 0 var(--ink); }
+.an-retry:disabled { box-shadow: 2px 2px 0 0 #a9a9b2; }
+.an-board .an-proposed { pointer-events: none; }
+
+/* The 21 rolls: a sheet from the bottom on a phone, a card in the middle
+   on anything wider; it floats over the page, so opening it moves
+   nothing. One row per high die, its double at the end. */
+.an-sheet-layer { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; }
+.an-sheet-dim { position: fixed; inset: 0; background: rgba(20, 22, 38, 0.55); }
+.an-sheet {
+  position: relative; width: 100%; max-width: 24rem; border-radius: 16px 16px 0 0;
+  padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
+}
+.an-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.an-rolls { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-template-rows: repeat(6, 34px); gap: 5px; }
+.an-roll {
+  display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+  border: 1.5px solid var(--ink); border-radius: 7px; background: #fff; cursor: pointer;
+}
+.an-roll:hover { background: var(--paper-2); }
+.an-roll.is-on { background: var(--highlighter); }
+@media (min-width: 640px), (orientation: landscape) and (max-height: 600px) {
+  .an-sheet-layer { align-items: center; }
+  .an-sheet { border-radius: 16px; padding-bottom: 14px; }
+}
+@media (orientation: landscape) and (max-height: 600px) {
+  .an-rolls { grid-template-rows: repeat(6, 30px); gap: 4px; }
+}
+
+/* A sixteenth checker refused: that colour's tray flashes once where it
+   is. The class alternates with every refusal so the flash starts again. */
+.an-flash-white-0 .player-bar.is-me .bg-tray, .an-flash-black-0 .player-bar:not(.is-me) .bg-tray { animation: an-flash-0 0.7s ease-out; }
+.an-flash-white-1 .player-bar.is-me .bg-tray, .an-flash-black-1 .player-bar:not(.is-me) .bg-tray { animation: an-flash-1 0.7s ease-out; }
+@keyframes an-flash-0 { 0%, 45% { background: rgba(255, 210, 63, 0.85); box-shadow: 0 0 0 3px #ffd23f; } 100% { background: transparent; box-shadow: 0 0 0 3px transparent; } }
+@keyframes an-flash-1 { 0%, 45% { background: rgba(255, 210, 63, 0.85); box-shadow: 0 0 0 3px #ffd23f; } 100% { background: transparent; box-shadow: 0 0 0 3px transparent; } }
+
+/* Playing it out (analysis-play-it-out). SET UP / PLAY at the head's right
+   end; in PLAY the row over the board (the brushes' own box) holds what
+   the step asks for; under the board the line, one plate per step between
+   the arrows, scrolling sideways at a fixed height. Every control a fixed
+   width, so nothing moves as the line grows or the step changes. */
+.an-segs.an-modes { margin-left: auto; height: 26px; }
+.an-mode { width: 58px; }
+#an-mode-play { width: 46px; }
+.an-playrow { gap: 8px; }
+.an-act { flex: none; width: 92px; height: 30px; padding: 0; font-size: 7px; border-radius: 7px; box-shadow: 2px 2px 0 0 var(--ink); white-space: nowrap; }
+.an-act.is-on { background: var(--ink); color: #fff; }
+.an-act:disabled { box-shadow: 2px 2px 0 0 #a9a9b2; }
+.an-act.an-roll-random { width: 112px; }
+.an-play-end { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-line-wrap { flex: none; height: 2.2rem; display: flex; align-items: center; min-width: 0; }
+.an-line-wrap .bg-scrub { display: flex; width: 100%; min-width: 0; gap: 6px; }
+.an-plates {
+  flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 5px;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; padding: 0 1px;
+}
+.an-plates::-webkit-scrollbar { display: none; }
+.an-plate {
+  flex: none; height: 1.8rem; padding: 0 8px; border: 1.5px solid var(--ink); border-radius: 7px;
+  background: #fff; color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer;
+  font-variant-numeric: tabular-nums; transition: background 0.12s, color 0.12s;
+}
+.an-plate:hover:not(.is-on) { background: var(--paper-2); }
+.an-action-wide { grid-column: 1 / -1; }
+
+/* A narrow phone: the same three rows, a size down. */
+@media (max-width: 359px) {
+  .an-mode { width: 52px; }
+  #an-mode-play { width: 42px; }
+  .an-act { width: 84px; }
+  .an-act.an-roll-random { width: 100px; }
+  .an-plate { font-size: 11px; padding: 0 6px; }
+  .an-seg { font-size: 6px; }
+  .an-step { width: 18px; }
+  .an-who { width: 60px; gap: 4px; }
+  .an-who .an-chip { width: 12px; height: 12px; }
+  .an-who-word { font-size: 6px; }
+  /* "White to play" whole beside its tray: the pip count makes room */
+  .an-board .player-bar .bar-pips { display: none; }
+  #an-dice { width: 42px; }
+  #an-ask-double { width: 48px; }
+  #an-ask-take { width: 37px; }
+  #an-cube { width: 28px; }
+  #an-cube-owner { width: 43px; }
+  #an-game { width: 72px; }
+  #an-crawford { width: 30px; }
+  .an-score-value { width: 18px; }
+  .an-row { gap: 4px; }
+  /* The hint is the only place a phone learns about the long press: the
+     short one, whole, rather than the long one cut off. */
+  .an-brush { width: 38px; }
+  .an-hint { font-size: 11px; }
+  .an-hint-long { display: none; }
+  .an-hint-short { display: inline; }
+}
+
+/* Sideways: the board down the left at the screen's height, everything
+   else the column beside it, the brushes at its top. */
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
+  .rp-page.an-page { height: auto; min-height: var(--page-h); overflow: visible; grid-template-rows: auto auto auto 1fr; }
+  .an-page .an-brushes { grid-column: 2; grid-row: 2; }
+  /* the line in the column too, under the brushes, where it can be seen */
+  .an-page .an-line-wrap { grid-column: 2; grid-row: 3; }
+  .an-page .rp-side { grid-row: 4; }
+  .an-page .rp-board, .an-page .rp-side { align-self: start; }
+  /* The column is taller than the screen (ANALYZE and the answer are
+     under the fold): the board stays in view under the site's bar while
+     it scrolls, so a candidate shown is seen on the board. */
+  .an-page .rp-board { position: sticky; top: calc(var(--bar-h) + 6px); }
+}
+
+/* A desktop: the brushes over the board, the column beside both -- a
+   wider one than the replay's, its controls a size up so they sit with
+   the big board. The board's
+   width term is the replay's with this column's width. */
+@media (min-width: 1024px) {
+  .an-page .rp-main { grid-template-columns: max-content 26rem; grid-template-rows: auto auto auto 1fr; row-gap: 8px; }
+  .an-page .an-brushes { grid-column: 1; grid-row: 1; }
+  .an-page .rp-board { grid-column: 1; grid-row: 2; }
+  .an-page .an-line-wrap { grid-column: 1; grid-row: 3; height: 2.6rem; }
+  .an-page .rp-side { grid-column: 2; grid-row: 1 / span 4; width: 26rem; gap: 14px; }
+  .an-segs.an-modes { height: 30px; }
+  .an-mode { width: 66px; }
+  #an-mode-play { width: 52px; }
+  .an-act { width: 110px; height: 36px; font-size: 8px; }
+  .an-act.an-roll-random { width: 130px; }
+  .an-plate { height: 2.1rem; font-size: 13px; padding: 0 10px; }
+  /* the board's height less the line under it (its 2.6rem and a gap) */
+  .an-page .bg-still {
+    --bg-point-h: min(
+      calc((var(--page-h) - 28px - 2.5rem - 2.6rem - 3.2rem - 5.5rem - 3.1rem - var(--bg-band-h) - 2 * var(--bg-lip) - 1rem) / 2),
+      calc((100vw - 48px - 26rem - 16px - 4rem) / 2.9)
+    );
+  }
+  .an-brushes { height: 40px; }
+  .an-brush { width: 48px; height: 38px; }
+  .an-chip { width: 19px; height: 19px; }
+  .an-hint { font-size: 13px; }
+  .an-strip { gap: 12px; }
+  .an-label { font-size: 7px; line-height: 8px; height: 8px; }
+  .an-controls, .an-segs, .an-stepper { height: 38px; }
+  .an-seg { font-size: 8px; }
+  .an-step { width: 26px; font-size: 17px; }
+  .an-whos { height: 38px; }
+  .an-who { width: 88px; height: 38px; gap: 6px; }
+  .an-who .an-chip { width: 17px; height: 17px; }
+  .an-who-word { font-size: 8px; }
+  #an-dice { width: 56px; }
+  #an-ask-double { width: 68px; }
+  #an-ask-take { width: 52px; }
+  #an-cube { width: 38px; font-size: 9px; }
+  #an-cube-owner { width: 60px; }
+  #an-game { width: 100px; }
+  #an-crawford { width: 42px; }
+  .an-score-value { width: 26px; font-size: 9px; }
+  .an-die { width: 18px; height: 18px; }
+  .an-quick { height: 38px; font-size: 8px; }
+  .an-check { font-size: 14px; }
+  .an-analyze { height: 52px; font-size: 13px; }
+}
+
+/* ---------- Save to a set (`Ui.SaveToSet`) ----------
+   One sheet from the analysis board's answer and a puzzle's reveal: a
+   sheet from the bottom on a phone, a card in the middle on anything wider
+   (and on a phone on its side, where it scrolls). It floats, so opening it
+   moves nothing under it; inside, the list keeps its height from loading
+   to loaded and the line under everything is always one line. */
+.save-layer {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; flex-direction: column; align-items: center;
+  overflow-y: auto; overscroll-behavior: contain;
+}
+.save-dim { position: fixed; inset: 0; background: rgba(20, 22, 38, 0.55); }
+.save-sheet {
+  position: relative; flex: none; width: 100%; max-width: 26rem; margin-top: auto;
+  border-radius: 16px 16px 0 0;
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+}
+@media (min-width: 640px), (orientation: landscape) and (max-height: 600px) {
+  .save-sheet { margin: auto; border-radius: 16px; padding-bottom: 18px; }
+  .save-layer { padding: 16px; }
+}
+.save-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.save-label { display: block; margin: 6px 0; font-size: 12.5px; font-weight: 700; color: var(--pencil); }
+.save-sets {
+  display: flex; flex-direction: column; gap: 6px;
+  height: 9.75rem; overflow-y: auto; overscroll-behavior: contain;
+  padding: 2px 4px 4px 2px; margin: 0 -4px 0 -2px;
+}
+.save-quiet { margin: 6px 2px; font-size: 13.5px; line-height: 1.45; color: var(--pencil); }
+.save-set {
+  flex: none;
+  display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; column-gap: 10px;
+  width: 100%; height: 44px; padding: 0 12px 0 10px;
+  border: 1.5px solid var(--ink); border-radius: 10px; background: #fff;
+  text-align: left; color: var(--ink); cursor: pointer;
+}
+@media (hover: hover) { .save-set:hover { background: var(--paper-2); } }
+.save-set:focus-visible { outline: none; box-shadow: 3px 3px 0 0 var(--pen); }
+.save-check {
+  width: 22px; height: 22px; border: 1.5px solid var(--ink); border-radius: 6px; background: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 800; line-height: 1; color: #fff;
+}
+.save-set.is-on .save-check { background: var(--ink); }
+.save-set-name { font-size: 14.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.save-set-size { font-size: 12.5px; color: var(--pencil); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.save-new { margin-top: 8px; }
+.save-new-row { display: flex; gap: 8px; }
+.save-field { flex: 1 1 auto; min-width: 0; height: 44px; padding: 0 12px; font-size: 16px; border-radius: 10px; }
+.save-create { flex: none; width: 6.5rem; height: 44px; font-size: 9px; border-radius: 10px; }
+.save-line {
+  margin-top: 10px; height: 1.45em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-size: 13.5px; line-height: 1.45; font-weight: 600; color: var(--ink);
+}
+.save-line.is-refused { color: var(--red); }
+.save-signin-line { margin: 2px 0 12px; font-size: 15px; font-weight: 700; color: var(--ink); }
+
+/* ---------- Your sets, on the practice home and a set's own page ---------- */
+.dk-icon.is-own { color: var(--pen); }
+.dk-group {
+  margin: 14px 10px 4px;
+  font-family: "Press Start 2P", monospace; font-size: 7.5px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--pencil);
+}
+a.dk-go { text-decoration: none; }
+
+/* MANAGE: the name, the positions, DELETE SET. */
+.dp-manage { margin-top: 18px; padding: 16px 2px 2px; border-top: 1px dashed rgba(35, 36, 58, 0.22); }
+.dp-rename { display: flex; gap: 8px; }
+.dp-rename-field { flex: 1 1 auto; min-width: 0; height: 42px; padding: 0 12px; font-size: 16px; font-weight: 600; border-radius: 10px; }
+.dp-rename-save { flex: none; width: 6.5rem; height: 42px; font-size: 8px; border-radius: 10px; box-shadow: 2px 2px 0 0 var(--ink); }
+.dp-manage-line { margin-top: 6px; height: 1.45em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; line-height: 1.45; font-weight: 600; color: var(--pencil); }
+.dp-members-empty { margin-top: 8px; font-size: 14px; line-height: 1.5; color: var(--pencil); }
+.dp-members { margin-top: 8px; display: flex; flex-direction: column; }
+.dp-member {
+  display: grid; grid-template-columns: minmax(0, 1fr) 40px; align-items: center; column-gap: 6px;
+  min-height: 84px; padding: 6px 0;
+}
+.dp-member + .dp-member { border-top: 1px solid rgba(35, 36, 58, 0.09); }
+.dp-member-open { display: flex; align-items: center; gap: 12px; min-width: 0; color: var(--ink); text-decoration: none; border-radius: 8px; }
+@media (hover: hover) { .dp-member-open:hover .dp-member-prompt { text-decoration: underline; } }
+/* A still board at 72px: the table's own, drawn at a phone's size and
+   scaled down, its name bars hidden -- only the position is wanted. */
+.dp-member-board { position: relative; flex: none; width: 92px; height: 72px; overflow: hidden; border-radius: 6px; }
+.dp-member-board .bg-still {
+  position: absolute; left: 0; top: 0; width: 368px; max-width: none;
+  --bg-slab-w: 368px; --bg-point-h: 5.5rem; --page-h: 0px;
+  transform: scale(0.25); transform-origin: 0 0; pointer-events: none;
+}
+.dp-member-board .bg-still .player-bar { display: none; }
+.dp-member-board .bg-still .bg-stack { box-shadow: none; border-radius: 10px; }
+.dp-member-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* Two lines at most: on a narrow phone one line was "White to play…" for
+   every position, which told them apart by nothing. */
+.dp-member-prompt { font-size: 14px; font-weight: 600; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.dp-member-level { font-size: 12.5px; color: var(--pencil); }
+.dp-member-remove { width: 40px; height: 40px; border-radius: 10px; font-size: 15px; color: var(--pencil); cursor: pointer; }
+@media (hover: hover) { .dp-member-remove:hover { color: var(--red); background: var(--paper-2); } }
+.dp-member-remove:disabled { opacity: 0.4; cursor: progress; }
+.dp-delete { margin-top: 18px; min-height: 7.5rem; }
+.dp-delete-btn { height: 40px; padding: 0 16px; font-size: 8px; border-radius: 10px; box-shadow: 2px 2px 0 0 var(--ink); }
+.dp-delete-question { font-size: 14px; line-height: 1.5; color: var(--ink); text-wrap: pretty; }
+.dp-delete-row { display: flex; gap: 8px; margin-top: 10px; }
+.dp-delete-yes, .dp-delete-no { height: 40px; padding: 0 16px; font-size: 8px; border-radius: 10px; box-shadow: 2px 2px 0 0 var(--ink); }
+.dp-delete-yes { background: var(--red); }

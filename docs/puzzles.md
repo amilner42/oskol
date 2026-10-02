@@ -398,11 +398,11 @@ mistakes, worst first (`very_bad` / `very-bad` ??, `bad` / `bad` ?,
 (`openings`, `opening_replies` / `opening-replies`). Each has an `id` the
 wire speaks and a `slug` its page lives at (`/practice/<slug>`). A tier is a
 band of the one mistakes learner, never a scope of its own: the three share
-a ladder, a day and a budget.
+a ladder, a day and a budget. An account's own sets follow the five ([Own sets](#own-sets)).
 
 - **`GET /papi/practice/decks`** (`practice.decks_json`) is the hub's one
   answer: `{decks, lead, today, streak, patched_level, cost_all,
-  mistakes}`. Each deck is `{id, slug, kind (mistakes|set), name, mark,
+  mistakes}`. Each deck is `{id, slug, kind (mistakes|set|own), name, mark,
   blurb, size, pace, joined, standing, cost}`. `standing` (an account's;
   null otherwise) is counted from the deck's cells by `deck.standing`:
   `{total, untouched, in_progress, patched, due, new_left, done_today,
@@ -467,10 +467,14 @@ cube question is two buttons, as at the table (DOUBLE / NO DOUBLE, TAKE /
 PASS). The reveal opens on the verdict line (`#pz-verdict`): RIGHT ("That
 is the play." / "Within 0.02 of the best. Not a mistake."), or a miss by its
 band in the replay's mark and colour (?! DUBIOUS, ? BAD, ?? VERY BAD) with
-"Gives up 0.04 — a mistake, so it comes back." (no "so it comes back"
-without a schedule). Then the replay's words and table (`Words`, with
+"Gives up 0.04 — a dubious mistake, so it comes back." (no "so it comes
+back" without a schedule). The sentence names the badge's own band
+(`Words.aMistake`: dubious, bad, very bad), as the replay's cube verdict
+does, so the two never disagree. Then the replay's words and table (`Words`, with
 `doubleWhy`/`noDoubleWhy`/`answerWhy` for a position nobody has acted on
-yet) with "you" marked and a candidate tappable onto the board; the cube's
+yet) with "you" marked (a play outside the five the engine described is
+the row "your play", which needs no badge) and a candidate tappable onto
+the board; the cube's
 scale marks the engine's band over `cubeLine`. The attempt's key is minted
 once per page load (`elm/random`) and a PLAY that lands before it waits for
 it, so a retry is the same answer. Signed in with a `schedule`, the level
@@ -496,7 +500,12 @@ laid out; `review-verdict/outcomes.js` and `test-puzzle` measure it). A schedule
 when that answer took the mistake to `deck.patched_level` from below (the
 level line then reads "Mastered. Four right in a row — back in 21 days",
 `.pz-level.is-patched`). SHARE is the table's `shareInvite` port on the
-clean URL.
+clean URL. Beside it, on every puzzle, ANALYSIS (`#pz-analysis`, the
+new-tab mark after it; "Open in analysis" to a screen reader) is a link to
+`/analysis?p=<id>` in a new tab: the analysis board on the position as this
+page shows it (`docs/analysis.md`). SHARE, SAVE and ANALYSIS are fixed boxes
+on one row at every width down to 320 (`.pz-act-*`), so SHARE's "Copied" or
+"Copy failed" moves nothing.
 
 **A run is the shell's** (`assets/src/Run.elm`, pure, kept by `Main` across
 `pushUrl`s because every page is rebuilt on one). `Run.Run` is `{ids, at,
@@ -589,7 +598,14 @@ Signed in, the page POSTs the browser's zone
 `/papi/practice/tz` once per visit, never for a guest. Decisions on the
 server: `handlers/practice` and `handlers/puzzles_hub` (TRY ONE's
 clear-answer rule, on the `puzzles.sample` cap: up to 40 complete puzzles in
-the database's random order, the first that qualifies).
+the database's random order, the first that qualifies). TRY ONE and the
+status page draw only rows whose `origin` is `game` or `set`, never a
+position somebody set up on the analysis board or shared from a replay
+(`docs/analysis.md`); TRY ONE also skips any row a replay share linked
+(`puzzles.replay`), so it never hands a stranger a door into a room.
+A position shared from a replay (`origin = 'replay'`, no source row, so in
+nobody's practice) shows "From a game on Oskol · WATCH THE REPLAY →" after
+the reveal (`docs/analysis.md`, "Share a position from the replay").
 
 **A deck's page** (`/practice/<slug>`, `assets/src/Page/Practice.elm`) is
 `GET /papi/practice/decks/:slug`: the same card at page size
@@ -641,7 +657,8 @@ also somebody's mistake is one puzzle in two places).
   walks the default scope only.
 - **An answer names its set**: the attempt and the override carry `deck`
   (`handlers/puzzles.attempt_in_json` / `outcome_in_json`); none is the
-  player's mistakes, a name that is no set is a 422. The run carries it
+  player's mistakes, a name that is no set (or somebody else's own set) is
+  a 404. The run carries it
   (`Run.deck`), the strip names the set and draws its own ring, and the
   page asks no `/why` (a set's position came from no
   game). A set's position is "mastered", the mistakes' own word
@@ -650,7 +667,7 @@ also somebody's mistake is one puzzle in two places).
   enrols every member in the set's scope at its position, with the
   browser's zone; a guest, a stranger and an account that has not added
   it walk the set in order with nothing written. `POST /papi/practice/tz`
-  reaches every set the account has added and creates none. The streak
+  reaches every set the account has added (and its own sets) and creates none. The streak
   counts practice in every scope (`activity.practiced`).
 - **Budgets**: Openings five new a day, replies ten, and KEEP GOING
   through a set (`POST /papi/decks/:id/more`) starts that many again.
@@ -674,6 +691,95 @@ also somebody's mistake is one puzzle in two places).
   `/papi/decks` and `/papi/decks/:id` stay its session's endpoints. A new
   set is a registry entry (its slug is its id with `-` for `_`), a build for
   its positions, and nothing else.
+
+## Own sets
+
+A set an account makes for itself and saves positions into -- from the
+analysis board, or from any puzzle -- and practices exactly as it practices
+Openings. To a player it is a **set** ("Your sets", "Save to a set", "New
+set"); in code, URLs and the wire it is a deck, like the others. It is the
+universal-set machinery with an owner, so there are no new practice rules.
+
+- **Rows.** `decks(id, user_id, name, new_per_day, deleted_at)`
+  (`Oskol.OwnDecks`): the id is eight characters of the room-code alphabet
+  minted by the `ids.deck_id` cap, which no universal id ("openings",
+  "opening_replies") can be; the name is 1..40 characters, trimmed, unique
+  per owner in any case among live sets (a partial unique index on
+  `lower(name)`). Its positions are `deck_puzzles` rows under its id, as
+  Openings' are, and its owner's ladder is the retain scope `"deck:<id>"`,
+  as Openings' is, so `deck_members`, `deck_size`, `decks.queue`,
+  `decks.anyway`, `decks.standing` and `Caps.Practice.build(scope)` work
+  unchanged.
+- **Gleam.** `practice/decks.Deck` has `owner: Option(String)` (None for
+  the registry's two); `decks.own(ctx, uid)` reads the `decks.own` cap
+  (live rows, oldest first) and `decks.find_for(ctx, session, id)` is the
+  one lookup every door uses: the registry first (no IO), then the caller's
+  own sets. `practice/catalog.Kind` has `Own(set)`, and `catalog.all(ctx,
+  session)` is the five then an account's own sets (`catalog.five()` is
+  the five). `handlers/own_decks` makes, renames, deletes, fills and empties
+  one.
+- **Private.** Every door that names a set -- `/papi/decks/:id` and its
+  join and more, `/papi/practice/decks/:slug`, the page's head, an
+  attempt's or an override's `deck`, and every `/papi/decks/:id/...` of
+  its own -- answers somebody else's set with the same 404 as an id that
+  names nothing ("There is no such set of puzzles."). Its page is noindex
+  and never on the sitemap. Sharing a set is later; the row has room for a
+  token.
+- **Saving enrolls at once.** `POST /papi/decks/:id/puzzles {puzzle_id}`
+  writes the member, under a lock on the set's row, at one past its highest
+  position (`on conflict do nothing`) and puts that one item in the owner's
+  scope (`put_user(uid, "", 5)`, then `put_items` with tags `{deck, kind}`
+  and the question as its content, as `enroll` writes them), so it is due
+  today as a new position. Idempotent: the second time is `added: false`.
+  Taking it out suspends its card, then deletes the member (a half-done
+  remove is finished by the next one); a suspended card counts for nothing
+  in the set's standing or grid (`decks.shown_cells`). Saving it again
+  resumes it at the level it had and moves it to the set's end (the
+  `practice.place` cap). Joining an own set is a no-op: there is nothing to
+  add.
+- **Origin is not touched.** A position somebody analyzed stays `origin:
+  analysis` when it is saved into a set, so it stays out of TRY ONE and
+  the status page (`Oskol.Puzzles.sample/1` takes `game` and `set` only).
+- **Pace and limits.** Five new a day, like Openings (`decks.new_per_day`,
+  one column if a set ever wants its own); at most fifty live sets an
+  account. Delete is soft (`deleted_at`): the row leaves every list and
+  door, its membership and ladder stay, and its name is free again.
+- **On the hub** an own set is a row after the five (`kind: "own"`,
+  `mark: ""`, `joined: true` even when empty, the set's own standing), and
+  its page (`/practice/<id>`) carries `members` for MANAGE, each with its
+  `question` as the puzzle page shows it (`handlers/puzzles.
+  stored_question_json`; null for a row that does not read as one).
+- **The save sheet** (`assets/src/Ui/SaveToSet.elm`, `#save-modal`) is one
+  component two doors open: SAVE on the analysis board's answer
+  (`#an-save`) and SAVE on a puzzle's reveal (`#pz-save`). It reads
+  `GET /papi/decks/mine?puzzle=<id>` (each set with `holds`), a row
+  (`#save-set-<id>`, a checkbox) puts the position in or takes it out
+  through `POST/DELETE /papi/decks/:id/puzzles` -- the check inked at once,
+  put back on an error -- and "New set" (`#save-new-name`, CREATE
+  `#save-create`) makes a set and then adds. One fixed-height line
+  (`#save-line`): "Saved to Openings I like · 12 positions", "Taken out of
+  ...", or the server's refusal ("You already have a set called that").
+  A guest gets "Sign in to keep this position." over `Ui.SignIn`, `next`
+  the page's own URL (the analysis board's carries `?xgid=`); signed in
+  there, the shell is told and the sheet goes on to the sets. The list
+  holds its height from loading to loaded; the sheet floats.
+- **The client.** `Api.PracticeDecks.Kind` has `Own`, and `Ui.Deck` draws
+  one with a bookmark for its icon, a set's words (learned, mastered) and
+  a set's buttons (`Ui.Deck.action`: TRAIN / KEEP GOING / PRACTICE ANYWAY),
+  and, while it holds nothing, OPEN ANALYSIS (`#hub-open-analysis`, a link
+  to `/analysis`) in the button's slot over "Nothing here yet. Save a
+  position from the analysis board or from any puzzle." The hub
+  (`Page.Puzzles`) puts them after the five under "Your sets"
+  (`#hub-your-sets`); a run from one is `StartDeckRun` with the set
+  (`Run.InSet`), exactly as Openings'. Its page (`Page.Practice`) adds
+  MANAGE (`#practice-manage`) under the card: the name in a field
+  (`#practice-rename`, RENAME, `PATCH`), the positions as a list -- a 72px
+  still board (`viewStill` on `Setup.fromQuestion`), the prompt (two lines
+  at most, a roll never broken at its hyphen), where it stands ("to learn", "back at the start", "level 2", "mastered"), and an
+  x (`#practice-remove-<pid>`) -- and DELETE SET (`#practice-delete`),
+  which asks in its own slot ("Delete Openings I like? Its positions stay
+  where they are; your progress on them is kept aside.", YES, DELETE
+  `#practice-delete-yes`, KEEP IT) and then goes back to `/puzzles`.
 
 `POST /papi/practice/tz {tz}` writes the browser's zone onto the deck itself
 (no new column: retain already keeps a learner's timezone, and it is the

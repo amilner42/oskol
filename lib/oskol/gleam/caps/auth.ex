@@ -5,14 +5,14 @@ defmodule Oskol.Gleam.Caps.Auth do
   mix-up, not a compile error.
 
   Rows are `Oskol.Auth`, the mail is `Oskol.Mail`, the counters are
-  `Oskol.Auth.Limiter`, and dropping a browser's sockets is the endpoint.
+  `Oskol.Limiter`, and dropping a browser's sockets is the endpoint.
   Nothing in here decides anything.
   """
 
   import Oskol.Gleam.Interop
 
   alias Oskol.Auth
-  alias Oskol.Auth.Limiter
+  alias Oskol.Limiter
   alias Oskol.Mail
 
   def build do

@@ -49,6 +49,15 @@ defmodule OskolWeb.Router do
     get "/practice/decks", PracticeController, :decks
     get "/practice/decks/:slug", PracticeController, :deck
     get "/decks", DecksController, :index
+    # A player's own sets: before "/decks/:id", or "mine" would be read as
+    # an id.
+    get "/decks/mine", OwnDecksController, :index
+    post "/decks/mine", OwnDecksController, :create
+    patch "/decks/:id", OwnDecksController, :update
+    delete "/decks/:id", OwnDecksController, :delete
+    get "/decks/:id/puzzles", OwnDecksController, :members
+    post "/decks/:id/puzzles", OwnDecksController, :add
+    delete "/decks/:id/puzzles/:puzzle_id", OwnDecksController, :remove
     get "/decks/:id", DecksController, :show
     post "/decks/:id/join", DecksController, :join
     post "/decks/:id/more", DecksController, :more
@@ -77,6 +86,9 @@ defmodule OskolWeb.Router do
     # analysis engine nothing; what is written down is the deck's, and only
     # for a signed-in browser.
     get "/games/:slug/rooms/:id/puzzles", PuzzleController, :game
+    # SHARE POSITION on the replay: a step as a puzzle, from the game's
+    # stored answer. Open to anyone the replay is; never engine time.
+    post "/games/:slug/rooms/:id/positions", PuzzleController, :position
     # TRY ONE on the practice home: before "/puzzles/:id", or "random"
     # would be read as an id.
     get "/puzzles/random", PuzzlesHubController, :random
@@ -89,6 +101,12 @@ defmodule OskolWeb.Router do
     # A story link, minted only by the seat that made the mistake, and only
     # ever by a POST: a GET never mints anything.
     post "/puzzles/:id/shares", PuzzleController, :share
+
+    # The analysis board: a set-up position asked of the engine on a
+    # player's press, bounded and cached by its question.
+    post "/analysis", AnalysisController, :create
+    post "/analysis/moves", AnalysisController, :moves
+    get "/analysis/:key", AnalysisController, :show
   end
 
   # Enable LiveDashboard in development. Declared before the game routes so
@@ -125,6 +143,12 @@ defmodule OskolWeb.Router do
     # like "login".
     get "/puzzles", SpaController, :puzzles
     get "/puzzles/:id", SpaController, :puzzle
+
+    # The analysis board: set up any position and ask the engine about it.
+    # Open to anyone and indexable; declared before "/:slug" so "analysis"
+    # is a reserved word like "puzzles". `?xgid=` and `?p=` are read by the
+    # client and change nothing in the head.
+    get "/analysis", SpaController, :analysis
 
     # A deck's own page: /practice/very-bad, /practice/openings... Declared
     # before "/:slug" so "practice" is a reserved word like "puzzles". A

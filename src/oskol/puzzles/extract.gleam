@@ -358,7 +358,10 @@ fn gradeable(cube: report.CubeReview, turn: Turn, number: Int) -> Bool {
   }
 }
 
-fn cube_answer(cube: report.CubeReview) -> puzzle.Answer {
+/// The engine's cube verdict as a stored answer: its three equities, the
+/// chances, its pick, and whether it is too good to double. The same for a
+/// double and a take, which are one position asked of two players.
+pub fn cube_answer(cube: report.CubeReview) -> puzzle.Answer {
   let optimal = puzzle.optimal_from_engine(cube.optimal)
   puzzle.CubeAnswer(
     no_double: cube.no_double,

@@ -10,6 +10,10 @@ defmodule Oskol.CompleteEngine do
   The first legal play is called best and each later one a little worse, so
   answers are deterministic. It echoes each turn's `index`, as the engine
   does. Plug it in with `Req.Test.stub(Oskol.Reviews, &Oskol.CompleteEngine.respond/1)`.
+
+  `prefer:` names plays to rank first when they are legal (the opening 3-1's
+  `8/5 6/5`), so a smoke can read a sensible best play off the answer; the
+  rest keep the tree's order.
   """
 
   @probs %{
@@ -20,13 +24,15 @@ defmodule Oskol.CompleteEngine do
     "backgammon_loss" => 0.01
   }
 
-  def respond(conn) do
+  def respond(conn, opts \\ []) do
     {:ok, body, conn} = Plug.Conn.read_body(conn, length: 20_000_000)
-    Req.Test.json(conn, answer(Jason.decode!(body)))
+    Req.Test.json(conn, answer(Jason.decode!(body), opts))
   end
 
   @doc "The engine's answer to a decoded review request, as a map."
-  def answer(request) do
+  def answer(request, opts \\ []) do
+    prefer = Keyword.get(opts, :prefer, [])
+
     turns =
       request["turns"]
       |> Enum.with_index()
@@ -34,8 +40,8 @@ defmodule Oskol.CompleteEngine do
         %{
           "index" => turn["index"] || at,
           "player" => turn["player"] || 0,
-          "cube" => nil,
-          "move" => move(turn),
+          "cube" => cube(turn),
+          "move" => move(turn, prefer),
           "luck" => %{"luck" => 0.0}
         }
       end)
@@ -58,8 +64,11 @@ defmodule Oskol.CompleteEngine do
     }
   end
 
-  defp move(%{"board" => board, "dice" => [_, _] = dice, "played" => played}) do
-    plays = legal_plays(board, dice)
+  defp move(%{"board" => board, "dice" => [_, _] = dice, "played" => played}, prefer) do
+    {preferred, rest} =
+      legal_plays(board, dice) |> Enum.split_with(fn {_, notation} -> notation in prefer end)
+
+    plays = preferred ++ rest
 
     ranked =
       plays
@@ -97,7 +106,28 @@ defmodule Oskol.CompleteEngine do
     }
   end
 
-  defp move(_), do: nil
+  defp move(_, _), do: nil
+
+  # A turn with no dice is a cube question on its own (the analysis board's
+  # "Double?" or "Take?"): the engine's verdict, a clear double and pass,
+  # with the chances it was judged on. A game's turns always roll, and their
+  # cube stays unjudged here as before.
+  defp cube(%{"dice" => dice}) when dice in [nil, []] do
+    %{
+      "action" => "no_double",
+      "optimal" => "double_pass",
+      "analysis" => %{
+        "optimal_action" => "double_pass",
+        "equity_nd" => 0.62,
+        "equity_dt" => 1.31,
+        "equity_dp" => 1.0,
+        "probs" => @probs
+      },
+      "doubler" => %{"error" => 0.38, "grade" => "very_bad"}
+    }
+  end
+
+  defp cube(_), do: nil
 
   @doc "Every legal way to play `dice` from `board`, as {board, notation}."
   def legal_plays(board, [a, b]) do

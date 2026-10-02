@@ -59,6 +59,8 @@ arrive at any of them cold, and moving between them afterwards is a
   current in the address bar (replaced, not pushed, so back still leaves
   the page), which is what makes a reload land on the same line and a
   link carry a move to a friend; `step` is omitted at the start of a game.
+  OPEN IN ANALYSIS over the panel's tabs opens the step's decision on
+  `/analysis?xgid=` in a new tab (`docs/analysis.md`).
 - `/puzzles` the practice home, PUZZLES on the home menu: the five decks
   (three tiers of the visitor's mistakes, the sets), one in front with the
   button that starts a run (see [puzzles.md](puzzles.md)). Open to anyone, indexable, in the sitemap; the
@@ -92,6 +94,16 @@ arrive at any of them cold, and moving between them afterwards is a
   and the page is the plain one. Only the seat that made the mistake can
   mint one (`POST /papi/puzzles/:id/shares`), and it names the sharer
   only, never the opponent.
+- `/analysis` the analysis board (`SpaController.analysis`, declared
+  before `/:slug` so "analysis" is a reserved word): a position set up by
+  tapping, asked of the engine on a press (`docs/analysis.md`). Open to
+  anyone, indexable and in the sitemap; the head is "Analysis", "Set up any
+  backgammon position and ask the engine what it would play.", canonical
+  `/analysis`, the same for every position. `/analysis?xgid=<id>` opens a
+  position id (`Xgid.decode`; `href` writes it with its `=` and `:`
+  percent-encoded, and a hand-typed one with them bare reads the same),
+  `/analysis?p=<puzzle id>` a puzzle as its page shows it (the client
+  reads `GET /papi/puzzles/:id`; no engine time). Neither changes the head.
 - `/login/<token>` the page a mailed sign-in link opens. It **reads** the
   token and writes nothing: the page says "Sign in as you@example.com" with
   one button, and that button POSTs `/papi/auth/link`, which is the only
@@ -121,7 +133,8 @@ arrive at any of them cold, and moving between them afterwards is a
 The landing pages read and write over JSON. Every response is the same
 envelope: `{"ok": true, ...payload}`, or `{"ok": false, "error": {"code",
 "message"}}` — including on a non-2xx status, so the client parses bodies
-rather than leaning on the status. Requests go same-origin, so the guest
+rather than leaning on the status. A refusal that passes with time (a 429,
+a 503) adds `retry_after_s` to the error. Requests go same-origin, so the guest
 cookie rides along and identity needs nothing from the client; writes carry
 the page's CSRF token in `x-csrf-token`.
 
@@ -152,7 +165,10 @@ GET  /papi/games/:slug/rooms/:id/reviews/:game_number  (open) one game
                                        {ok, game_number, status, turns, review}
                                          review is null unless status is done;
                                          when it is, {levels, timing_ms, players,
-                                         turns}; a turn names its record lines
+                                         turns, every_play}; every_play says the
+                                         stored answer carries every legal play
+                                         of each roll (what SHARE needs); a turn
+                                         names its record lines
                                          (entry, double_entry, answer_entry) and
                                          each candidate move its position and
                                          landings. A number the room has no game
@@ -163,7 +179,14 @@ GET  /papi/games/:slug/rooms/:id/record  (open)
                                        {ok, slug, id, you, seated, accounts, record}  (the game's
                                        `record`; `you` is the seat the board faces --
                                        the reader's own, else the first -- and `seated`
-                                       says whether that seat is theirs)
+                                       says whether that seat is theirs). Each of
+                                       `record.games` is {number, crawford, entries}:
+                                       `crawford` is true on the match's Crawford game
+                                       (`backgammon/record.crawford_game`, the rule
+                                       `state.next_game` applies, over the scores the
+                                       result lines left; false in unlimited play and
+                                       on a match's first game), which the replay's
+                                       OPEN IN ANALYSIS carries
 GET  /papi/games/:slug/rooms/:id/ratings  (open) {ok, players: [{player_id,
                                        games, pr, career}], games:
                                        [{game_number, players: [{player_id,
@@ -175,11 +198,36 @@ GET  /papi/games/:slug/rooms/:id/ratings  (open) {ok, players: [{player_id,
                                        owns and under 5 games), and each graded
                                        game's PRs by seat, for the match panel
 GET  /papi/puzzles/:id                 (open) {ok, id, kind, question, tree,
-                                         prompt} -- the position, the sentence it
-                                         asks in, and for a checker play every
-                                         legal way to play the roll as a DAG of
-                                         boards. Never the answer, never a name,
-                                         never the game it came from
+                                         prompt, replay} -- the position, the
+                                         sentence it asks in, and for a checker
+                                         play every legal way to play the roll as
+                                         a DAG of boards. Never the answer, never
+                                         a name. `replay` is {path} for a position
+                                         somebody shared out of a replay
+                                         ("/backgammon/<id>/replay?game=n&step=s",
+                                         WATCH THE REPLAY), else null
+POST /papi/games/:slug/rooms/:id/positions  (open: anyone who can read the
+                                         replay) {game, step} -> {ok, id, url}
+                                         (url "/puzzles/<id>"). SHARE on the
+                                         replay: the step as a puzzle row
+                                         (origin "replay", `puzzles.replay` set
+                                         once, no source row, picture drawn),
+                                         from the game's stored answer -- never
+                                         engine time. 409 not_graded (no done
+                                         review for that game), incomplete (an
+                                         answer short of every play or the cube's
+                                         chances), no_decision (step 0, a
+                                         resignation, the result, a forced roll
+                                         or dance, an ungraded double); a roll
+                                         played after a taken double is also
+                                         409 incomplete (its stored question has
+                                         the pre-double cube); 404 for a room,
+                                         game or step that names nothing; 422
+                                         without {game, step}; 429 rate_limited
+                                         past 30 an hour per caller (account,
+                                         else guest) or 1000 an hour for
+                                         everybody, failing closed when the
+                                         limiter is down. Idempotent
 GET  /papi/puzzles/:id/tree?node=      (open) one level of a tree too big to send
                                          whole: {ok, node, tree: Node}
 POST /papi/puzzles/:id/attempts        {moves | band, key, s?, deck?} -> {ok, verdict, band,
@@ -232,6 +280,53 @@ GET  /papi/games/:slug/rooms/:id/puzzles?game=n  (a seat) {ok, puzzles: [{id, ki
                                          while the game's review is done but its
                                          puzzles are not yet written (the page
                                          asks again in a moment)
+POST /papi/analysis                    a set-up position (analysis/setup's wire:
+                                         {points, white_bar, black_bar, to_play,
+                                         ask, dice, cube: {value, owner}, match})
+                                         -> 200 {ok, status: "done", key, puzzle,
+                                         reveal} when the question's puzzle row is
+                                         complete (free, nothing charged); 202 {ok,
+                                         status: "pending", key} when handed to the
+                                         asker or joining the same key in hand. 409
+                                         `dances` "6-4 cannot be played from here"
+                                         (nothing asked); 422 `validation_failed`
+                                         with the setup's sentence; 429
+                                         `rate_limited` {message, retry_after_s}
+                                         over a budget or with the line full; 503
+                                         `engine_down` "The engine is asleep. Try
+                                         again in a minute." {retry_after_s} while
+                                         the circuit is open. `puzzle` is GET
+                                         /papi/puzzles/:id's object (id, kind,
+                                         question as shown, tree, prompt); `reveal`
+                                         is {best, top, cube, n_legal, levels}: the
+                                         attempt reveal's own best/top/cube with
+                                         nobody's answer in it, n_legal (null for a
+                                         cube), levels {moves, cube} | null
+GET  /papi/analysis/:key               {ok, status: "pending"} | {ok, status:
+                                         "done", key, puzzle, reveal} | {ok,
+                                         status: "failed", message}; a key no row
+                                         answers and the asker has not seen (in ten
+                                         minutes, or since a restart) is a 404.
+                                         The page polls this once a second
+POST /papi/analysis/moves              {setup, node?} -> {ok, tree}: every legal
+                                         play of a set-up roll, for a step of the
+                                         line played out on the board. The puzzle
+                                         page's tree (GET /papi/puzzles/:id's
+                                         `tree`: the mover drawn as White, `lazy`
+                                         with the root alone past the wire budget),
+                                         worked out by move generation and never
+                                         the engine; nothing is written. With
+                                         `node`, {ok, node, tree: one node} as GET
+                                         /papi/puzzles/:id/tree?node= serves a
+                                         level (404 for an id the build never
+                                         minted). A roll that plays nothing is a
+                                         root with no children. 422
+                                         `validation_failed` with the setup's
+                                         sentence, or "Only a roll has moves to
+                                         play" for a cube question; 429
+                                         `rate_limited` past 120 a minute a caller
+                                         (3000 a minute everybody), kept by the
+                                         same limiter as the asks
 GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, else
                                        normalised: the one that answered comes back)
 POST /papi/auth/start                  {email, next?} -> {ok}  (always ok: no
@@ -307,19 +402,25 @@ GET  /papi/practice/decks              {ok, decks: [{id, slug, kind, name, mark,
                                          {pr, pr_without, pr_patched} | null,
                                          mistakes: {puzzles, games} | null}
                                        -- the five decks (three tiers, the built
-                                       sets) for the hub; `standing` an
-                                       account's, `cost` an account's tier with 3+
-                                       graded games, `mistakes` a guest's. Writes
-                                       nothing ([puzzles.md](puzzles.md#the-five-decks))
+                                       sets) for the hub, then an account's own
+                                       sets (`kind: "own"`, `mark: ""`,
+                                       `joined: true`, offered empty); `standing`
+                                       an account's, `cost` an account's tier with
+                                       3+ graded games, `mistakes` a guest's.
+                                       Writes nothing ([puzzles.md](puzzles.md#the-five-decks))
 GET  /papi/practice/decks/:slug        {ok, deck, cells: [{id, level, due, status,
                                          position, band}], days: [30 bools],
-                                         patched_level} -- one deck's page; 404 for
-                                       an unknown slug or an unbuilt set
+                                         patched_level, members: [{id, kind, prompt,
+                                         position, level, question}] | null} -- one deck's
+                                       page; `members` only on an own set (its
+                                       slug is its id). 404 for an unknown slug,
+                                       an unbuilt set, or somebody else's set
 GET  /papi/decks                       {ok, decks: [{id, name, blurb, size, standing:
                                          {joined, total, in_progress, patched, left,
-                                         due, new_left} | null}], patched_level} --
-                                       the universal sets with positions built
-                                       (see [puzzles.md](puzzles.md#universal-sets));
+                                         due, new_left} | null, own}], patched_level}
+                                       -- the universal sets with positions built
+                                       (see [puzzles.md](puzzles.md#universal-sets)),
+                                       then the caller's own sets (`own: true`);
                                        `standing` is an account's
 GET  /papi/decks/:id[?all=1[&from=<n>]]  {ok, deck, puzzles: [{id, kind, prompt, due}],
                                          today} -- an account that added it gets
@@ -327,8 +428,8 @@ GET  /papi/decks/:id[?all=1[&from=<n>]]  {ok, deck, puzzles: [{id, kind, prompt,
                                        own budget); anybody else walks it in
                                        order, nothing written. `all=1&from=` is
                                        PRACTICE ANYWAY, as on /papi/practice.
-                                       404 for a set that names nothing or has
-                                       nothing built
+                                       404 for a set that names nothing, has
+                                       nothing built, or is somebody else's
 POST /papi/decks/:id/more              KEEP GOING through a set: its own pace
                                        again of positions never shown, over the
                                        day's budget, then the session (409
@@ -337,7 +438,39 @@ POST /papi/decks/:id/more              KEEP GOING through a set: its own pace
 POST /papi/decks/:id/join              {tz} -> the same session, once the set is
                                        added (an account's; 409 `sign_in` for
                                        anybody else). Idempotent: adding again
-                                       adds only positions built since
+                                       adds only positions built since. A no-op
+                                       for an own set (saving enrolls)
+GET  /papi/decks/mine[?puzzle=<id>]    {ok, decks: [{id, name, size, new_per_day,
+                                         standing[, holds]}]} -- the caller's own
+                                       sets, oldest first; [] for a guest. With
+                                       `puzzle`, each says whether it holds that
+                                       puzzle (the save sheet's checks)
+                                       ([puzzles.md](puzzles.md#own-sets))
+POST /papi/decks/mine                  {name} -> {ok, deck} (the same shape as one
+                                       of the list): make a set. 409 `sign_in`
+                                       for a guest; 422 `name_missing` "Give it a
+                                       name", `name_too_long` "40 characters at
+                                       most", `name_taken` "You already have a
+                                       set called that", `too_many_sets` "That
+                                       is a lot of sets" (50)
+PATCH /papi/decks/:id                  {name} -> {ok, deck}: rename (the same
+                                       422s); 404 unless it is the caller's
+DELETE /papi/decks/:id                 {ok}: delete (soft; the ladder is kept);
+                                       404 unless it is the caller's
+GET  /papi/decks/:id/puzzles           {ok, deck, members: [{id, kind, prompt,
+                                         position, level, question}]} -- the set
+                                       and what is in it, for its owner (`question`
+                                       as GET /papi/puzzles/:id has it, null where
+                                       a row does not read); 404 for anybody else
+POST /papi/decks/:id/puzzles           {puzzle_id} -> {ok, deck, added}: save a
+                                       stored puzzle at the end of the set and
+                                       enroll it at once (due today as new);
+                                       `added: false` when it was there already.
+                                       404 for a puzzle that is not stored, or a
+                                       set that is not the caller's
+DELETE /papi/decks/:id/puzzles/:puzzle_id  {ok, deck}: take it out; its card is
+                                       suspended, so saving it again keeps its
+                                       level
 GET  /papi/puzzles/random              {ok, id, kind, prompt}  TRY ONE: a
                                        random complete puzzle whose answer
                                        stands clear (a checker play whose

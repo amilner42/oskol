@@ -13,6 +13,10 @@ playwright/
 ├── review-pages/            screenshots of the guest home, its sentence, the friend
 │                         dialog, sign-in, the lobby and LIVE GAMES
 ├── review-games/            screenshots of games in play (desktop + phone)
+├── review-analysis/         the Analysis milestone at four sizes: every state of
+│                         the board, the save sheet, "Your sets", a set's page,
+│                         the replay's SHARE and OPEN IN ANALYSIS, a shared reveal
+│                         (run.sh: its own port, database and stand-in engine)
 └── screenshots/             output of the review scripts
 ```
 
@@ -20,7 +24,10 @@ playwright/
 node playwright/test-backgammon-smoke/test.js
 node playwright/review-pages/test.js
 node playwright/review-games/test.js
+playwright/review-analysis/run.sh   # screenshots/review-analysis-*.png
 ```
+
+Every script, and what it checks or shoots, is listed in `docs/testing.md`.
 
 Each smoke logs its steps and exits non-zero on failure. The review scripts
 are for eyeballing; look at `playwright/screenshots/`.

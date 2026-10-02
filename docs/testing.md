@@ -43,7 +43,9 @@ same for the puzzle wire: `PuzzleApiFixtures.elm` (the question, per kind)
 and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
 `handlers/puzzles.attempt_body`: `move_pass`, `move_dubious`, `move_fail`,
 `move_unknown`, `double_pass`, `double_fail`, `take_pass`, `take_close`, and
-the three schedule shapes).
+the three schedule shapes), and `AnalysisFixtures.elm` (the analysis board's
+`done` answer, from `handlers/analysis.done_fixture`: `move`, `double`,
+`take`, and `move_no_levels`).
 
 **Elm (`elm-test`)**
 - `ProtocolTest`: every fixture payload decodes; cross-checks that hold for
@@ -81,6 +83,27 @@ the three schedule shapes).
   calling an answer close, what each of the four choices would do, the
   early and KNEW IT lines, the cost lines, and the hub's and a deck page's
   words, and that none of them says "fix", "patched" or "learned".
+- `AnalysisPageTest`: the analysis board's editor: a tap adds the brush's
+  colour and paints over the other one, a right click and a long press are
+  the other brush (once, whichever comes first; a slide is a scroll), the
+  x, the bar's halves, the sixteenth refused with its tray's flash, OPENING
+  / CLEAR / FLIP, `?xgid=` and `?p=` on every `PuzzleApiFixtures` question, a gone
+  puzzle, the check line's sentences and ANALYZE, CRAWFORD only one away,
+  the cube's owner at 1, the match's bounds; every checker placed, borne
+  off or not placed (a taken-off checker is not placed, the trays bear off
+  and give back, CLEAR, the doors' off), and a fuzz over runs of every
+  control: ANALYZE is on exactly when every checker is placed or off, a
+  move has its roll and `Setup.check` is clear. The answer, on
+  `AnalysisFixtures`: every one decodes; the plate counting seconds; pending
+  then done (the best play in words, the table, "4-ply · asked just now");
+  a cached answer at once ("already analyzed"); the double and the take; a
+  candidate on the board and the dice taking it back (turned round for
+  Black to play), a board tap while it is shown painting nothing; an edit
+  clearing the answer and a no-op control keeping it; a stale press's
+  answer dropped; a dance (no TRY AGAIN), the engine asleep (TRY AGAIN after
+  its wait), a budget's wait, a failed ask, a forgotten key asked again, a
+  lost poll, the poll limit; "Link copied".
+- `WordsTest` also pins `bestInWords`, with and without chances.
 - `PuzzlePageTest`: the page on the generated fixtures: the reveal decodes
   (a fifth verdict word fails it), a tap walks and UNDO walks back, a lazy
   node is fetched and merged, PLAY posts exactly the path with the key (and
@@ -135,6 +158,14 @@ the three schedule shapes).
   from both sides of the cube, the too-good rule the Gleam twin shares,
   and the engine's three words read into `Optimal` (a fourth falls back
   rather than being guessed at).
+- `XgidTest`: the position id pinned by vectors (the opening, Black to
+  play, a cube owned by each side, a match with Crawford, a take, the bar
+  and borne off, ids published by gnubg's bug list and backgammonforums),
+  every refusal in its one sentence, and `decode (encode s) == s` over
+  `SetupFuzz`'s valid setups.
+- `SetupTest`: the analysis board's setup on the wire (the literal the
+  Gleam decoder reads), `check`'s sentences, `flip`, and the puzzle
+  fixtures opened on the board (`fromQuestion`).
 
 **Elixir (`mix test`)**
 - `test/oskol/room_test.exs`: `Oskol.Bots` (test_support) plays random
@@ -201,8 +232,16 @@ node playwright/test-backgammon-landscape/test.js  # backgammon on a sideways ph
                                                # fits the screen height exactly, nothing scrolls
 node playwright/test-backgammon-replay/test.js  # the replay of a finished match (it arranges
                                                # the room): steps, keys, swipes, analysis
-                                               # pending -> done, retry, phones; the analysis
-                                               # is stubbed unless REPLAY_REAL=1
+                                               # pending -> done, retry, phones, OPEN IN
+                                               # ANALYSIS at a graded turn, a double, a take,
+                                               # SHARE on the seeded match 821900
+                                               # (share_setup.exs): the link copied, the
+                                               # doors holding their boxes, the stranger's
+                                               # reveal and WATCH THE REPLAY back to the step,
+                                               # the Crawford game and after it (the board,
+                                               # dice, cube, score in the new tab); the match
+                                               # is searched for one with all of those; the
+                                               # analysis is stubbed unless REPLAY_REAL=1
 node playwright/test-puzzle/test.js             # a puzzle from a link: setup.exs arranges a game,
                                                # grades it against a Req.Test engine in its own VM
                                                # (real legal plays, the played one a mistake) and
@@ -215,6 +254,55 @@ node playwright/test-puzzle/test.js             # a puzzle from a link: setup.ex
 node playwright/review-puzzle/test.js           # screenshots of the puzzle page: question, staged,
                                                # reveal, a candidate, the cube scale (phone, small,
                                                # landscape, desktop)
+node playwright/test-analysis/test.js           # the analysis board. Part 1, setting up: ☰ Analysis;
+                                               # a desktop by left and right clicks, the x, the bar,
+                                               # the sixteenth's flash, ROLL, the cube, DOUBLE? and
+                                               # TAKE?, a match and Crawford, FLIP, whose move (TO
+                                               # PLAY ringed not inverted, the bar to move says "to
+                                               # play"); a
+                                               # phone by taps and long presses (CDP touch); every
+                                               # point hit where it is drawn at 320x568 and 844x390;
+                                               # ?xgid= and a gone ?p=. The board, the strip, each
+                                               # control, the line and ANALYZE keep their boxes
+                                               # throughout. Part 2, ANALYZE, against a stand-in
+                                               # engine (setup.exs starts `Oskol.EngineServer`, a
+                                               # Bandit serving `Oskol.CompleteEngine`, on
+                                               # ANALYSIS_STUB_PORT = PORT + 10000, which the
+                                               # server's ANALYSIS_URL names): the plate in ANALYZE's
+                                               # box, a fresh answer, a candidate and the dice,
+                                               # "already analyzed", an edit clearing it; the
+                                               # opening 3-1 with 8/5 6/5 first, SHARE's link, a
+                                               # stranger's unfurl (naming nobody) and play to the
+                                               # reveal; DOUBLE?; a dance; the panel at four sizes
+                                               # with every box (the panel's too) held. Part 3,
+                                               # playing it out, at four sizes: PLAY BEST on the
+                                               # opening 3-1, ROLL FOR ME for Black, the table on
+                                               # its legal plays (Black at the bottom), ANALYZE;
+                                               # FIRST and NEXT with the answers kept and no ask;
+                                               # Black's roll played by hand, the strip, the quick
+                                               # starts disabled in PLAY, White's DOUBLE? from the row and Black's PASS
+                                               # ending the line in its sentence; a different play
+                                               # at step 0 dropping the rest; PICK A ROLL in PLAY;
+                                               # SET UP live again, and an edit at a later step
+                                               # starting a fresh line; the
+                                               # board, the row over it, the line, ANALYZE and the
+                                               # panel holding their boxes throughout. Part 4,
+                                               # SAVE, with an account account.exs makes (its old
+                                               # sets cleared): a guest's sign-in; the empty sheet at
+                                               # four sizes with nothing under it moving; a new set
+                                               # made and ticked, untick and tick, a taken name; the
+                                               # set under "Your sets" on /puzzles, TRAIN to a reveal
+                                               # whose SAVE has it ticked; the sheet, hub and set page
+                                               # at four sizes; MANAGE: noindex, the 72px board,
+                                               # rename, remove, delete (then 404). PART=2 runs parts
+                                               # 2 to 4, PART=3 part 3 alone, PART=4 part 4 alone.
+                                               # Screenshots: screenshots/analysis-*.png,
+                                               # puzzles-your-sets-*, practice-own-*, puzzle-save-390.
+                                               # `playwright/test-analysis/run.sh` serves its own
+                                               # port and database around it; bin/check points its
+                                               # server's ANALYSIS_URL at the stand-in's port, and
+                                               # CI runs it as the `analysis` shard with the
+                                               # server's ANALYSIS_URL at http://localhost:14400.
 node playwright/test-puzzles-hub/test.js        # the practice home and a run: setup.exs's game, the
                                                # first seat trimmed to 12 mistakes; a stranger's TRY
                                                # ONE, a guest's run to the score and the sign-in ask,
@@ -251,6 +339,22 @@ playwright/review-decks/run.sh                  # screenshots of the sets on /pu
                                                # through the openings, the reveal and the end
                                                # card (four sizes); serves its own port and
                                                # database and builds the sets on a stub engine
+playwright/review-analysis/run.sh               # the Analysis milestone whole, at four sizes: the
+                                               # empty board with ☰ open, a position half set up,
+                                               # the roll sheet, Black to play, a move's answer and a
+                                               # candidate (sideways: the board in view beside the
+                                               # answer), a cube's answer, a line of three steps in
+                                               # PLAY, the save sheet (an account, a guest), /puzzles
+                                               # with "Your sets", the set's page with MANAGE, the
+                                               # replay's SHARE and OPEN IN ANALYSIS, and a replay
+                                               # share's reveal (SAVE, OPEN IN ANALYSIS, WATCH THE
+                                               # REPLAY). setup.exs arranges the seeded match, the
+                                               # universal sets (stub engine) and an account; test.js
+                                               # starts the stand-in engine and makes the set.
+                                               # screenshots/review-analysis-<size>-<state>.png;
+                                               # serves its own port (4487) and database.
+                                               # review-analysis/serve.sh serves the same data and
+                                               # engine until Ctrl-C, for walking it by hand
 node playwright/test-spa-landing/test.js        # the guest home: the sentence and its menus,
                                                # PLAY NOW against Sage and a friend, old links
                                                # redirect, a full create -> play click-through
@@ -272,10 +376,11 @@ node playwright/review-replay-mobile/test.js    # screenshots of the replay's ve
                                                # overview on two phones, sideways, and a desktop
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same steps as `bin/check --browser`:
-two jobs side by side, the suites (compile, Gleam, Elm, Elixir, formatting)
-and the Playwright smokes (one server, in `bin/check`'s order), green when
-both are. It runs on pull requests and on pushes to main, once per commit;
+CI (`.github/workflows/ci.yml`) runs the same steps as `bin/check --browser`,
+side by side: the suites (compile, Gleam, Elm, formatting), the Elixir
+tests in four partitions, and the Playwright smokes in five shards (each its
+own server and database; the matrix says which smokes each runs and what
+they cost), green when all are. It runs on pull requests and on pushes to main, once per commit;
 a newer push to a branch cancels the run it supersedes, a push to main is
 never cancelled.
 

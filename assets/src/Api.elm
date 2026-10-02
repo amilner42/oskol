@@ -5,6 +5,8 @@ module Api exposing
     , get
     , parseBody
     , post
+    , request
+    , send
     )
 
 {-| HTTP core for the /papi endpoints.
@@ -75,6 +77,15 @@ post session path body decoder toMsg =
 
 request : Session -> String -> String -> Maybe E.Value -> Decoder a -> (Result Error a -> msg) -> Cmd msg
 request session method path maybeBody decoder toMsg =
+    send session method path maybeBody (expectEnvelope decoder toMsg)
+
+
+{-| A request with the page's CSRF token and the usual timeout, read by an
+`Http.Expect` of the caller's own: for the one endpoint that needs more
+of a refusal than its sentence (`Api.Analysis` reads how long to wait).
+-}
+send : Session -> String -> String -> Maybe E.Value -> Http.Expect msg -> Cmd msg
+send session method path maybeBody expect =
     Http.request
         { method = method
         , headers = [ Http.header "x-csrf-token" session.csrf ]
@@ -86,7 +97,7 @@ request session method path maybeBody decoder toMsg =
 
                 Nothing ->
                     Http.emptyBody
-        , expect = expectEnvelope decoder toMsg
+        , expect = expect
         , timeout = Just 30000
         , tracker = Nothing
         }

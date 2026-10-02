@@ -4,6 +4,7 @@
 //// -- that file and this one must agree on constructor tags and field order.
 
 import gleam/option.{type Option}
+import oskol/caps/auth.{type LimitBucket}
 import oskol/rooms/seat.{type Seat}
 
 /// One `game_actions` row. `payload_json` is the payload as JSON text (the
@@ -192,6 +193,64 @@ pub type MistakeCost {
   )
 }
 
+// ---------- Asking about one position (the analysis board) ----------
+
+/// How many positions may be asked of the engine, out of
+/// `config :oskol, :analysis_budget`: a guest an hour and a day, an account
+/// an hour and a day, and everybody together a day. The handler turns these
+/// into buckets (`handlers/analysis.buckets`); the numbers are only numbers.
+pub type AskBudget {
+  AskBudget(
+    guest_hour: Int,
+    guest_day: Int,
+    user_hour: Int,
+    user_day: Int,
+    global_day: Int,
+  )
+}
+
+/// A bucket that had no room: its key, and how long until it has.
+pub type Refused {
+  Refused(key: String, retry_after_s: Int)
+}
+
+/// One position to put to the engine, as the asker (`Oskol.Analysis.Asker`)
+/// holds it: the puzzle it becomes (its key, candidate ids, kind and
+/// question as stored) and the request body. The asker keys its work on
+/// `key` and hands the whole thing back to `handlers/analysis.store` with
+/// the engine's answer; it never looks inside.
+pub type Ask {
+  Ask(
+    key: String,
+    ids: List(String),
+    kind: String,
+    question_json: String,
+    request_body: String,
+    /// The budget this ask was charged to, so one that never reaches the
+    /// engine (the line full, the circuit open) can be handed back.
+    buckets: List(LimitBucket),
+  )
+}
+
+/// Where the asker stands for one key, or after taking one.
+pub type Asker {
+  /// Nothing for this key, and room for one more.
+  Free
+  /// This key is queued or being asked now: a second ask joins it.
+  Asked
+  /// Every waiting place is taken.
+  Full
+  /// The engine failed a moment ago and is not asked again for this long.
+  Down(retry_after_s: Int)
+}
+
+/// What the asker remembers of a key it was given (for ten minutes).
+pub type Job {
+  JobPending
+  JobDone(puzzle_id: String)
+  JobFailed(message: String)
+}
+
 pub type AnalysisCaps {
   AnalysisCaps(
     /// The room's log, or None when no started game has this code.
@@ -284,6 +343,27 @@ pub type AnalysisCaps {
     /// holder rule. What `practice/cost` subtracts from the window
     /// `graded_for` reads. Last, so every field before it keeps its place.
     mistake_costs: fn(String) -> List(MistakeCost),
+    /// The analysis board's budgets, from config. Appended after
+    /// `mistake_costs`, so every field before keeps its place.
+    ask_budget: fn() -> AskBudget,
+    /// Where the asker stands for this puzzle key: a read of its table,
+    /// never a wait.
+    asking: fn(String) -> Asker,
+    /// Hand one position to the asker. `Asked` when it is queued or joins
+    /// the same key already in hand; `Full` or `Down` when it was not taken.
+    submit: fn(Ask) -> Asker,
+    /// Reserve one ask from every bucket at once, or from none of them:
+    /// the limiter's atomic reservation (`Oskol.Limiter.allow/1`). The
+    /// refusal names the bucket that had no room and how long until it has.
+    allow_ask: fn(List(LimitBucket)) -> Result(Nil, Refused),
+    /// Hand back one reserved ask from each bucket (`Oskol.Limiter.release/1`):
+    /// an ask that was charged and never reached the engine.
+    release_ask: fn(List(LimitBucket)) -> Nil,
+    /// One game's review row with the engine's answer: (game_id,
+    /// game_number). What sharing a replay step reads -- one game's answer,
+    /// not a whole match's (`stored`). Appended after `release_ask`, so
+    /// every field before keeps its place.
+    stored_one: fn(String, Int) -> Option(Stored),
   )
 }
 
@@ -314,5 +394,11 @@ pub fn stub() -> AnalysisCaps {
     graded_for: fn(_, _) { panic as "stub analysis.graded_for" },
     graded_rooms_for: fn(_, _, _) { panic as "stub analysis.graded_rooms_for" },
     mistake_costs: fn(_) { panic as "stub analysis.mistake_costs" },
+    ask_budget: fn() { panic as "stub analysis.ask_budget" },
+    asking: fn(_) { panic as "stub analysis.asking" },
+    submit: fn(_) { panic as "stub analysis.submit" },
+    allow_ask: fn(_) { panic as "stub analysis.allow_ask" },
+    release_ask: fn(_) { panic as "stub analysis.release_ask" },
+    stored_one: fn(_, _) { panic as "stub analysis.stored_one" },
   )
 }

@@ -5,7 +5,8 @@ defmodule Oskol.Gleam.Caps.Analysis do
 
       AnalysisCaps(log, stored, ratings, summaries, report, save, backfill_turns,
       enqueue, review, report_turn, charge, replace, grades, forget_grades,
-      graded_for, graded_rooms_for, mistake_costs)
+      graded_for, graded_rooms_for, mistake_costs, ask_budget, asking, submit,
+      allow_ask, release_ask, stored_one)
       RatedGame(game_id, game_number, seat, response_json, ended_at_ms)
       GameLog(slug, format, clock, seed, seats, entries, record_generation)
       LogEntry(kind, player_id, payload_json, at_ms)
@@ -16,6 +17,11 @@ defmodule Oskol.Gleam.Caps.Analysis do
       GradedRoomGame(format, over, winners, game)
       Cursor(ended_at_ms, room_id)
       MistakeCost(puzzle_id, band, game_id, game_number, seat, equity_lost)
+      AskBudget(guest_hour, guest_day, user_hour, user_day, global_day)
+      Ask(key, ids, kind, question_json, request_body, buckets)
+      Asker: :free | :asked | :full | {:down, retry_after_s}
+      Refused(key, retry_after_s)
+      LimitBucket(key, limit, window_s)   (src/oskol/caps/auth.gleam)
       Seat(player_id, guest_id, user_id, bot)   (src/oskol/rooms/seat.gleam)
       Status: :pending | :done | :failed
 
@@ -49,7 +55,30 @@ defmodule Oskol.Gleam.Caps.Analysis do
     {:analysis_caps, &log/1, &stored/1, &ratings/1, &summaries/1, &report/2, &save/3,
      &backfill_turns/3, &enqueue/1, Keyword.get(opts, :review, &review/1), &report_turn/3,
      &charge/4, &replace/3, grades, &forget_grades/2, &graded_for/2, &graded_rooms_for/3,
-     &mistake_costs/1}
+     &mistake_costs/1, &ask_budget/0, &Oskol.Analysis.Asker.asking/1,
+     &Oskol.Analysis.Asker.submit/1, &Oskol.Limiter.allow/1, &release_ask/1, &stored_one/2}
+  end
+
+  defp release_ask(buckets) do
+    :ok = Oskol.Limiter.release(buckets)
+    nil
+  end
+
+  # The analysis board's budgets: numbers only. Which buckets an ask is
+  # charged to, and what a refusal says, is `handlers/analysis`.
+  defp ask_budget do
+    config = Application.get_env(:oskol, :analysis_budget, [])
+
+    {:ask_budget, positive(config, :guest_hour, 10), positive(config, :guest_day, 30),
+     positive(config, :user_hour, 30), positive(config, :user_day, 150),
+     positive(config, :global_day, 600)}
+  end
+
+  defp positive(config, key, default) do
+    case Keyword.get(config, key, default) do
+      value when is_integer(value) and value > 0 -> value
+      _ -> default
+    end
   end
 
   # The grades stored for a game's turns, in the order the bodies were asked
@@ -149,6 +178,12 @@ defmodule Oskol.Gleam.Caps.Analysis do
 
   defp stored(game_id) do
     Enum.map(Reviews.stored(game_id), &stored_row/1)
+  end
+
+  # One game's row with its answer: what sharing a replay step reads,
+  # rather than every game of a match's.
+  defp stored_one(game_id, game_number) do
+    opt(Reviews.stored_one(game_id, game_number), &stored_row/1)
   end
 
   defp ratings(game_id) do

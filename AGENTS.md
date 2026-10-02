@@ -183,7 +183,7 @@ Dev mail is at `/dev/mailbox`. Deploys are `bin/deploy` from main, never raw
 src/gamekit/          the framework: rng, scene, event, action, game, clock, instance, replay, registry, host
 src/backgammon/       the game: board (rules, move generation), state, engine, projection, game, analysis, bot (Sage)
 src/oskol/            platform decisions: core (ctx, session, error), caps, handlers/*, rooms, guests,
-                      reviews, puzzles, practice
+                      reviews, puzzles, practice, analysis
 lib/oskol/            Elixir: game_kit.ex (the bridge), game/ (GameServer, Persister, Rehydrator, Bot),
                       reviews/ (Queue, Grader), puzzles/, auth, mail, gleam/ (CtxBuilder, caps/*.ex)
 lib/oskol_web/        router, plugs (GuestId, PuzzlePicture), controllers (SPA shell, /papi), game channel
@@ -206,7 +206,8 @@ PR as the code it describes (update it when you change what it says):
 | `docs/rooms.md` | the bot (Sage), persistence and rehydrate, ending a room, `games.state`, patching old logs |
 | `docs/home.md` | the signed-in home's data: `/papi/me/home`, ratings, streak, recent rooms |
 | `docs/reviews.md` | post-game reviews, the per-turn grader, records, match and career PR |
-| `docs/puzzles.md` | puzzles, grading, the deck and its sync, practice sessions, the five decks and their pages, a run, sharing, pictures, universal sets |
+| `docs/analysis.md` | the analysis board (`/analysis`): the setup and its XGID, asking the engine (cache by key, budgets, the asker), the answer, playing it out, saving to a set, sharing, and the replay's two doors |
+| `docs/puzzles.md` | puzzles, grading, the deck and its sync, practice sessions, the five decks and their pages, a run, sharing, pictures, universal sets, own sets |
 | `docs/testing.md` | what each suite covers, fixtures, every Playwright script, CI, build notes |
 | `docs/file-map.md` | the file-by-file map |
 

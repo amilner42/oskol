@@ -43,17 +43,21 @@ pub fn ctx() -> Ctx {
   )
 }
 
-/// A player who has added none of the universal decks: every deck's ladder
-/// answers that it holds nothing, and anything that would write to one
-/// still panics.
+/// A player who has added none of the universal decks and made no set of
+/// their own: every deck's ladder answers that it holds nothing, and
+/// anything that would write to one still panics.
 pub fn no_decks(ctx: Ctx) -> Ctx {
   Ctx(
     ..ctx,
-    decks: decks_caps.DeckCaps(..ctx.decks, practice: fn(_scope) {
-      practice_caps.PracticeCaps(..practice_caps.stub(), summary: fn(_, _) {
-        []
-      })
-    }),
+    decks: decks_caps.DeckCaps(
+      ..ctx.decks,
+      practice: fn(_scope) {
+        practice_caps.PracticeCaps(..practice_caps.stub(), summary: fn(_, _) {
+          []
+        })
+      },
+      own: fn(_) { [] },
+    ),
   )
 }
 

@@ -130,6 +130,12 @@ if [[ "$mode" == "--browser" ]]; then
 
   port="${PORT:-4400}"
   export PORT="$port"
+  # The smokes' server asks its engine at a stand-in on its own port (PORT +
+  # 10000), which the analysis board's smoke starts (its setup.exs); for the
+  # other smokes nothing is listening there, as on CI. No smoke spends real
+  # engine time.
+  export ANALYSIS_STUB_PORT="${ANALYSIS_STUB_PORT:-$((port + 10000))}"
+  export ANALYSIS_URL="http://localhost:$ANALYSIS_STUB_PORT"
 
   step "server on $port"
   log="${TMPDIR:-/tmp}/oskol-check-server.log"
@@ -189,6 +195,11 @@ if [[ "$mode" == "--browser" ]]; then
   # unlimited session and a single game (setup.exs), a guest runs one and
   # is asked to sign in, an account runs the other.
   node playwright/test-puzzles-cards/test.js
+  # The analysis board, all four parts: a position set up by mouse and by
+  # finger, every setting in the strip, the id in and out; ANALYZE against
+  # the stand-in engine it starts (setup.exs, on ANALYSIS_STUB_PORT above);
+  # playing it out; SAVE into a set and MANAGE it -- nothing moving.
+  node playwright/test-analysis/test.js
 fi
 
 step "all green"

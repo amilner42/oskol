@@ -5,6 +5,7 @@ module Api.PracticeDecks exposing
     , CostAll
     , Deck
     , Kind(..)
+    , Member
     , Mistakes
     , Page
     , Standing
@@ -12,6 +13,7 @@ module Api.PracticeDecks exposing
     , deckDecoder
     , fetchDeck
     , fetchList
+    , isOwn
     , isSet
     , named
     , pageDecoder
@@ -27,7 +29,8 @@ all five:
 
     GET /papi/practice/decks         {decks, lead, today, streak,
                                       patched_level, cost_all, mistakes}
-    GET /papi/practice/decks/:slug   {deck, cells, days, patched_level}
+    GET /papi/practice/decks/:slug   {deck, cells, days, patched_level,
+                                      members}
 
 and the two presses that only make sense of a deck in front of you:
 
@@ -46,6 +49,7 @@ added after the list first shipped (`pace`, `blurb`) default when absent.
 import Api exposing (Error)
 import Api.Decks as Decks
 import Api.Practice as Practice
+import Games.Backgammon.Puzzle as Puzzle
 import Json.Decode as D exposing (Decoder)
 import Json.Encode as E
 import Session
@@ -80,9 +84,14 @@ type alias Catalog =
     }
 
 
+{-| A tier of the player's own mistakes, one of the universal sets, or a
+set the account made itself (`"own"`: after the five, practiced as a set
+is, with a page of its own and MANAGE).
+-}
 type Kind
     = Tier
     | Set
+    | Own
 
 
 {-| One deck. `id` is what the wire's presses speak (a band like
@@ -163,6 +172,22 @@ type alias Page =
     , cells : List Cell
     , days : List Bool
     , patchedLevel : Int
+    , members : Maybe (List Member)
+    }
+
+
+{-| A position in an own set, for its page's MANAGE: the prompt, the rung
+its card stands on (0 for one never answered), and the question as its
+puzzle page shows it, for the small board (Nothing where the server could
+not read one).
+-}
+type alias Member =
+    { id : String
+    , kind : String
+    , prompt : String
+    , position : Int
+    , level : Int
+    , question : Maybe Puzzle.Question
     }
 
 
@@ -176,9 +201,16 @@ type alias Cell =
     }
 
 
+{-| One of the universal sets (not an account's own).
+-}
 isSet : Deck -> Bool
 isSet deck =
     deck.kind == Set
+
+
+isOwn : Deck -> Bool
+isOwn deck =
+    deck.kind == Own
 
 
 {-| What a run through a set needs to say which set it is.
@@ -280,6 +312,9 @@ kindDecoder =
                     "set" ->
                         D.succeed Set
 
+                    "own" ->
+                        D.succeed Own
+
                     other ->
                         D.fail ("not a kind of deck: " ++ other)
             )
@@ -327,11 +362,23 @@ mistakesDecoder =
 
 pageDecoder : Decoder Page
 pageDecoder =
-    D.map4 Page
+    D.map5 Page
         (D.field "deck" deckDecoder)
         (D.field "cells" (D.list cellDecoder))
         (D.field "days" (D.list D.bool))
         (D.field "patched_level" D.int)
+        (optional "members" (D.list memberDecoder))
+
+
+memberDecoder : Decoder Member
+memberDecoder =
+    D.map6 Member
+        (D.field "id" D.string)
+        (D.field "kind" D.string)
+        (D.field "prompt" D.string)
+        (D.field "position" D.int)
+        (D.field "level" D.int)
+        (optional "question" Puzzle.questionDecoder)
 
 
 cellDecoder : Decoder Cell

@@ -1,5 +1,6 @@
 port module Page.Puzzle exposing
     ( After(..)
+    , Answer
     , Attempt(..)
     , Celebration
     , CelebrationDeck(..)
@@ -8,27 +9,26 @@ port module Page.Puzzle exposing
     , Loadable(..)
     , Model
     , Msg(..)
-    , Answer
     , Out(..)
     , Progress
     , Score
     , Way(..)
     , WayState(..)
     , asksMemory
-    , countsToday
-    , dueDate
     , attemptBody
     , backIn
     , celebrate
     , celebrationRead
     , celebrationTiming
+    , countsToday
+    , dueDate
     , endRun
     , init
     , levelLine
     , levelLineFor
+    , masteredLine
     , memoryLine
     , offering
-    , masteredLine
     , preselected
     , runProgress
     , runScore
@@ -88,14 +88,16 @@ practice home, or the table a result card's PRACTICE was pressed at).
 -}
 
 import Api
+import Api.Decks
 import Api.Practice exposing (Today)
+import Api.PracticeDecks as PracticeDecks
 import Dict
 import Games.Backgammon.Puzzle as Puzzle exposing (Candidate, Puzzle, Reveal, Schedule, Verdict(..))
 import Games.Backgammon.Replay as Replay
 import Games.Backgammon.View as Board
-import Games.Backgammon.Words as Words exposing (chanceCells, cubeChances, cubeLine, gradeTag, signed)
+import Games.Backgammon.Words as Words exposing (cubeChances, cubeLine, gradeTag)
 import Html exposing (Html, a, button, div, h1, p, span, text)
-import Html.Attributes exposing (attribute, class, classList, disabled, href, id, type_)
+import Html.Attributes exposing (attribute, class, classList, disabled, href, id, rel, target, type_)
 import Html.Events exposing (on, onClick, onFocus)
 import Json.Decode as D
 import Json.Encode as E
@@ -104,16 +106,16 @@ import Process
 import Random
 import Route
 import Session exposing (Session)
-import Task
-import Time
 import Svg
 import Svg.Attributes as SvgA
+import Task
+import Time
+import Ui.Candidates as Candidates
 import Ui.Charts as Charts
-import Api.Decks
-import Api.PracticeDecks as PracticeDecks
 import Ui.Deck
 import Ui.Decks as Decks
 import Ui.Mistakes as Mistakes
+import Ui.SaveToSet as SaveToSet
 import Ui.Shell
 import Ui.SignIn as SignIn
 
@@ -148,6 +150,7 @@ about one.
 The marks are the shell's (`Main.run`) at the moment the page opened;
 this page adds its own as it is answered, which is the only one it can
 change.
+
 -}
 type alias Progress =
     { at : Int
@@ -212,6 +215,7 @@ type alias Model =
     , celebration : Maybe Celebration -- this answer finished today's set: the card that comes next
     , leaving : Bool -- ANOTHER was pressed and the shell is finding the next
     , zone : Time.Zone -- the reader's own, for the day an early answer is due
+    , save : Maybe SaveToSet.Model -- SAVE's sheet, while it is open
     }
 
 
@@ -355,6 +359,8 @@ type Msg
     | CelebrationWaited
     | CelebrationInView Bool
     | CelebrationEnded String
+    | PressedSave
+    | SaveMsg SaveToSet.Msg
     | NoOp
 
 
@@ -444,6 +450,7 @@ init session config =
       , celebration = Nothing
       , leaving = False
       , zone = Time.utc
+      , save = Nothing
       }
     , Cmd.batch
         [ Api.get session (base config.id) Puzzle.decoder GotPuzzle
@@ -867,6 +874,43 @@ update msg model =
                 Nothing ->
                     leave WantsEnd model
 
+        -- SAVE: this position into a set of your own. A guest signs in on
+        -- the sheet and comes back to this page.
+        PressedSave ->
+            let
+                puzzleId =
+                    case model.puzzle of
+                        Loaded puzzle ->
+                            puzzle.id
+
+                        _ ->
+                            model.id
+
+                ( sheet, cmd ) =
+                    SaveToSet.init model.session { puzzleId = puzzleId, next = Route.href (Route.puzzle model.id) }
+            in
+            stay { model | save = Just sheet } (Cmd.map SaveMsg cmd)
+
+        SaveMsg sub ->
+            case model.save of
+                Just sheet ->
+                    let
+                        ( next, cmd, out ) =
+                            SaveToSet.update model.session sub sheet
+                    in
+                    case out of
+                        SaveToSet.NoOut ->
+                            stay { model | save = Just next } (Cmd.map SaveMsg cmd)
+
+                        SaveToSet.Close ->
+                            stay { model | save = Nothing } Cmd.none
+
+                        SaveToSet.SignedIn user ->
+                            ( { model | save = Just next }, Cmd.map SaveMsg cmd, SignedIn user )
+
+                Nothing ->
+                    stay model Cmd.none
+
         EndSignInMsg signInMsg ->
             case model.ended of
                 Just { after } ->
@@ -1188,6 +1232,7 @@ what they settled on and not about the engine's first word.
 
 NEVER takes the card out of the deck, so it stands nowhere and counts
 for nothing in that line -- whatever schedule the attempt still carries.
+
 -}
 amended : String -> Maybe Schedule -> Model -> ( Model, Cmd Msg, Out )
 amended outcome schedule model =
@@ -1427,7 +1472,7 @@ view model =
             ]
         , id "puzzle"
         ]
-        (case ( model.ended, model.puzzle ) of
+        ((case ( model.ended, model.puzzle ) of
             ( Just end, _ ) ->
                 [ viewHead, viewEnd model end ]
 
@@ -1439,6 +1484,14 @@ view model =
 
                 else
                     viewLoadable model
+         )
+            ++ [ case model.save of
+                    Just sheet ->
+                        Html.map SaveMsg (SaveToSet.view sheet)
+
+                    Nothing ->
+                        text ""
+               ]
         )
 
 
@@ -1513,6 +1566,7 @@ or the button is pressed.
 KEEP GOING where the deck still has work today, or where today's set is
 done and there are mistakes never shown (it starts the deck's pace of
 them); PRACTICE ANYWAY where everything is started and nothing is due.
+
 -}
 viewWay : Model -> End -> Html Msg
 viewWay model end =
@@ -2075,6 +2129,7 @@ viewPuzzle model puzzle =
                             , theme = theme model
                             , swaps = model.swaps
                             , key = 1
+                            , moverColor = "white"
                             }
                         )
 
@@ -2310,17 +2365,39 @@ viewControls model puzzle =
                 -- the clean link. The server refuses a story to anyone else
                 -- anyway.
                 ((if Maybe.map .who model.memory == Just "you" then
-                    button [ class "q-btn plain pz-action", id "pz-share-story", onClick ShareStory ]
+                    button [ class "q-btn plain pz-action pz-act-share", id "pz-share-story", onClick ShareStory ]
                         [ span [ class "hero-link w-4 h-4", attribute "aria-hidden" "true" ] []
                         , text (Maybe.withDefault "SHARE" model.storyLabel)
                         ]
 
                   else
-                    button [ class "q-btn plain pz-action", id "pz-share", onClick Share ]
+                    button [ class "q-btn plain pz-action pz-act-share", id "pz-share", onClick Share ]
                         [ span [ class "hero-link w-4 h-4", attribute "aria-hidden" "true" ] []
                         , text (Maybe.withDefault "SHARE" model.shareLabel)
                         ]
                  )
+                    -- Into a set of your own (the sheet the analysis board
+                    -- opens too).
+                    :: button [ class "q-btn plain pz-action pz-act-save", id "pz-save", onClick PressedSave ]
+                        [ span [ class "hero-bookmark w-4 h-4", attribute "aria-hidden" "true" ] []
+                        , text "SAVE"
+                        ]
+                    -- Every puzzle opens on the analysis board, as this
+                    -- page shows it, in a new tab: this one stays put.
+                    -- One word and the new-tab mark, so the three fit one
+                    -- row on a 320 phone.
+                    :: a
+                        [ class "q-btn plain pz-action pz-act-analysis"
+                        , id "pz-analysis"
+                        , href (Route.href (Route.analysisPuzzle puzzle.id))
+                        , target "_blank"
+                        , rel "noopener"
+                        , attribute "aria-label" "Open in analysis (a new tab)"
+                        , Html.Attributes.title "Open in analysis"
+                        ]
+                        [ text "ANALYSIS"
+                        , span [ class "hero-arrow-top-right-on-square w-4 h-4", attribute "aria-hidden" "true" ] []
+                        ]
                     -- A run is open-ended: after every reveal, one more
                     -- or stop. Stopping is a finished thing to have
                     -- done, so I'M DONE is always offered and never
@@ -2414,6 +2491,7 @@ viewReveal model puzzle reveal =
                )
             ++ viewSchedule model reveal
             ++ viewMemory model
+            ++ viewFromReplay model puzzle
             ++ viewStory reveal
         )
 
@@ -2449,7 +2527,7 @@ viewVerdict reveal =
 
                     else
                         ( mark ++ " " ++ String.toUpper (Mistakes.bandName reveal.band)
-                        , Words.givesUp cost (reveal.schedule /= Nothing)
+                        , Words.givesUp reveal.band cost (reveal.schedule /= Nothing)
                         , reveal.band
                         )
 
@@ -2525,22 +2603,6 @@ viewMoveReveal model reveal =
             ]
 
 
-{-| The annotators' mark beside a candidate: how bad it is at a glance.
--}
-candidateMark : Float -> Html msg
-candidateMark equityLost =
-    let
-        grade =
-            Words.gradeOf equityLost
-    in
-    case Words.gradeMark grade of
-        "" ->
-            text ""
-
-        mark ->
-            span [ class ("rp-cand-grade g-" ++ grade), attribute "data-grade" grade ] [ text mark ]
-
-
 {-| The candidate whose position is on the board, when one is.
 -}
 shownCandidate : Model -> Reveal -> Maybe Candidate
@@ -2563,20 +2625,10 @@ viewCandidates model reveal =
     let
         yoursRank =
             reveal.yours |> Maybe.andThen .rank
-
-        rows =
-            candidatesOf reveal
     in
-    div [ class "rp-top pz-top", id "pz-candidates" ]
-        (div [ class "rp-top-head" ]
-            [ span [] []
-            , span [] [ text "move" ]
-            , span [ class "rp-col-eq" ] [ text "eq" ]
-            , span [ class "rp-col", Html.Attributes.title "How often this move wins" ] [ text "win" ]
-            , span [ class "rp-col", Html.Attributes.title "How often it wins a gammon" ] [ text "gam+" ]
-            , span [ class "rp-col", Html.Attributes.title "How often it gets gammoned" ] [ text "gam−" ]
-            ]
-            :: List.map
+    Candidates.view [ class "pz-top", id "pz-candidates" ]
+        (candidatesOf reveal
+            |> List.map
                 (\c ->
                     let
                         isYours =
@@ -2589,72 +2641,53 @@ viewCandidates model reveal =
 
                                 Nothing ->
                                     isYours
-
-                        rankText =
-                            c.rank |> Maybe.map (\r -> String.fromInt r ++ ".") |> Maybe.withDefault "–"
                     in
-                    button
-                        [ classList [ ( "rp-cand", True ), ( "is-on", on_ ), ( "is-played", isYours ) ]
-                        , attribute "data-rank" (c.rank |> Maybe.map String.fromInt |> Maybe.withDefault "")
-                        , attribute "data-yours"
+                    { rank = c.rank
+                    , notation =
+                        if c.notation == "" then
+                            "your play"
+
+                        else
+                            c.notation
+                    , equity = Maybe.withDefault 0 c.equity
+                    , equityLost = c.equityLost
+                    , probs = c.probs
+                    , on = on_
+                    , played = isYours
+                    , badge =
+                        -- "your play" says it already, and a narrow
+                        -- column would cut the badge to "??..."
+                        if isYours && c.notation /= "" then
+                            Just "you"
+
+                        else
+                            Nothing
+                    , title =
+                        if isYours then
+                            "The move you played"
+
+                        else
+                            "Show this move on the board"
+                    , onTap =
+                        if c.position == Nothing then
+                            Nothing
+
+                        else if isYours || (on_ && model.showing /= Nothing) then
+                            Just (Show Nothing)
+
+                        else
+                            Just (Show c.rank)
+                    , attrs =
+                        [ attribute "data-yours"
                             (if isYours then
                                 "true"
 
                              else
                                 "false"
                             )
-                        , disabled (c.position == Nothing)
-                        , onClick
-                            (if isYours || (on_ && model.showing /= Nothing) then
-                                Show Nothing
-
-                             else
-                                Show c.rank
-                            )
-                        , Html.Attributes.title
-                            (if isYours then
-                                "The move you played"
-
-                             else
-                                "Show this move on the board"
-                            )
                         ]
-                        ([ span [ class "rp-rank tabular-nums" ] [ text rankText ]
-                         , span
-                            [ classList
-                                [ ( "rp-cand-move", True )
-                                , ( "is-long", String.length c.notation > 10 )
-                                , ( "is-longer", String.length c.notation > 15 )
-                                ]
-                            ]
-                            [ text
-                                (if c.notation == "" then
-                                    "your play"
-
-                                 else
-                                    c.notation
-                                )
-                            , candidateMark c.equityLost
-                            , if isYours then
-                                span [ class "pz-you" ] [ text "you" ]
-
-                              else
-                                text ""
-                            ]
-                         , span [ class "rp-cand-lost rp-col-eq tabular-nums" ]
-                            [ text
-                                (if c.equityLost > 0 then
-                                    "−" ++ Replay.formatEquity c.equityLost
-
-                                 else
-                                    signed (Maybe.withDefault 0 c.equity)
-                                )
-                            ]
-                         ]
-                            ++ chanceCells c.probs
-                        )
+                    }
                 )
-                rows
         )
 
 
@@ -2694,6 +2727,7 @@ viewCubeReveal model puzzle cube =
     , cubeLine review
     , cubeChances "White" review
     ]
+
 
 
 -- TODAY'S SET, DONE
@@ -2755,6 +2789,10 @@ viewCelebration model =
                         Read page ->
                             case page.deck.kind of
                                 PracticeDecks.Set ->
+                                    page.deck.standing
+                                        |> Maybe.map (\st -> Decks.masteredOf { mastered = st.patched, total = st.total })
+
+                                PracticeDecks.Own ->
                                     page.deck.standing
                                         |> Maybe.map (\st -> Decks.masteredOf { mastered = st.patched, total = st.total })
 
@@ -3078,6 +3116,7 @@ slot are always laid out, so nothing under them moves when a choice is
 tapped. GOT IT after a miss keeps its column, disabled, and says why
 when tapped. Once NEVER has gone through the four stay where they are,
 disabled.
+
 -}
 viewSchedule : Model -> Reveal -> List (Html Msg)
 viewSchedule model reveal =
@@ -3438,6 +3477,26 @@ viewMemory model =
                 , a [ href memory.replay, class "pz-memory-link", id "pz-memory-link" ] [ text "See it in the replay →" ]
                 ]
             ]
+
+
+{-| A position somebody shared out of a replay leads back into it, onto
+the very step, once the reader has tried it: the page itself names nobody,
+and the way back is the room the sharer was watching. A reader who played
+in the game the puzzle came from has the memory line instead, which links
+to the replay already.
+-}
+viewFromReplay : Model -> Puzzle -> List (Html Msg)
+viewFromReplay model puzzle =
+    case ( puzzle.replay, model.memory ) of
+        ( Just path, Nothing ) ->
+            [ div [ class "pz-memory pz-from-replay", id "pz-from-replay" ]
+                [ span [] [ text "From a game on Oskol · " ]
+                , a [ href path, class "pz-memory-link", id "pz-replay" ] [ text "WATCH THE REPLAY →" ]
+                ]
+            ]
+
+        _ ->
+            []
 
 
 {-| The story a share-with-my-story link told, in the server's own words:

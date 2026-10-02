@@ -28,9 +28,11 @@ suite : Test
 suite =
     describe "Words"
         [ candidateSentences
+        , bestSentence
         , moveSentences
         , doublerSentences
         , responderSentences
+        , cubeQuestions
         , tooGoodRule
         , theEnginesWords
         , puzzleVerdicts
@@ -40,12 +42,30 @@ suite =
 puzzleVerdicts : Test
 puzzleVerdicts =
     describe "a puzzle answer's verdict"
-        [ test "a miss names what it gave up, to two places" <|
+        [ test "a dubious miss says dubious, as its badge does" <|
             \_ ->
-                Words.givesUp 0.04 False |> Expect.equal "Gives up 0.04 — a mistake."
+                Words.givesUp "doubtful" 0.04 False |> Expect.equal "Gives up 0.04 — a dubious mistake."
+        , test "a bad miss says bad" <|
+            \_ ->
+                Words.givesUp "bad" 0.137 False |> Expect.equal "Gives up 0.14 — a bad mistake."
+        , test "a very bad miss says very bad" <|
+            \_ ->
+                Words.givesUp "very_bad" 0.24 False |> Expect.equal "Gives up 0.24 — a very bad mistake."
         , test "a miss on the player's schedule says it comes back" <|
             \_ ->
-                Words.givesUp 0.137 True |> Expect.equal "Gives up 0.14 — a mistake, so it comes back."
+                Words.givesUp "bad" 0.137 True |> Expect.equal "Gives up 0.14 — a bad mistake, so it comes back."
+        , test "the badge's grade and the sentence's word agree at every band edge" <|
+            \_ ->
+                [ 0.02, 0.0799, 0.08, 0.1599, 0.16, 0.4 ]
+                    |> List.map (\c -> Words.givesUp (Words.gradeOf c) c False)
+                    |> Expect.equal
+                        [ "Gives up 0.02 — a dubious mistake."
+                        , "Gives up 0.08 — a dubious mistake."
+                        , "Gives up 0.08 — a bad mistake."
+                        , "Gives up 0.16 — a bad mistake."
+                        , "Gives up 0.16 — a very bad mistake."
+                        , "Gives up 0.40 — a very bad mistake."
+                        ]
         , test "right but not the best is not a mistake" <|
             \_ ->
                 Words.nearlyBest |> Expect.equal "Within 0.02 of the best. Not a mistake."
@@ -140,6 +160,22 @@ saysMove expected m =
 
 
 -- MOVES
+
+
+bestSentence : Test
+bestSentence =
+    describe "the best play, on its own (the analysis board)"
+        [ test "its chances, to a decimal" <|
+            \_ ->
+                Words.bestInWords (candidate "8/5 6/5" (Just (probs 0.541 0.153 0.102)))
+                    |> Query.fromHtml
+                    |> Query.contains [ Html.text "The best play is 8/5 6/5: 54.1% wins, 15.3% gammons, 10.2% gammons against." ]
+        , test "without chances, the play alone" <|
+            \_ ->
+                Words.bestInWords (candidate "24/18 13/11" Nothing)
+                    |> Query.fromHtml
+                    |> Query.contains [ Html.text "The best play is 24/18 13/11." ]
+        ]
 
 
 candidateSentences : Test
@@ -421,6 +457,69 @@ answered r c =
 
 
 -- THE TOO-GOOD RULE, AND THE ENGINE'S OWN WORDS
+
+
+{-| The analysis board's (and a puzzle's) sentence for a cube question, one
+per outcome, each reading plainly: no double, double/take, double/pass by a
+clear margin and with the game close (the stand-in engine's ND +0.620, D/T
++1.310, D/P +1.000 at 52% to win), and too good.
+-}
+cubeQuestions : Test
+cubeQuestions =
+    let
+        at optimal nd dt dp win =
+            let
+                c =
+                    cube optimal nd dt dp
+            in
+            { c | probs = Just (probs win 0.14 0.12) }
+    in
+    describe "the cube asked about, every outcome"
+        [ test "no double: ahead but not enough" <|
+            \_ ->
+                Words.doubleWhy "White" "Black" (at NoDouble 0.3 0.25 1.0 0.62)
+                    |> Expect.equal "White is winning here, but not by enough to make the cube worth turning: Black has an easy take, and waiting keeps the chance to double later."
+        , test "no double: behind" <|
+            \_ ->
+                Words.doubleWhy "White" "Black" (at NoDouble -0.2 -0.5 1.0 0.4)
+                    |> Expect.equal "White is losing here: doubling hands Black a cube they are glad to take."
+        , test "double, take" <|
+            \_ ->
+                Words.doubleWhy "White" "Black" (at DoubleTake 0.5 0.7 1.0 0.65)
+                    |> Expect.equal "White is winning here by enough to double."
+        , test "double, pass by a clear margin" <|
+            \_ ->
+                Words.doubleWhy "White" "Black" (at DoublePass 0.8 1.4 1.0 0.8)
+                    |> Expect.equal "White is well ahead here by enough that Black should pass."
+        , test "double, pass with the game close (the stand-in engine's numbers): no contradiction" <|
+            \_ ->
+                Words.doubleWhy "White" "Black" (at DoublePass 0.62 1.31 1.0 0.52)
+                    |> Expect.equal "Black should pass even though the game is close (52.0% to win for White): counting White's gammons and the score, a take would cost more than the point a pass gives up."
+        , test "double, pass with the doubler behind" <|
+            \_ ->
+                Words.doubleWhy "White" "Black" (at DoublePass 0.62 1.31 1.0 0.4)
+                    |> Expect.equal "Black should pass even though White is behind (40.0% to win for White): counting White's gammons and the score, a take would cost more than the point a pass gives up."
+        , test "too good to double" <|
+            \_ ->
+                Words.doubleWhy "White" "Black" (at NoDouble 1.2 0.9 1.0 0.85)
+                    |> Expect.equal "White is winning here by too much: Black can pass for a single point, when playing on for the gammon is worth more."
+        , test "the cube kept, a pass with the game close" <|
+            \_ ->
+                Words.noDoubleWhy "White" "Black" (at DoublePass 0.62 1.31 1.0 0.52)
+                    |> Expect.equal "Black should pass even though the game is close (52.0% to win for White): counting White's gammons and the score, a take would cost more than the point a pass gives up. Doubling would have taken the point."
+        , test "the take, a pass with the game close" <|
+            \_ ->
+                Words.answerWhy "Black" (at DoublePass 0.62 1.31 1.0 0.52)
+                    |> Expect.equal "Black should pass even though the game is close (48.0% to win): counting the gammons and the score, a take would cost more than the point a pass gives up."
+        , test "the take, a pass by a clear margin" <|
+            \_ ->
+                Words.answerWhy "Black" (at DoublePass 0.8 1.4 1.0 0.8)
+                    |> Expect.equal "Black is losing here by too much to take: a pass gives up one point rather than risking two or more."
+        , test "the take, taken" <|
+            \_ ->
+                Words.answerWhy "Black" (at DoubleTake 0.5 0.7 1.0 0.65)
+                    |> Expect.equal "Black is behind here but has enough to play on for double the stake."
+        ]
 
 
 tooGoodRule : Test

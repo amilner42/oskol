@@ -31,6 +31,15 @@ config :oskol, Oskol.Reviews.Queue, enabled: false
 # with `Oskol.Reviews.Grader.await_idle/1`.
 config :oskol, Oskol.Reviews.Grader, enabled: false
 
+# And the analysis board's asker: a POST is taken and queued, and never asked,
+# unless a test turns it on (`test/oskol/analysis/asker_test.exs`).
+config :oskol, Oskol.Analysis.Asker,
+  enabled: false,
+  in_flight: 2,
+  waiting: 20,
+  circuit_ms: 60_000,
+  ask_timeout_ms: 60_000
+
 # Puzzle pictures are rasterised by a binary tests never depend on: this
 # stub writes a fixed PNG for any SVG (test_support/fake_rsvg_convert).
 config :oskol, :rsvg,

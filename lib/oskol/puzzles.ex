@@ -45,6 +45,10 @@ defmodule Oskol.Puzzles do
   # for the engine's old cube bug (`post_take_reason`): a Gleam constant is
   # inlined, so it is written twice, like the attempt budget.
   @post_take "post_take_cube"
+  # The origins a stranger may be handed at random (TRY ONE, the status
+  # page): positions that came from real play or from a built set, never
+  # a board somebody set up and asked about.
+  @tried ["game", "set"]
 
   defmodule Puzzle do
     @moduledoc "One question, asked of anyone, with the engine's answer."
@@ -61,6 +65,16 @@ defmodule Oskol.Puzzles do
       # The one thing that lets `answer` be written twice.
       field(:complete, :boolean, default: false)
       field(:answer_upgraded_at, :utc_datetime_usec)
+      # Where the row was first written from: "game" (a graded game's
+      # mistake), "set" (a built set's position), "analysis" (a position
+      # asked on the analysis board), "replay" (a replay step shared).
+      # Set once, by whichever wrote the key first. TRY ONE draws from
+      # "game" and "set" only (`@tried`).
+      field(:origin, :string, default: "game")
+      # The replay step this position was shared from, `%{"slug", "id",
+      # "game", "step"}`, or nil: what the page's WATCH THE REPLAY opens.
+      # Written once (`store_one/3`) and never moved.
+      field(:replay, :map)
 
       timestamps(type: :utc_datetime_usec)
     end
@@ -157,13 +171,24 @@ defmodule Oskol.Puzzles do
   end
 
   @doc """
-  Up to `n` puzzles whose answer is complete, in random order: what TRY ONE
+  Up to `n` puzzles whose answer is complete and that came from a game or a
+  set (never an analyzed position, and never one with a replay link), in
+  random order: what TRY ONE
   on the practice home draws from. Random order is the database's
   (`random()` over the complete rows); which of them stands clear enough to
   ask a stranger is Gleam's rule, applied to what comes back.
   """
   def sample(n) when is_integer(n) and n > 0 do
-    Repo.all(from(p in Puzzle, where: p.complete, order_by: fragment("random()"), limit: ^n))
+    Repo.all(
+      from(p in Puzzle,
+        # Nor a position somebody shared out of a replay: its page leads
+        # back into that room, which its sharer sent to the people they
+        # chose, not to a stranger drawn at random.
+        where: p.complete and p.origin in @tried and is_nil(p.replay),
+        order_by: fragment("random()"),
+        limit: ^n
+      )
+    )
   end
 
   @doc """
@@ -179,7 +204,7 @@ defmodule Oskol.Puzzles do
   def sample_move do
     Repo.one(
       from(p in Puzzle,
-        where: p.complete and p.kind == "move",
+        where: p.complete and p.kind == "move" and p.origin in @tried,
         order_by: fragment("random()"),
         limit: 1
       )
@@ -491,7 +516,7 @@ defmodule Oskol.Puzzles do
     attempts = charge_attempt(game_id, game_number)
 
     Repo.transaction(fn ->
-      {ids, written} = resolve_ids(puzzles, 0, 0)
+      {ids, written} = resolve_ids(puzzles, "game", 0, 0)
       upgraded = upgrade_answers(puzzles)
 
       {inserted, _} =
@@ -542,7 +567,7 @@ defmodule Oskol.Puzzles do
   def store_deck(deck, entries) when is_binary(deck) and is_list(entries) do
     Repo.transaction(fn ->
       puzzles = Enum.map(entries, &elem(&1, 0))
-      {ids, written} = resolve_ids(puzzles, 0, 0)
+      {ids, written} = resolve_ids(puzzles, "set", 0, 0)
       upgraded = upgrade_answers(puzzles)
       now = DateTime.utc_now()
 
@@ -570,6 +595,97 @@ defmodule Oskol.Puzzles do
     end
   rescue
     e -> {:error, Exception.message(e)}
+  end
+
+  @doc """
+  The puzzle stored for this question key, or nil. The whole row.
+  """
+  def by_key(key) when is_binary(key) do
+    Repo.one(from(p in Puzzle, where: p.key == ^key))
+  end
+
+  @doc """
+  Write one puzzle, unless its key is already there, and answer the id that
+  stands: `{:ok, id}` or `{:error, reason}`. The transaction `store_deck/2`
+  runs without the membership rows: a new key takes the first of Gleam's
+  candidate ids no other key holds and is written with `origin`; a key
+  already stored keeps its row, its id and its origin, its incomplete answer
+  upgraded by a complete one.
+
+  `replay` (`%{slug, id, game, step}`, or nil) is the replay step a shared
+  position came from, written in the same transaction and only where the
+  row has none: a link is never moved once it is there. A set's own row
+  (`origin = 'set'`) is never linked -- the players drilling that set came
+  to it from the set, not from anybody's game.
+  """
+  def store_one(puzzle, origin, replay \\ nil)
+      when is_map(puzzle) and is_binary(origin) and (is_map(replay) or is_nil(replay)) do
+    Repo.transaction(fn ->
+      {ids, _written} = resolve_ids([puzzle], origin, 0, 0)
+      upgrade_answers([puzzle])
+
+      case Map.get(ids, puzzle.key) do
+        nil ->
+          Repo.rollback("every candidate id is taken")
+
+        id ->
+          link_replay(id, replay)
+          id
+      end
+    end)
+    |> case do
+      {:ok, id} -> {:ok, id}
+      {:error, reason} -> {:error, to_string(reason)}
+    end
+  rescue
+    e -> {:error, Exception.message(e)}
+  end
+
+  # Set once: the first share of a key writes it, and a row that has one
+  # is left exactly as it is. Never on a position a universal set holds
+  # (`in_universal_set/0`): origin is only whoever wrote the key first, and a
+  # game's opening mistake the set build later took into Openings is drilled
+  # by everybody, none of whom came to it from that room. An own set is its
+  # owner's alone, so a position in one may carry its link.
+  defp link_replay(_id, nil), do: :ok
+
+  defp link_replay(id, replay) do
+    from(p in Puzzle,
+      as: :puzzle,
+      where:
+        p.id == ^id and is_nil(p.replay) and p.origin != "set" and
+          not exists(in_universal_set())
+    )
+    |> Repo.update_all(set: [replay: replay, updated_at: DateTime.utc_now()])
+
+    :ok
+  end
+
+  # The `deck_puzzles` rows that put this puzzle in a universal set: every
+  # deck that is not somebody's own (`decks` holds only own sets).
+  defp in_universal_set do
+    from(m in "deck_puzzles",
+      where:
+        m.puzzle_id == parent_as(:puzzle).id and
+          m.deck not in subquery(from(d in "decks", select: d.id)),
+      select: 1
+    )
+  end
+
+  @doc """
+  The replay step a puzzle was shared from, `%{"slug", "id", "game",
+  "step"}`, or nil. Nil too for a position a universal set holds, whatever
+  the row says: a link written before the set took the position in must not
+  reach the set's learners either.
+  """
+  def replay_of(id) when is_binary(id) do
+    Repo.one(
+      from(p in Puzzle,
+        as: :puzzle,
+        where: p.id == ^id and not exists(in_universal_set()),
+        select: p.replay
+      )
+    )
   end
 
   @doc """
@@ -639,9 +755,9 @@ defmodule Oskol.Puzzles do
   # rather than picking once, because the winner of a race is whichever
   # write got there first, not whichever we hoped for. Returns the ids by
   # key and how many rows this write made.
-  defp resolve_ids([], _attempt, written), do: {%{}, written}
+  defp resolve_ids([], _origin, _attempt, written), do: {%{}, written}
 
-  defp resolve_ids(puzzles, attempt, written) do
+  defp resolve_ids(puzzles, origin, attempt, written) do
     keys = Enum.map(puzzles, & &1.key)
     found = Repo.all(from(p in Puzzle, where: p.key in ^keys, select: {p.key, p.id})) |> Map.new()
 
@@ -652,7 +768,7 @@ defmodule Oskol.Puzzles do
       missing ->
         {writable, exhausted} =
           missing
-          |> Enum.map(&{&1, puzzle_row(&1, attempt)})
+          |> Enum.map(&{&1, puzzle_row(&1, origin, attempt)})
           |> Enum.split_with(fn {_puzzle, row} -> row.id != nil end)
 
         # Every candidate id this puzzle had is held by some other key.
@@ -674,7 +790,12 @@ defmodule Oskol.Puzzles do
               Repo.insert_all(Puzzle, Enum.map(rows, &elem(&1, 1)), on_conflict: :nothing)
 
             {more, written} =
-              resolve_ids(Enum.map(rows, &elem(&1, 0)), attempt + 1, written + inserted)
+              resolve_ids(
+                Enum.map(rows, &elem(&1, 0)),
+                origin,
+                attempt + 1,
+                written + inserted
+              )
 
             {Map.merge(found, more), written}
         end
@@ -706,7 +827,7 @@ defmodule Oskol.Puzzles do
     end)
   end
 
-  defp puzzle_row(puzzle, attempt) do
+  defp puzzle_row(puzzle, origin, attempt) do
     now = DateTime.utc_now()
 
     %{
@@ -717,6 +838,7 @@ defmodule Oskol.Puzzles do
       answer: puzzle.answer,
       evaluated_by: puzzle.evaluated_by,
       complete: puzzle.complete,
+      origin: origin,
       inserted_at: now,
       updated_at: now
     }

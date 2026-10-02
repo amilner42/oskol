@@ -125,6 +125,12 @@ pub type Stored {
   Stored(id: String, kind: String, question_json: String, answer_json: String)
 }
 
+/// A puzzle found by its key: the row, whether its answer is complete, and
+/// who worked it out (`puzzles.evaluated_by_json`, as JSON text).
+pub type Keyed {
+  Keyed(stored: Stored, complete: Bool, evaluated_by_json: String)
+}
+
 /// One decision of one game that a puzzle came from.
 pub type Source {
   Source(
@@ -324,7 +330,36 @@ pub type PuzzlesCaps(moves) {
     /// Which of them stands clear enough to be asked of a stranger is the
     /// handler's rule (`handlers/puzzles_hub`), applied to what comes back.
     sample: fn(Int) -> List(Stored),
+    /// The puzzle stored for this question key, or nothing. What makes an
+    /// analyzed position free the second time: the question is the key.
+    by_key: fn(String) -> Option(Keyed),
+    /// Write one puzzle unless its key is already there, and hand back the
+    /// id that stands: (puzzle, origin, replay). A key already stored keeps
+    /// its row and its id (an incomplete answer upgraded by a complete one,
+    /// as `store` does); `origin` ("game", "set", "analysis", "replay") is
+    /// written only on a new row. `replay`, where given, is written once: on
+    /// a new row, or on a stored one that has none; a link already there is
+    /// never moved, and a set's own row (origin "set") is never linked --
+    /// the players drilling that set did not come to it from anybody's
+    /// game. Error(reason) when the write failed.
+    store_one: fn(NewPuzzle, String, Option(ReplayLink)) ->
+      Result(String, String),
+    /// Draw one puzzle's link picture now, if it has none, so a share sent
+    /// a second after the answer unfurls with the board. Never fails; a
+    /// picture that is not drawn is the sweep's to find.
+    pictures_one: fn(String) -> Nil,
+    /// The replay step a puzzle was shared from (`puzzles.replay`), or
+    /// nothing. Appended after `pictures_one`, so every field before keeps
+    /// its place.
+    replay_of: fn(String) -> Option(ReplayLink),
   )
+}
+
+/// Where in a room's replay a shared position was taken from: the room's
+/// game slug and id, the game of the match and the step (one past the
+/// record line). Written once, by the first share (`handlers/positions`).
+pub type ReplayLink {
+  ReplayLink(slug: String, id: String, game: Int, step: Int)
 }
 
 pub fn stub() -> PuzzlesCaps(moves) {
@@ -355,5 +390,9 @@ pub fn stub() -> PuzzlesCaps(moves) {
     mint_share: fn(_, _, _, _, _) { panic as "stub puzzles.mint_share" },
     share: fn(_) { panic as "stub puzzles.share" },
     sample: fn(_) { panic as "stub puzzles.sample" },
+    by_key: fn(_) { panic as "stub puzzles.by_key" },
+    store_one: fn(_, _, _) { panic as "stub puzzles.store_one" },
+    pictures_one: fn(_) { panic as "stub puzzles.pictures_one" },
+    replay_of: fn(_) { panic as "stub puzzles.replay_of" },
   )
 }

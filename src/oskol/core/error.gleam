@@ -2,6 +2,8 @@
 //// same envelope, so the code and the HTTP status are decided here, in
 //// Gleam, and Elixir only writes bytes onto the socket.
 
+import gleam/option.{type Option, None, Some}
+
 pub type ApiError {
   /// Nothing answers to this slug or code.
   NotFound(message: String)
@@ -19,6 +21,12 @@ pub type ApiError {
   /// The platform could not do it. Same class as an unhandled crash before
   /// the port: a 500 with nothing useful to say.
   Internal(message: String)
+  /// Not now: a budget is spent or a line is full (429). `retry_after_s`
+  /// is how long until asking again could work, which the page says.
+  Limited(code: String, message: String, retry_after_s: Int)
+  /// Something this depends on is not answering (503), for about
+  /// `retry_after_s`.
+  Unavailable(code: String, message: String, retry_after_s: Int)
 }
 
 pub fn code(error: ApiError) -> String {
@@ -28,6 +36,8 @@ pub fn code(error: ApiError) -> String {
     Forbidden(_) -> "forbidden"
     Conflict(code, _) -> code
     Internal(_) -> "server_error"
+    Limited(code, _, _) -> code
+    Unavailable(code, _, _) -> code
   }
 }
 
@@ -38,6 +48,8 @@ pub fn message(error: ApiError) -> String {
     Forbidden(message) -> message
     Conflict(_, message) -> message
     Internal(message) -> message
+    Limited(_, message, _) -> message
+    Unavailable(_, message, _) -> message
   }
 }
 
@@ -48,6 +60,16 @@ pub fn status(error: ApiError) -> Int {
     Forbidden(_) -> 403
     Conflict(_, _) -> 409
     Internal(_) -> 500
+    Limited(_, _, _) -> 429
+    Unavailable(_, _, _) -> 503
+  }
+}
+
+/// How long until the same request could work, where the error says.
+pub fn retry_after_s(error: ApiError) -> Option(Int) {
+  case error {
+    Limited(_, _, seconds) | Unavailable(_, _, seconds) -> Some(seconds)
+    _ -> None
   }
 }
 

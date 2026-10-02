@@ -71,7 +71,8 @@ defmodule OskolWeb.Api.PuzzlesHubApiTest do
   test "the sample capability crosses as its Gleam record says" do
     id = a_puzzle("double", true)
 
-    {:puzzles_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, sample} =
+    {:puzzles_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, sample,
+     _by_key, _store_one, _pictures_one, _replay_of} =
       Oskol.Gleam.Caps.Puzzles.build()
 
     assert [{:stored, ^id, "double", question, answer}] = sample.(5)

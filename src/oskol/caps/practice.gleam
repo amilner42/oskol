@@ -265,6 +265,11 @@ pub type PracticeCaps {
     /// (`config :retain, intervals`). The page is told what a level means
     /// rather than keeping its own copy of the list.
     intervals: fn() -> List(Int),
+    /// Move cards to these introduction positions, leaving everything
+    /// else about them alone: a position saved into an own set again goes
+    /// to the set's end, where its membership row now is. Returns how many
+    /// moved; a learner that is not there yet moves none.
+    place: fn(String, List(#(String, Int))) -> Int,
   )
 }
 
@@ -351,5 +356,6 @@ pub fn stub() -> PracticeCaps {
       panic as "stub practice.start_new_in_band"
     },
     intervals: fn() { panic as "stub practice.intervals" },
+    place: fn(_, _) { panic as "stub practice.place" },
   )
 }

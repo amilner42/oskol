@@ -108,6 +108,25 @@ defmodule Mix.Tasks.Oskol.Fixtures do
     )
 
     Mix.shell().info("wrote assets/tests/PuzzleRevealFixtures.elm (#{length(reveals)} reveals)")
+
+    analyses = Enum.map(:oskol@puzzles@fixture.analyses(), fn {name, json} -> {name, json} end)
+
+    File.write!(
+      "assets/tests/AnalysisFixtures.elm",
+      elm_module(analyses, "AnalysisFixtures", analysis_doc())
+    )
+
+    Mix.shell().info("wrote assets/tests/AnalysisFixtures.elm (#{length(analyses)} answers)")
+  end
+
+  defp analysis_doc do
+    """
+    Each entry is one `GET /papi/analysis/:key` answer once the engine has
+    answered (a cached `POST /papi/analysis` says the same), rendered by
+    `oskol/handlers/analysis` itself: the puzzle and its reveal for a
+    checker play, a double and a take, and the checker play from a row that
+    does not say how deep it was looked at.
+    """
   end
 
   defp reveal_doc do

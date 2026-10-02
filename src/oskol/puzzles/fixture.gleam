@@ -18,7 +18,10 @@ import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import oskol/caps/puzzles.{type Stored, Stored} as _
+import oskol/caps/puzzles.{
+  type ReplayLink, type Stored, Keyed, ReplayLink, Stored,
+} as _
+import oskol/handlers/analysis as analysis_handler
 import oskol/handlers/puzzles as handler
 import oskol/puzzles.{
   type Answer, type Kind, type Probs, type Question, Candidate, Centered,
@@ -31,7 +34,18 @@ import oskol/puzzles/tree
 /// `GET /papi/puzzles/:id` answers for each.
 pub fn samples() -> List(#(String, String)) {
   ["move", "doubles", "double", "take"]
-  |> list.map(fn(name) { #(name, rendered(stored_sample(name))) })
+  |> list.map(fn(name) { #(name, rendered(stored_sample(name), None)) })
+  // The checker play as a position shared out of a replay: the same page,
+  // and the way back to the step it came from.
+  |> list.append([
+    #(
+      "replay",
+      rendered(
+        stored_sample("move"),
+        Some(ReplayLink(slug: "backgammon", id: "821900", game: 3, step: 17)),
+      ),
+    ),
+  ])
 }
 
 /// The row behind a sample, as an extraction would have written it: what a
@@ -76,6 +90,36 @@ pub fn reveals() -> List(#(String, String)) {
     #("schedule_self_grade", handler.schedule_json(3, 3, due, False, True, 7)),
     #("schedule_settled", handler.schedule_json(1, 1, due, False, False, 1)),
   ]
+}
+
+/// What `GET /papi/analysis/:key` (and a cached `POST /papi/analysis`)
+/// answers once the engine has: the puzzle and its reveal, for a checker
+/// play, a double and a take, all at 4-ply, and the checker play from a
+/// row that does not say how deep it was looked at.
+pub fn analyses() -> List(#(String, String)) {
+  let levels = "{\"levels\":{\"moves\":\"4ply\",\"cube\":\"4ply\"}}"
+  [
+    #("move", analysed("move", levels)),
+    #("double", analysed("double", levels)),
+    #("take", analysed("take", levels)),
+    #("move_no_levels", analysed("move", "{\"levels\":null}")),
+  ]
+}
+
+fn analysed(name: String, evaluated_by: String) -> String {
+  case
+    analysis_handler.done_fixture(
+      "fixture-key-" <> name,
+      Keyed(
+        stored: stored_sample(name),
+        complete: True,
+        evaluated_by_json: evaluated_by,
+      ),
+    )
+  {
+    Ok(body) -> body
+    Error(_) -> "{\"ok\":false}"
+  }
 }
 
 fn attempted(
@@ -151,8 +195,8 @@ fn path_to(
   }
 }
 
-fn rendered(stored: Stored) -> String {
-  case handler.puzzle_body(stored) {
+fn rendered(stored: Stored, replay: Option(ReplayLink)) -> String {
+  case handler.puzzle_body(stored, replay) {
     Ok(body) -> body
     Error(_) -> "{\"ok\":false}"
   }

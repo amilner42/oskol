@@ -6,7 +6,7 @@ defmodule Oskol.Gleam.Caps.Practice do
       PracticeCaps(put_user, put_items, cards, relapse, queue, start,
       start_new, review, amend, defer_until, defer_tomorrow, master,
       suspend, resume, summary, ladder, days, day, severity, band_queue,
-      cells, answered_today_by_band, start_new_in_band, intervals)
+      cells, answered_today_by_band, start_new_in_band, intervals, place)
       Cell(key, band, level, due_ms, status, position)
       Day(answered, new_remaining)
       Severity(grade, total, in_progress, patched, due, fresh)
@@ -68,7 +68,7 @@ defmodule Oskol.Gleam.Caps.Practice do
      &defer_tomorrow(s, &1, &2), &master(s, &1, &2), &suspend(s, &1, &2), &resume(s, &1, &2),
      &summary(s, &1, &2), &ladder(s, &1), &days(s, &1, &2), &day(s, &1), &severity(s, &1, &2),
      &band_queue(s, &1, &2, &3), &cells(s, &1), &answered_today_by_band(s, &1),
-     &start_new_in_band(s, &1, &2, &3), &intervals/0}
+     &start_new_in_band(s, &1, &2, &3), &intervals/0, &place(s, &1, &2)}
   end
 
   # ---------- The five decks: the grid, today by band, more of one band ----------
@@ -196,6 +196,26 @@ defmodule Oskol.Gleam.Caps.Practice do
 
   # The ladder as Retain is configured: the one list, read where it lives.
   defp intervals, do: Retain.Config.intervals()
+
+  # The introduction order of named cards, and nothing else about them: the
+  # same write `Oskol.Practice.reposition/2` makes.
+  defp place(scope, uid, positions) do
+    case Retain.fetch_user(uid, scope: scope) do
+      {:error, :not_found} ->
+        0
+
+      {:ok, user} ->
+        positions
+        |> Enum.map(fn {key, position} ->
+          {n, _} =
+            from(i in Retain.Item, where: i.user_id == ^user.id and i.key == ^key)
+            |> Oskol.Repo.update_all(set: [position: position])
+
+          n
+        end)
+        |> Enum.sum()
+    end
+  end
 
   # ---------- The two pictures the home draws ----------
   #
@@ -702,14 +722,20 @@ defmodule Oskol.Gleam.Caps.Practice do
     mastered
   end
 
+  # A learner that is not there yet has nothing to pause or un-pause: an
+  # own set emptied before anything was ever saved into it, say.
   defp suspend(scope, uid, keys) do
-    {:ok, %{suspended: suspended}} = Retain.suspend(uid, keys, scope: scope)
-    suspended
+    case Retain.suspend(uid, keys, scope: scope) do
+      {:ok, %{suspended: suspended}} -> suspended
+      {:error, :not_found} -> 0
+    end
   end
 
   defp resume(scope, uid, keys) do
-    {:ok, %{resumed: resumed}} = Retain.resume(uid, keys, scope: scope)
-    resumed
+    case Retain.resume(uid, keys, scope: scope) do
+      {:ok, %{resumed: resumed}} -> resumed
+      {:error, :not_found} -> 0
+    end
   end
 
   # The deck is a database, and a database can be away. A sync that let an

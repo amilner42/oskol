@@ -114,6 +114,26 @@ defmodule Oskol.Reviews do
   end
 
   @doc """
+  One game's row of `stored/1`, or nil: one game's answer and not a whole
+  match's.
+  """
+  def stored_one(game_id, game_number) do
+    from(r in Review,
+      where: r.game_id == ^game_id and r.game_number == ^game_number,
+      select: %{
+        game_number: r.game_number,
+        status: r.status,
+        attempts: r.attempts,
+        response: r.response,
+        error: r.error,
+        rendered: not is_nil(r.report),
+        turns: r.turns
+      }
+    )
+    |> Repo.one()
+  end
+
+  @doc """
   The same rows without either body: where each game's analysis stands, and
   nothing a read has to carry. This is what the index is built from, so
   asking for it is a few hundred bytes off disk however big the answers are.
@@ -534,11 +554,22 @@ defmodule Oskol.Reviews do
   # no containment test ever matches.
   defp mine(user_id), do: [%{"user_id" => user_id}]
 
-  @doc "One game's rendered analysis, or nil."
+  @doc """
+  One game's rendered analysis, or nil, with `every_play` beside its fields:
+  whether the stored answer carries every legal play of each checker play
+  (the generated `game_reviews.every_play`, read without the answer).
+  """
   def report(game_id, game_number) do
     from(r in Review,
       where: r.game_id == ^game_id and r.game_number == ^game_number,
-      select: r.report
+      # One table, so the generated column needs no alias (it has no field
+      # in the schema: nothing writes it).
+      select:
+        fragment(
+          "CASE WHEN ? IS NULL THEN NULL ELSE jsonb_set(?, '{every_play}', to_jsonb(every_play)) END",
+          r.report,
+          r.report
+        )
     )
     |> Repo.one()
   end
@@ -1030,6 +1061,22 @@ defmodule Oskol.Reviews do
   waits that long, and a think that came back empty is tried again.
   """
   def ask(route, body, receive_timeout) when is_binary(route) and is_binary(body) do
+    case ask_status(route, body, receive_timeout) do
+      {:rejected, status, detail} -> {:error, http_error(status, detail)}
+      other -> other
+    end
+  end
+
+  @doc """
+  `ask/3` with the engine's refusals told apart from its failures:
+  `{:ok, body}`, `{:rejected, status, detail}` when the engine answered
+  with a 4xx (it read the question and will not answer *that* question --
+  asking again is pointless, and nothing is wrong with the engine), or
+  `{:error, reason}` for everything else (a 5xx, a timeout, a refused
+  connection). What the analysis board's asker opens its circuit on is
+  only the last. Never raises.
+  """
+  def ask_status(route, body, receive_timeout) when is_binary(route) and is_binary(body) do
     config = Application.get_env(:oskol, :analysis, [])
     url = String.trim_trailing(Keyword.get(config, :url, "http://localhost:18082"), "/")
 
@@ -1050,7 +1097,16 @@ defmodule Oskol.Reviews do
       ]
       |> Keyword.merge(Keyword.get(config, :req_options, []))
 
-    posted(options)
+    case post_raw(options) do
+      {:http, status, body} when status in 400..499 ->
+        {:rejected, status, String.slice(to_string(body), 0, 500)}
+
+      {:http, status, body} ->
+        {:error, http_error(status, body)}
+
+      other ->
+        other
+    end
   rescue
     e -> {:error, Exception.message(e)}
   end
@@ -1104,6 +1160,17 @@ defmodule Oskol.Reviews do
   # A mailbox goes with its process, so here an abandoned reply is abandoned
   # rather than left lying for the next caller.
   defp posted(options) do
+    case post_raw(options) do
+      {:http, status, body} -> {:error, http_error(status, body)}
+      other -> other
+    end
+  end
+
+  defp http_error(status, body), do: "HTTP #{status}: #{String.slice(to_string(body), 0, 500)}"
+
+  # `{:ok, body}` on a 200, `{:http, status, body}` on any other status,
+  # `{:error, reason}` when there was no answer at all.
+  defp post_raw(options) do
     timeout = Keyword.fetch!(options, :receive_timeout)
 
     # Linked, deliberately. The caller owns this request: a queue task killed
@@ -1121,7 +1188,7 @@ defmodule Oskol.Reviews do
         {:ok, body}
 
       {:ok, {:ok, %Req.Response{status: status, body: body}}} ->
-        {:error, "HTTP #{status}: #{String.slice(to_string(body), 0, 500)}"}
+        {:http, status, body}
 
       {:ok, {:error, exception}} ->
         {:error, Exception.message(exception)}

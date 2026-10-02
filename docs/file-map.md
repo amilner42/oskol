@@ -31,7 +31,11 @@ lib/oskol/game/bot.ex           a bot seat's turn: a supervised task asks the ga
 lib/oskol/persistence.ex        games + game_actions tables (seed + action log per room)
 lib/oskol/guests.ex             silent guest identity: guests table (name + prefs)
 lib/oskol/auth.ex               accounts: users + login_tokens, the rows a sign-in spends
-lib/oskol/auth/limiter.ex       the sign-in rate counters (ETS, per node)
+lib/oskol/limiter.ex            the rate counters, sign-in mail's and the analysis
+                                board's (ETS, per node; `allow/1`, `allow_mail/1`)
+lib/oskol/analysis/asker.ex     the analysis board's line to the engine: jobs by
+                                puzzle key, two in flight, twenty waiting, the 60 s
+                                circuit, outcomes in ETS for ten minutes
 lib/oskol/mail.ex               the one mail Oskol sends: the sign-in link and code
 lib/oskol/mailer.ex             Swoosh: Postmark in prod, /dev/mailbox in dev
 lib/oskol_web/plugs/guest_id.ex mints/renews the year-long guest cookie on every visit
@@ -52,8 +56,8 @@ src/oskol/handlers/practice.gleam  a practice session: an account's deck, a gues
                                 browser's timezone, burying one; the five decks
                                 (/papi/practice/decks), a deck's page, its head
                                 (`deck_head`) and the sitemap's sets (`indexed_slugs`)
-src/oskol/practice/catalog.gleam  the five decks side by side: the three tiers and the
-                                sets, each with its wire id and its page slug
+src/oskol/practice/catalog.gleam  the decks side by side: the three tiers, the sets and
+                                an account's own sets, each with its wire id and slug
 src/oskol/practice/cost.gleam   what your mistakes cost in PR: the home's window, minus
                                 their `puzzle_sources` rows by band, and minus the
                                 patched ones (the `analysis.mistake_costs` cap,
@@ -61,20 +65,41 @@ src/oskol/practice/cost.gleam   what your mistakes cost in PR: the home's window
 src/oskol/handlers/puzzles_hub.gleam  TRY ONE: a random puzzle whose answer stands
                                 clear, for a stranger on the practice home
 src/oskol/practice/decks.gleam  the universal sets (openings, replies): the registry,
-                                each set's retain scope, a player's standing, adding one
+                                each set's retain scope, a player's standing, adding one;
+                                an account's own sets (`own`, `find_for`, `enroll_one`)
 src/oskol/practice/openings.gleam  the 15 openings and 315 replies: positions, the
                                 engine request, and when an answer is trusted
 src/oskol/handlers/decks.gleam  /papi/decks: the sets on offer, a session, adding one
 src/oskol/handlers/decks_build.gleam  building the sets from the engine (the operator's
                                 mix oskol.decks.build): only what is missing is asked
+src/oskol/handlers/own_decks.gleam  a player's own sets: make, rename, delete, save a
+                                position (enrolled at once), take one out; private
 src/oskol/caps/decks.gleam      a set's members, its write, and the practice caps over
-                                a retain scope (lib/oskol/gleam/caps/decks.ex)
+                                a retain scope; own sets' rows and membership
+                                (lib/oskol/gleam/caps/decks.ex)
+lib/oskol/own_decks.ex          the `decks` table (own sets) and their membership writes
+lib/oskol_web/controllers/api/own_decks_controller.ex  /papi/decks/mine and
+                                /papi/decks/:id[/puzzles[/:puzzle_id]]
 lib/oskol/practice.ex           those decisions run with the real rows behind them
 lib/oskol/puzzles.ex            puzzles + puzzle_sources/attempts/shares/images tables;
                                 the one write, in one transaction with its marker
+src/oskol/analysis/setup.gleam  the position a player sets up on the analysis board:
+                                the shape and its wire, check's refusals, the puzzle
+                                question and engine turn it asks, flip, and the way
+                                back from a stored question
 src/oskol/puzzles.gleam         a puzzle's stored shape: the question, its canonical
                                 key and id, the answer, the JSON of each column
 src/oskol/puzzles/extract.gleam which turns of a graded game are puzzles
+src/oskol/handlers/analysis.gleam POST/GET /papi/analysis: the cache by key, the
+                                budgets, the refusals, and `store` (an engine answer
+                                kept as an "analysis" puzzle); POST
+                                /papi/analysis/moves, a set-up roll's legal plays
+                                (the puzzle tree, never the engine); its controller is
+                                lib/oskol_web/controllers/api/analysis_controller.ex
+src/oskol/handlers/positions.gleam POST .../rooms/:id/positions: a replay step
+                                written as a puzzle from the game's stored record
+                                and answer (never engine time); its action is
+                                PuzzleController.position
 src/oskol/handlers/puzzles.gleam the puzzle pages: the question, the grade, the
                                  reveal, what an answer does to a deck, the
                                  memory line, a game's own mistakes
@@ -155,6 +180,7 @@ assets/src/Run.elm               a practice run, pure, kept by Main: its source 
                                  from the end card (KEEP GOING, PRACTICE ANYWAY); when
                                  today's set is done (`celebrate`, once a run)
 assets/src/Route.elm             the client routes, mirroring the server's
+                                 (`Analysis` -- /analysis?xgid=&p=)
 assets/src/Api.elm               the /papi envelope + CSRF header
 assets/src/Api/Catalog.elm       the landing pages' data and its decoders
 assets/src/Page/GameLanding.elm  "/" the guest's home page (`home`: the site's bar,
@@ -215,6 +241,29 @@ assets/src/Page/Puzzles.elm      "/puzzles" the practice home: the five decks fr
                                  and four rows; the streak and the day, what the
                                  mistakes cost; a guest's "23 mistakes from your 4
                                  games", a stranger's TRY ONE
+assets/src/Page/Analysis.elm     "/analysis" the analysis board: the brushes, the board
+                                 as `View.viewEdit` draws it (a tap, a right click, a
+                                 long press per point and bar half), the settings
+                                 strip (TO PLAY as checkers with their words), OPENING /
+                                 CLEAR / FLIP, the check line and
+                                 ANALYZE; the doors in (?xgid=, ?p=); the press (the
+                                 plate counting seconds, the poll), the answer's panel
+                                 (`#an-panel`: the best play and the candidate table, or
+                                 the cube's line; a candidate on the board), SHARE /
+                                 OPEN AS PUZZLE, the refusals and TRY AGAIN; playing it
+                                 out: SET UP / PLAY, the puzzle table on a step's legal
+                                 plays, PLAY THIS, ROLL FOR ME / PICK A ROLL / DOUBLE?,
+                                 the cube's choices, the strip locked in PLAY, the
+                                 line (`#an-line`) and its plates
+assets/src/Api/Analysis.elm      POST /papi/analysis and GET /papi/analysis/:key: the
+                                 status decoder, the reveal ({best, top, cube, n_legal,
+                                 levels}, through the puzzle reveal's own decoders) and
+                                 a refusal's `retry_after_s`; POST /papi/analysis/moves
+                                 (`moves`, `movesLevel`)
+assets/src/Ui/Candidates.elm     the engine's candidate table (`.rp-top`, `data-rank`
+                                 rows: move and its mark, equity, win, gam+, gam-), one
+                                 renderer for the replay, the puzzle reveal and the
+                                 analysis board; each page says what its rows do
 assets/src/Page/Practice.elm     "/practice/<slug>" one deck's page: the card at page
                                  size, the ladder in words, what is due, the month,
                                  and for a tier what it cost
@@ -264,11 +313,23 @@ assets/src/Games/Backgammon/Replay.elm  the record and reviews as the replay rea
                                  the engine's cube call is read once here, into `Optimal`
                                  (no double, double/take, double/pass, or a word a later
                                  engine wrote), and its answer into `Response`
+assets/src/Games/Backgammon/Setup.elm   a position set up on the analysis board: the
+                                 twin of src/oskol/analysis/setup.gleam (its wire shape,
+                                 `check`'s sentences), `opening`, `empty`, `flip`, a
+                                 puzzle as its page shows it (`fromQuestion`), a replay
+                                 step's decision (`fromReplay`, OPEN IN ANALYSIS), the
+                                 board the slab draws for it (`snapshot`), and a line's
+                                 next position (`Chosen`, `next`, `withBoard`)
+assets/src/Games/Backgammon/Xgid.elm    eXtreme Gammon's position id in and out of a
+                                 Setup, pinned by vectors (XgidTest); the field meanings,
+                                 checked against gnubg, in docs/analysis.md; the server
+                                 never reads one
 assets/src/Games/Backgammon/Words.elm   the engine's verdict in words and numbers, pure:
                                  the move's two sentences, the cube's from either side,
                                  the three equities with the call in ink, the chance cells
-                                 and grade tags. The replay reads it and the puzzle
-                                 reveal will; `tooGood` is the twin of Gleam's
+                                 and grade tags, the best play on its own
+                                 (`bestInWords`). The replay, the puzzle reveal and the
+                                 analysis board read it; `tooGood` is the twin of Gleam's
                                  `oskol/puzzles.too_good` and moves with it
 assets/src/Ui/Dialog.elm         the one dialog frame both homes open (JOIN GAME, SIGN
                                  IN, CREATE GAME, LIVE GAMES): a rounded sheet, the
@@ -299,10 +360,18 @@ assets/src/Page/Login.elm        that page: confirm, the win, expired (a fresh m
 assets/src/Ui/Username.elm       a new account's username on the win, and changing it
 assets/src/Ui/Identity.elm       the guest / account badge beside every name
 src/oskol/guests/username.gleam  which usernames a new account tries, in order
+assets/src/Ui/SaveToSet.elm      SAVE's sheet, from the analysis board and a puzzle's
+                                 reveal: your sets with checks, New set, the one line,
+                                 a guest's sign-in
 assets/src/Ui/SignIn.elm         signing in, the one component every entry embeds:
                                  email -> "Check your email" + six digits -> the win
 assets/src/Api/Auth.elm          /papi/auth/* and /papi/me for the client
 playwright/test-accounts/test.js the whole sign-in flow in three browsers
 playwright/test-home/test.js     the signed-in home end to end (setup.exs makes the
                                  account and its graded games)
+playwright/test-analysis/        the analysis board's smoke, four parts (setup.exs: the
+                                 stand-in engine; account.exs: an account with no sets)
+playwright/review-analysis/      the Analysis milestone's screenshots at four sizes
+                                 (setup.exs: the seeded match, the universal sets, an
+                                 account; run.sh: its own port and database)
 ```

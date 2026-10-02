@@ -40,6 +40,16 @@ Anybody on a set they have not added gets its size, the grid all paper,
 and START (an account) or TRY (anybody else, with "Sign in to keep your
 place in these.").
 
+**An account's own set** (`/practice/<id>`, its owner's only; anybody
+else gets the same 404 as a set that is not there) is the same card --
+OPEN ANALYSIS in the button's slot while there is nothing in it -- and
+**MANAGE** under it: the name, renamed in place (`PATCH /papi/decks/:id`);
+its positions as a list, each a small still board of the question, the
+prompt, where it stands ("to learn", "level 2", "mastered") and an x that
+takes it out (`DELETE /papi/decks/:id/puzzles/:pid`); and DELETE SET,
+which asks once in place ("Delete Openings I like? ...", YES, DELETE) and
+then goes back to `/puzzles`.
+
 A run started here comes back here (the shell's `next`), so I'M DONE and
 a guest's sign-in at the end of a run land on this page again.
 
@@ -52,10 +62,13 @@ card's slots are fixed, as on the practice home).
 import Api
 import Api.Decks as Decks
 import Api.Practice as Practice
-import Api.PracticeDecks as PracticeDecks exposing (Deck, Kind(..), Page)
+import Api.PracticeDecks as PracticeDecks exposing (Deck, Kind(..), Member, Page)
+import Games.Backgammon.Puzzle as Puzzle
+import Games.Backgammon.Setup as Setup exposing (Ask(..), Color(..))
+import Games.Backgammon.View as Board
 import Html exposing (Html)
 import Html.Attributes as Attr exposing (class, id)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onClick, onInput, onSubmit)
 import Route
 import Session exposing (Session)
 import Task
@@ -81,7 +94,26 @@ type alias Model =
     , signIn : Maybe SignIn.Model
     , note : Maybe String -- what the last press came back with, when it was not a run
     , now : Maybe Time.Posix -- for "next due in 3 days"
+    , manage : Manage
     }
+
+
+{-| MANAGE, on an own set's page: the name being typed, the presses on
+their way, and the delete's confirm.
+-}
+type alias Manage =
+    { name : String
+    , renaming : Bool
+    , removing : List String -- the positions on their way out
+    , confirming : Bool -- DELETE SET was pressed: the confirm is up
+    , deleting : Bool
+    , line : Maybe String -- why the last press did not go through, or "Renamed."
+    }
+
+
+noManage : Manage
+noManage =
+    { name = "", renaming = False, removing = [], confirming = False, deleting = False, line = Nothing }
 
 
 type Loadable
@@ -98,6 +130,16 @@ type Msg
     | GotSetRun Deck Action (Result Api.Error Decks.Session)
     | OpenedSignIn
     | SignInMsg SignIn.Msg
+    | RenameInput String
+    | SubmittedRename
+    | GotRenamed (Result Api.Error Decks.OwnSet)
+    | PressedRemove String
+    | GotRemoved String (Result Api.Error Decks.OwnSet)
+    | PressedDelete
+    | CancelledDelete
+    | ConfirmedDelete
+    | GotDeleted (Result Api.Error ())
+    | NoOp
 
 
 {-| What the shell does for the page: the practice home's own, so a run
@@ -122,6 +164,7 @@ init session config =
       , signIn = Nothing
       , note = Nothing
       , now = Nothing
+      , manage = noManage
       }
     , Cmd.batch
         [ PracticeDecks.fetchDeck session config.slug GotPage
@@ -162,7 +205,7 @@ visitorOf page =
             else
                 Stranger
 
-        ( Nothing, Set ) ->
+        ( Nothing, _ ) ->
             Stranger
 
 
@@ -179,7 +222,24 @@ update : Msg -> Model -> ( Model, Cmd Msg, Out )
 update msg model =
     case msg of
         GotPage (Ok page) ->
-            ( { model | page = Loaded page }, Cmd.none, NoOut )
+            let
+                manage =
+                    model.manage
+            in
+            ( { model
+                | page = Loaded page
+                , manage =
+                    -- The name field starts as the name, and follows a
+                    -- refetch unless the player is typing in it.
+                    if manage.name == "" || not (isLoaded model.page) then
+                        { manage | name = page.deck.name }
+
+                    else
+                        manage
+              }
+            , Cmd.none
+            , NoOut
+            )
 
         GotPage (Err err) ->
             case model.page of
@@ -284,6 +344,133 @@ update msg model =
                 Nothing ->
                     ( model, Cmd.none, NoOut )
 
+        RenameInput name ->
+            withManage (\m -> { m | name = name, line = Nothing }) model
+
+        SubmittedRename ->
+            case model.page of
+                Loaded page ->
+                    if model.manage.renaming || String.trim model.manage.name == page.deck.name then
+                        ( model, Cmd.none, NoOut )
+
+                    else
+                        let
+                            ( next, _, _ ) =
+                                withManage (\m -> { m | renaming = True, line = Nothing }) model
+                        in
+                        ( next, Decks.renameOwn model.session page.deck.id model.manage.name GotRenamed, NoOut )
+
+                _ ->
+                    ( model, Cmd.none, NoOut )
+
+        GotRenamed (Ok set) ->
+            let
+                ( next, _, _ ) =
+                    withManage (\m -> { m | renaming = False, name = set.name, line = Just "Renamed." }) model
+            in
+            ( { next | page = mapPage (\page -> { page | deck = renamed set.name page.deck }) next.page }, Cmd.none, NoOut )
+
+        GotRenamed (Err err) ->
+            withManage (\m -> { m | renaming = False, line = Just (Api.errorMessage err) }) model
+
+        PressedRemove puzzleId ->
+            case model.page of
+                Loaded page ->
+                    if List.member puzzleId model.manage.removing then
+                        ( model, Cmd.none, NoOut )
+
+                    else
+                        let
+                            ( next, _, _ ) =
+                                withManage (\m -> { m | removing = puzzleId :: m.removing, line = Nothing }) model
+                        in
+                        ( next, Decks.removePuzzle model.session page.deck.id puzzleId (GotRemoved puzzleId), NoOut )
+
+                _ ->
+                    ( model, Cmd.none, NoOut )
+
+        -- Out: the row goes, and the page is read again for the card's
+        -- numbers (its grid, its ring, its state line).
+        GotRemoved puzzleId (Ok _) ->
+            let
+                ( next, _, _ ) =
+                    withManage (\m -> { m | removing = List.filter ((/=) puzzleId) m.removing }) model
+            in
+            ( { next | page = mapPage (withoutMember puzzleId) next.page }
+            , PracticeDecks.fetchDeck model.session model.slug GotPage
+            , NoOut
+            )
+
+        GotRemoved puzzleId (Err err) ->
+            withManage (\m -> { m | removing = List.filter ((/=) puzzleId) m.removing, line = Just (Api.errorMessage err) }) model
+
+        PressedDelete ->
+            withManage (\m -> { m | confirming = True, line = Nothing }) model
+
+        CancelledDelete ->
+            withManage (\m -> { m | confirming = False }) model
+
+        ConfirmedDelete ->
+            case model.page of
+                Loaded page ->
+                    if model.manage.deleting then
+                        ( model, Cmd.none, NoOut )
+
+                    else
+                        let
+                            ( next, _, _ ) =
+                                withManage (\m -> { m | deleting = True }) model
+                        in
+                        ( next, Decks.deleteOwn model.session page.deck.id GotDeleted, NoOut )
+
+                _ ->
+                    ( model, Cmd.none, NoOut )
+
+        -- Gone: back to the practice home, where it no longer is.
+        GotDeleted (Ok ()) ->
+            ( model, Cmd.none, Go (Route.href Route.puzzles) )
+
+        GotDeleted (Err err) ->
+            withManage (\m -> { m | deleting = False, confirming = False, line = Just (Api.errorMessage err) }) model
+
+        NoOp ->
+            ( model, Cmd.none, NoOut )
+
+
+withManage : (Manage -> Manage) -> Model -> ( Model, Cmd Msg, Out )
+withManage f model =
+    ( { model | manage = f model.manage }, Cmd.none, NoOut )
+
+
+isLoaded : Loadable -> Bool
+isLoaded loadable =
+    case loadable of
+        Loaded _ ->
+            True
+
+        _ ->
+            False
+
+
+mapPage : (Page -> Page) -> Loadable -> Loadable
+mapPage f loadable =
+    case loadable of
+        Loaded page ->
+            Loaded (f page)
+
+        other ->
+            other
+
+
+renamed : String -> Deck -> Deck
+renamed name deck =
+    { deck | name = name }
+
+
+withoutMember : String -> Page -> Page
+withoutMember puzzleId page =
+    { page | members = Maybe.map (List.filter (\m -> m.id /= puzzleId)) page.members }
+
 
 {-| What each button asks the server for: the practice home's own
 requests, so the same press is the same run from either page.
@@ -303,23 +490,28 @@ request model deck which =
         ( Tier, PracticeAnyway ) ->
             Just (PracticeDecks.practiceAnyway model.session deck.id (GotTierRun deck which))
 
-        ( Set, Start ) ->
-            Just (Decks.join model.session deck.id model.tz (GotSetRun deck which))
-
-        ( Set, KeepGoing ) ->
-            Just (PracticeDecks.keepGoingSet model.session deck.id (GotSetRun deck which))
-
-        ( Set, PracticeAnyway ) ->
-            Just (PracticeDecks.practiceAnywaySet model.session deck.id (GotSetRun deck which))
-
-        ( Set, NoAction ) ->
-            Nothing
-
-        ( Set, _ ) ->
-            Just (Decks.fetchSession model.session deck.id (GotSetRun deck which))
-
         ( Tier, _ ) ->
             Nothing
+
+        -- A set, the universal ones and an account's own alike.
+        ( _, Start ) ->
+            Just (Decks.join model.session deck.id model.tz (GotSetRun deck which))
+
+        ( _, KeepGoing ) ->
+            Just (PracticeDecks.keepGoingSet model.session deck.id (GotSetRun deck which))
+
+        ( _, PracticeAnyway ) ->
+            Just (PracticeDecks.practiceAnywaySet model.session deck.id (GotSetRun deck which))
+
+        ( _, NoAction ) ->
+            Nothing
+
+        -- A link, not a press.
+        ( _, OpenAnalysis ) ->
+            Nothing
+
+        ( _, _ ) ->
+            Just (Decks.fetchSession model.session deck.id (GotSetRun deck which))
 
 
 nothingMoreLine : String
@@ -445,7 +637,184 @@ body model page =
 
           else
             signInLine model deck
+        , case ( deck.kind, page.members ) of
+            ( Own, Just members ) ->
+                viewManage model page members
+
+            _ ->
+                Html.text ""
         ]
+
+
+{-| MANAGE, under an own set's card: the name, the positions, DELETE SET.
+-}
+viewManage : Model -> Page -> List Member -> Html Msg
+viewManage model page members =
+    let
+        manage =
+            model.manage
+
+        started id =
+            page.cells
+                |> List.filter (\cell -> cell.id == id)
+                |> List.any (\cell -> cell.status == "active")
+    in
+    Html.section [ class "dp-manage", id "practice-manage" ]
+        [ Html.h3 [ class "dp-head" ] [ Html.text "Manage" ]
+        , Html.form [ class "dp-rename", id "practice-rename-form", onSubmit SubmittedRename ]
+            [ Html.label [ class "sr-only", Attr.for "practice-rename" ] [ Html.text "The set's name" ]
+            , Html.input
+                [ Attr.type_ "text"
+                , id "practice-rename"
+                , Attr.value manage.name
+                , Attr.maxlength 60
+                , Attr.attribute "autocomplete" "off"
+                , class "q-field dp-rename-field"
+                , onInput RenameInput
+                ]
+                []
+            , Html.button
+                [ Attr.type_ "submit"
+                , id "practice-rename-save"
+                , class "q-btn plain dp-rename-save pixel"
+                , Attr.disabled (manage.renaming || String.trim manage.name == page.deck.name)
+                ]
+                [ Html.text "RENAME" ]
+            ]
+        , Html.p [ class "dp-manage-line", id "practice-manage-line", Attr.attribute "aria-live" "polite" ]
+            [ Html.text (Maybe.withDefault "" manage.line) ]
+        , if List.isEmpty members then
+            Html.p [ class "dp-members-empty", id "practice-members-empty" ] [ Html.text DeckWords.emptyOwnLine ]
+
+          else
+            Html.ul [ class "dp-members", id "practice-members" ]
+                (List.map
+                    (\member ->
+                        viewMember model
+                            { member = member
+                            , word =
+                                DeckWords.levelWord
+                                    { level = member.level
+                                    , started = started member.id
+                                    , patchedLevel = page.patchedLevel
+                                    }
+                            , removing = List.member member.id manage.removing
+                            }
+                    )
+                    members
+                )
+        , Html.div [ class "dp-delete", id "practice-delete-slot" ]
+            (if manage.confirming then
+                [ Html.p [ class "dp-delete-question", id "practice-delete-question" ]
+                    [ Html.text (DeckWords.deleteQuestion page.deck.name) ]
+                , Html.div [ class "dp-delete-row" ]
+                    [ Html.button
+                        [ Attr.type_ "button"
+                        , id "practice-delete-yes"
+                        , class "q-btn dp-delete-yes pixel"
+                        , Attr.disabled manage.deleting
+                        , onClick ConfirmedDelete
+                        ]
+                        [ Html.text "YES, DELETE" ]
+                    , Html.button
+                        [ Attr.type_ "button"
+                        , id "practice-delete-no"
+                        , class "q-btn plain dp-delete-no pixel"
+                        , onClick CancelledDelete
+                        ]
+                        [ Html.text "KEEP IT" ]
+                    ]
+                ]
+
+             else
+                [ Html.button
+                    [ Attr.type_ "button"
+                    , id "practice-delete"
+                    , class "q-btn plain dp-delete-btn pixel"
+                    , onClick PressedDelete
+                    ]
+                    [ Html.text "DELETE SET" ]
+                ]
+            )
+        ]
+
+
+viewMember : Model -> { member : Member, word : String, removing : Bool } -> Html Msg
+viewMember model row =
+    let
+        member =
+            row.member
+    in
+    Html.li [ class "dp-member", id ("practice-member-" ++ member.id), Attr.attribute "data-puzzle" member.id ]
+        [ Html.a
+            [ Attr.href (Route.href (Route.puzzle member.id))
+            , class "dp-member-open"
+            , Attr.attribute "aria-label" ("Open this puzzle: " ++ member.prompt)
+            ]
+            [ Html.span [ class "dp-member-board", Attr.attribute "aria-hidden" "true" ]
+                [ case member.question of
+                    Just question ->
+                        Board.viewStill NoOp (stillOf model member.kind question)
+
+                    Nothing ->
+                        Html.text ""
+                ]
+            , Html.span [ class "dp-member-text" ]
+                [ -- a roll ("3-1") never breaks at its hyphen
+                  Html.span [ class "dp-member-prompt" ] [ Html.text (String.replace "-" "‑" member.prompt) ]
+                , Html.span [ class "dp-member-level" ] [ Html.text row.word ]
+                ]
+            ]
+        , Html.button
+            [ Attr.type_ "button"
+            , id ("practice-remove-" ++ member.id)
+            , class "dp-member-remove"
+            , Attr.disabled row.removing
+            , Attr.attribute "aria-label" "Take this position out of the set"
+            , Attr.title "Take it out"
+            , onClick (PressedRemove member.id)
+            ]
+            [ Html.text "✕" ]
+        ]
+
+
+{-| A position as its puzzle page shows it, as a still board: White, the
+one asked, at the bottom.
+-}
+stillOf : Model -> String -> Puzzle.Question -> Board.StillBoard
+stillOf model kind question =
+    let
+        setup =
+            Setup.fromQuestion kind question
+    in
+    { players =
+        [ { id = Setup.colorId White, name = "", color = "white" }
+        , { id = Setup.colorId Black, name = "", color = "black" }
+        ]
+    , viewer = Setup.colorId White
+    , scores = []
+    , cube = True
+    , theme = Session.pref "backgammon_theme" model.session |> Maybe.withDefault Board.defaultTheme
+    , key = 0
+    , position = Setup.snapshot setup
+    , mover = Just (Setup.colorId White)
+    , dice =
+        case setup.ask of
+            Move (Just ( a, b )) ->
+                [ a, b ]
+
+            _ ->
+                []
+    , landed = []
+    , offer =
+        case setup.ask of
+            Take ->
+                Just (Setup.colorId Black)
+
+            _ ->
+                Nothing
+    , accounts = Nothing
+    }
 
 
 {-| Under the card, for a deck the player has: where its positions
@@ -465,7 +834,7 @@ details model page =
                 Tier ->
                     Mistakes.ladderLine
 
-                Set ->
+                _ ->
                     DeckWords.ladderLine
             )
                 { patchedLevel = page.patchedLevel, started = ladder page }
@@ -548,7 +917,7 @@ signInLine model deck =
                             Tier ->
                                 "Sign in and we'll keep this: these come back until you stop making them."
 
-                            Set ->
+                            _ ->
                                 DeckWords.endSignIn
                         )
                     ]
@@ -567,6 +936,6 @@ signInLine model deck =
                     Tier ->
                         [ Html.text "Signed in, these come back until you stop making them. ", open ]
 
-                    Set ->
+                    _ ->
                         [ open, Html.text DeckWords.signInRest ]
                 )

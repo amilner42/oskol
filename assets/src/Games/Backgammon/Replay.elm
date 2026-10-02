@@ -42,6 +42,7 @@ module Games.Backgammon.Replay exposing
     , playerNamed
     , responseFromEngine
     , recordDecoder
+    , scoresBefore
     , stepCount
     , stillAt
     , stillForCandidate
@@ -98,8 +99,12 @@ type alias Player =
     { id : String, name : String, color : String }
 
 
+{-| One game of the match. `crawford` is the server's word that this is the
+Crawford game (`backgammon/record.crawford_game`); an answer from before
+it was sent reads as not.
+-}
 type alias Game =
-    { number : Int, entries : List Entry }
+    { number : Int, crawford : Bool, entries : List Entry }
 
 
 type Entry
@@ -139,8 +144,9 @@ playerDecoder =
 
 gameDecoder : Decoder Game
 gameDecoder =
-    D.map2 Game
+    D.map3 Game
         (D.field "number" D.int)
+        (D.oneOf [ D.field "crawford" D.bool, D.succeed False ])
         (D.field "entries" (D.list entryDecoder |> D.map (List.filterMap identity)))
 
 
@@ -217,6 +223,28 @@ playerAtStart record id =
         |> List.head
         |> Maybe.map .name
         |> Maybe.withDefault "?"
+
+
+
+{-| The match score as the game began: the result of the game before it, or
+nothing yet (everybody at 0).
+-}
+scoresBefore : Record -> Game -> List ( String, Int )
+scoresBefore record game =
+    record.games
+        |> List.filter (\g -> g.number < game.number)
+        |> List.filterMap
+            (\g ->
+                case List.reverse g.entries of
+                    (ResultEntry r) :: _ ->
+                        Just r.scores
+
+                    _ ->
+                        Nothing
+            )
+        |> List.reverse
+        |> List.head
+        |> Maybe.withDefault []
 
 
 
@@ -384,6 +412,7 @@ type alias Review =
     { players : List Totals
     , turns : List TurnReview
     , levels : Maybe { moves : String, cube : String } -- the engine's search depth, "4ply"
+    , everyPlay : Bool -- the stored answer carries every legal play of each roll (what a share needs)
     }
 
 
@@ -581,7 +610,7 @@ statusOf s =
 
 reviewDecoder : Decoder Review
 reviewDecoder =
-    D.map3 Review
+    D.map4 Review
         (D.field "players" (D.list totalsDecoder))
         (D.field "turns" (D.list turnReviewDecoder))
         (D.oneOf
@@ -595,6 +624,10 @@ reviewDecoder =
             , D.succeed Nothing
             ]
         )
+        -- Beside the rendered report, from the stored answer itself
+        -- (`Oskol.Reviews.report/2`); a review that does not say is taken
+        -- at its word.
+        (D.oneOf [ D.field "every_play" D.bool, D.succeed True ])
 
 
 totalsDecoder : Decoder Totals
