@@ -423,6 +423,11 @@ openRoute url oldModel =
                 }
                 |> wrap model Play PlayMsg
 
+        -- The analysis board's page lands with the editor
+        -- (analysis-page-editor); until then the route resolves to nothing.
+        Just (Route.Analysis _ _) ->
+            ( { model | page = NotFound }, Cmd.none )
+
         Just Route.Puzzles ->
             Page.Puzzles.init model.session { tz = model.tz }
                 |> wrap model Puzzles PuzzlesMsg

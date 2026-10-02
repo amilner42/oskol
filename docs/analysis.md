@@ -76,3 +76,103 @@ storing a puzzle, sharing) goes through it. Pure; tests in
   words, from `to_play`'s side and in real colours: "Match play, 5 away
   against 1, Crawford. Cube at 2, Black's." The words are `situation`,
   which `handlers/puzzles.describe` now calls too.
+
+## The setup in the client (`assets/src/Games/Backgammon/Setup.elm`)
+
+The editor's record, field for field the Gleam `Setup` and the same JSON
+(`toJson`, `decoder`). Two differences the client needs:
+`Ask = Move (Maybe (Int, Int)) | Double | Take`, where `Move Nothing` is the
+Gleam `Move(no_roll)` (no roll picked; `dice: null`), and
+`fromQuestion : String -> Puzzle.Question -> Setup` takes the puzzle's
+`kind`, because the question the page is sent (already `shown`, the solver
+as White) cannot tell a double from a take on a centered cube. The match
+comes back exactly as `from_question` builds it. `check` gives the Gleam
+`check`'s sentences word for word and in the same order (the constants are
+exported under the Gleam names in camel case) and is the fixed line under
+the board; the server stays the authority. The one refusal it cannot give
+is the dance ("That roll has no legal moves here", from `turn`): that
+needs a move generator, and the client has none. Dice are kept high die
+first.
+
+## The position id (`assets/src/Games/Backgammon/Xgid.elm`)
+
+XGID, eXtreme Gammon's position id, because it is what bgonline, Reddit, XG
+and GNU Backgammon all read and write. `encode : Setup -> String`,
+`decode : String -> Result String Setup`; every refusal is the one
+sentence "That is not a position id". It is formatting, not rules: **the
+server never reads an XGID**, and a position travels to it in the JSON
+above.
+
+```
+XGID=-b----E-C---eE---c-e----B-:0:0:1:31:0:0:1:0:10
+     position:cube exponent:cube owner:turn:dice:X score:O score:rule flags:match length:max cube exponent
+```
+
+**Sources.** eXtreme Gammon's own description page no longer exists (404).
+The fields were checked against GNU Backgammon 1.08's importer, `SetXGID`
+in `set.c` and `PositionFromXG` in `positionid.c`, and against ids XG users
+publish: the opening string as bug-gnubg and xgid2anki quote it;
+`XGID=--A-bBBBB--BbB-----dbbc-B-:0:0:1:31:6:4:1:7:10` (backgammonforums,
+"How to post positions": a match to 7 at 6-4, Crawford);
+`XGID=-b----E-C---eE---b-d-b--B-:0:0:1:46:0:0:3:0:10` (bug-gnubg, 2010-06:
+money with Jacoby and beavers, the low die first). The R package
+lassehjorthmadsen/backgammon (`posid2xgid.R`) agrees on the cube exponent
+and the `D` turn.
+
+- **position**: 26 characters, always from X's side, whoever is on roll.
+  Index 0 is O's bar, 1..24 are the points numbered for X (X moves
+  24 -> 1), and 25 is X's bar. `-` is empty, `A`..`P` one to sixteen of
+  X's checkers, `a`..`p` O's. Oskol's White is X (at the bottom, the same
+  numbering) and Black is O. Borne off is whatever is missing from fifteen.
+- **cube exponent**: the cube is 2 to that power. **cube owner**: 0
+  centered, 1 X, -1 O.
+- **turn**: 1 X, -1 O, the player on roll.
+- **With dice `D` (a double offered), the turn names the doubler**, not the
+  player asked to take (gnubg: `fTurn = !fMove`). **The cube fields are the
+  cube before the double.** So White asked to take Black's redouble from 2
+  is `:1:-1:-1:D:`. This is the field most easily got backwards.
+- **dice**: two digits for a roll (either order read, high die first
+  written). `00` means nobody has rolled yet (the player may double). `D` is
+  above. `B` and `R` (beaver, raccoon) are refused.
+- **scores**: X's, then O's, in points won. Money play writes `0:0`, and
+  they are read past there.
+- **rule flags**: in a match, 1 is the Crawford game and 0 is not (anything
+  else is refused, as gnubg does). In money play, bit 1 is Jacoby and bit 2
+  is beavers.
+- **match length**: 0 is money play. **max cube exponent**: XG writes 10
+  and gnubg ignores it. We write 10 and read past it (it must still be a
+  number).
+
+Oskol's choices on top of the format:
+
+- Unlimited play writes flags 1 and length 0. Any money id is read as
+  unlimited play (Jacoby, no beavers), the only money game Oskol plays.
+- `Move Nothing` writes `00`. `00` reads back as `Double` where the player
+  on roll could double (`Setup.canDouble`), and as `Move Nothing` ("Pick a
+  roll") where they could not, since to XG it only says nobody has rolled.
+- Refused:
+  - a wrong length or field count
+  - a character outside the alphabet
+  - X on O's bar, or O on X's
+  - more than 15 of a color
+  - a die outside 1..6
+  - a cube owner or turn outside the set
+  - `B` or `R`
+  - a cube past 64 (the editor's cube stops there)
+  - a field that is not a number
+
+  A score at or past the match length, or Crawford with nobody one away,
+  decodes, and `check` says what is wrong.
+- `decode (encode s) == s` for every setup `check` accepts (`XgidTest`,
+  a fuzzer over `SetupFuzz`).
+
+## The route
+
+`Route.Analysis (Maybe String) (Maybe String)` is `/analysis?xgid=&p=`,
+parsed before the `/:slug` catch-alls. The builders are `Route.analysis`,
+`Route.analysisXgid : Setup -> Route` (through `Xgid.encode`) and
+`Route.analysisPuzzle : String -> Route`. `href` percent-encodes the id's
+`=` and `:`, and `fromUrl` reads them back. It also reads a hand-typed
+`?xgid=XGID=...` with a bare `=` the same way; `Url.Parser.Query` alone
+would drop it. Main shows the not-found page for the route until the page
+lands (analysis-page-editor).
