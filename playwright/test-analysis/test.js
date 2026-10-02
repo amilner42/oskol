@@ -577,6 +577,10 @@ async function verdict(browser, errors) {
     if ((await text(page, '#an-proposed')) !== "ENGINE'S #2") throw new Error('the second play is not named on the board');
     if ((await board()) === asSetUp) throw new Error('the second play did not go on the board');
     await still('a candidate on the board');
+    // The dice dim while the play they made is on the board (after their fade).
+    await page.waitForTimeout(300);
+    const dim = await page.$$eval('#an-board .die', (ds) => ds.map((d) => Number(getComputedStyle(d).opacity)));
+    if (!dim.length || dim.some((o) => o > 0.6)) throw new Error(`the dice are not dimmed under a candidate: ${JSON.stringify(dim)}`);
     await page.screenshot({ path: `${SHOTS}/analysis-desktop-06-candidate.png` });
     await page.click('#an-dice-toggle');
     if (await page.$('#an-proposed')) throw new Error('the dice did not take the play back');
