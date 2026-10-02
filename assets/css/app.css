@@ -1166,9 +1166,14 @@ a.q-card:hover, a.q-card:focus-visible {
   }
 }
 /* A tablet held upright is sized by its width: the column comes out of the
-   twelve points' share of it, shared by all twelve. */
+   twelve points' share of it, shared by all twelve. On a big board the tray
+   stands apart from the felt by a full width of the frame's wood, so it
+   reads as a tray on the rail, the way a real board has it, and not as one
+   more strip of the home board; a sideways phone keeps it close (4px, set
+   in its own layout below), where the rail is narrow and the board small. */
 @media (min-width: 640px) {
   .bg-page {
+    --bg-tray-gap: var(--bg-frame-w);
     --bg-pw: calc((var(--bg-slab-w) - 2 * var(--bg-frame-w) - var(--bg-bar-w) - var(--bg-tray-gap) - 2 * 6px - 10 * 0.25rem) / 12.8);
   }
 }
@@ -1521,15 +1526,18 @@ a.bg-match-door:hover { background: var(--paper-2); }
     /* Air above and below the board, so a sideways phone does not read as
        a board jammed against the bezel. */
     --bg-edge: 10px;
+    --bg-tray-gap: 4px;
     /* The height is what drives the board -- unless the screen is too
        narrow to be proportionate to it (a squarish landscape), in which
        case the width has the last word and the board merely fits. The
        ratio is the board's own: a point is 0.21 of its height wide, and
        the board is 12 points, the bar and its frame across, with the
-       chrome's column to fit beside it. */
+       chrome's column to fit beside it. The tray column at the home boards'
+       end is 0.8 of a point and 4px of wood more: 0.168 of the height, so
+       3.07 rather than 2.9, and the chrome keeps the width it had. */
     --bg-point-h: min(
       calc((var(--page-h) - var(--bg-band-h) - 2 * var(--bg-lip) - 2 * var(--bg-edge)) / 2),
-      calc((100vw - 10rem) / 2.9)
+      calc((100vw - 10rem - 4px) / 3.07)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
     --bg-half: calc(var(--bg-pw) * 6 + 5px + 6px); /* six points, their hairlines, the felt's inset */
@@ -1938,11 +1946,11 @@ a.bg-match-door:hover { background: var(--paper-2); }
     --bg-drop: 1.5rem;       /* room under the slab for its shadow */
     --bg-scrub-h: 2.6rem;    /* the arrows under the board */
     /* The width cap is the board's own ratio (a point is 0.21 of its
-       height wide; 12 points, the bar and the frame across) against the
-       window less the page's padding. */
+       height wide; 12 points, the bar, the tray column and the frame
+       across) against the window less the page's padding. */
     --bg-point-h: min(
       calc((var(--page-h) - var(--bg-page-py) - var(--bg-header-h) - var(--bg-bars-h) - var(--bg-band-h) - 2 * var(--bg-lip) - var(--bg-drop) - var(--bg-scrub-h)) / 2),
-      calc((100vw - 8rem) / 2.9)
+      calc((100vw - 8rem - 14px) / 3.07)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
     --bg-half: calc(var(--bg-pw) * 6 + 5 * 0.25rem + 6px); /* six points, their sm:gap-1, the felt's inset */
@@ -1971,6 +1979,8 @@ a.bg-match-door:hover { background: var(--paper-2); }
   }
   .bg-page .player-bar { padding: 10px 16px; }
   .bg-page .bg-tray { --holder-h: 1.4rem; --stick-w: 4px; }
+  .bg-page { --off-pad: 3px; --off-gap: 2px; }
+  .bg-page .off-plate { font-size: 9px; padding: 3px; }
   /* The dice grow with the board, within reason. */
   .bg-page .bg-band .die { --die-size: clamp(2.5rem, calc(var(--bg-pw) * 0.7), 3.5rem); }
   .bg-page .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }

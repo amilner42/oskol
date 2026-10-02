@@ -1210,6 +1210,152 @@ suite =
                             Expect.fail "no backgammon fixture"
              ]
             )
+        , describe "the tray column at the end of the home boards"
+            (let
+                -- the same room from either seat: p1 sits white, p2 black,
+                -- so the points are laid out in the two orientations
+                seat viewer =
+                    FixtureLoader.byGame "backgammon"
+                        |> List.head
+                        |> Maybe.andThen (\f -> Dict.get viewer f.initial)
+
+                other viewer =
+                    if viewer == "p1" then
+                        "p2"
+
+                    else
+                        "p1"
+
+                -- the viewer may bear off with a 6-2, three off already,
+                -- and the other side has five off
+                bearing viewer u =
+                    { u | legal = [ bearOffSchema [ 6, 2 ], moveSchema "6" "off" 6, moveSchema "2" "off" 2 ] }
+                        |> withDice [ 6, 2 ]
+                        |> withOffCount viewer 3
+                        |> withOffCount (other viewer) 5
+
+                mine viewer =
+                    if viewer == "p1" then
+                        "white"
+
+                    else
+                        "black"
+
+                -- the record's last turn: `player` played `moves`
+                lastTurn player moves u =
+                    let
+                        side =
+                            E.object [ ( "points", E.list E.int (List.repeat 24 0) ), ( "bar", E.int 0 ), ( "off", E.int 0 ), ( "pips", E.int 0 ) ]
+
+                        entry =
+                            E.object
+                                [ ( "kind", E.string "turn" )
+                                , ( "player", E.string player )
+                                , ( "dice", E.list E.int [ 5, 5 ] )
+                                , ( "moves", E.list E.string moves )
+                                , ( "landed", E.list E.int [] )
+                                , ( "position"
+                                  , E.object
+                                        [ ( "white", side )
+                                        , ( "black", side )
+                                        , ( "cube", E.object [ ( "value", E.int 1 ), ( "owner", E.null ) ] )
+                                        ]
+                                  )
+                                ]
+                    in
+                    { u | scene = u.scene |> withData "record" (E.list identity [ entry ]) |> withData "game_number" (E.int 1) }
+
+                column viewer u =
+                    View.view (ctx viewer u viewInit) |> Query.fromHtml |> Query.find [ class "bg-tray-col" ]
+
+                bothSeats name check =
+                    describe name
+                        (List.map
+                            (\viewer ->
+                                test ("seated as " ++ viewer) <|
+                                    \_ ->
+                                        case seat viewer of
+                                            Just u ->
+                                                check viewer u
+
+                                            Nothing ->
+                                                Expect.fail "no backgammon fixture"
+                            )
+                            [ "p1", "p2" ]
+                        )
+             in
+             [ bothSeats "the column stands on the right, where both home boards are" <|
+                \viewer u ->
+                    column viewer (bearing viewer u) |> Query.has [ class "right", attribute (Html.Attributes.attribute "data-home" "right") ]
+             , bothSeats "the bottom half is the viewer's tray and the top half the other side's, each with its count" <|
+                \viewer u ->
+                    let
+                        col =
+                            column viewer (bearing viewer u)
+                    in
+                    Expect.all
+                        [ \_ -> col |> Query.find [ class "bg-off", class "bottom" ] |> Query.has [ class "mine", attribute (Html.Attributes.attribute "data-count" "3") ]
+                        , \_ -> col |> Query.find [ class "bg-off", class "top" ] |> Query.has [ class "theirs", attribute (Html.Attributes.attribute "data-count" "5") ]
+                        , \_ -> col |> Query.find [ class "off-plate", class "bottom" ] |> Query.has [ text "3" ]
+                        , \_ -> col |> Query.find [ class "off-plate", class "top" ] |> Query.has [ text "5" ]
+                        ]
+                        ()
+             , bothSeats "each half has room for fifteen from the start, filled with as many as are off" <|
+                \viewer u ->
+                    let
+                        col =
+                            column viewer (bearing viewer u)
+                    in
+                    Expect.all
+                        [ \_ -> col |> Query.findAll [ class "off-sliver" ] |> Query.count (Expect.equal 30)
+                        , \_ -> col |> Query.findAll [ class "off-sliver", class "empty" ] |> Query.count (Expect.equal 22)
+                        , \_ -> col |> Query.find [ class "bg-off", class "bottom" ] |> Query.findAll [ class "off-sliver", class "empty" ] |> Query.count (Expect.equal 12)
+
+                        -- in the viewer's colour: white from p1's seat, black from p2's
+                        , \_ ->
+                            col
+                                |> Query.find [ class "bg-off", class "bottom" ]
+                                |> Query.findAll [ class "off-sliver", class (mine viewer) ]
+                                |> Query.count (Expect.equal 3)
+                        ]
+                        ()
+             , bothSeats "an empty tray says no count but keeps its plate's room" <|
+                \viewer u ->
+                    column viewer (bearing viewer u |> withOffCount viewer 0)
+                        |> Query.find [ class "off-plate", class "bottom" ]
+                        |> Query.has [ class "invisible" ]
+             , bothSeats "the viewer's half is the tap that bears off, with the next die" <|
+                \viewer u ->
+                    column viewer (bearing viewer u)
+                        |> Query.find [ class "bg-off", class "mine" ]
+                        |> Event.simulate Event.click
+                        |> Event.toResult
+                        |> Expect.equal (Ok (BearOff 6))
+             , bothSeats "the other side's half answers no tap" <|
+                \viewer u ->
+                    column viewer (bearing viewer u)
+                        |> Query.find [ class "bg-off", class "theirs" ]
+                        |> Event.simulate Event.click
+                        |> Event.toResult
+                        |> Expect.err
+             , bothSeats "the checkers the last turn bore off are ringed, in the half of the side that played it" <|
+                \viewer u ->
+                    let
+                        col =
+                            column viewer (bearing viewer u |> lastTurn (other viewer) [ "5/off(2)", "8/3" ])
+                    in
+                    Expect.all
+                        [ \_ -> col |> Query.find [ class "bg-off", class "theirs" ] |> Query.findAll [ class "off-sliver", class "just-moved" ] |> Query.count (Expect.equal 2)
+                        , \_ -> col |> Query.find [ class "bg-off", class "mine" ] |> Query.findAll [ class "just-moved" ] |> Query.count (Expect.equal 0)
+                        ]
+                        ()
+             , bothSeats "with nothing to bear off the viewer's half is no tap target either" <|
+                \viewer u ->
+                    column viewer ({ u | legal = [ moveSchema "13" "7" 6 ] } |> withDice [ 6, 2 ])
+                        |> Query.find [ class "bg-off", class "mine" ]
+                        |> Query.hasNot [ class "can-tap" ]
+             ]
+            )
         , describe "tapping the dice"
             (let
                 firstUpdate =
