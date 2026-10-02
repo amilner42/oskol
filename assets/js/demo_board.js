@@ -20,14 +20,6 @@
 // document is visible; it starts the demo game over when it comes back.
 
 const NS = "http://www.w3.org/2000/svg";
-const BIRD = [
-  "M16 7h.01",
-  "M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 20",
-  "m20 7 2 .5-2 .5",
-  "M10 18v3",
-  "M14 17.75V21",
-  "M7 18a6 6 0 0 0 3.84-10.61",
-];
 const ROBOT =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>';
 
@@ -206,8 +198,6 @@ class OskolDemoBoard extends HTMLElement {
       <linearGradient id="${u}-pb" x1="0" y1="0" x2="0" y2="1">${stop(0, mix("--bg-point-b", "white", 12))}${stop(1, mix("--bg-point-b", "black", 18))}</linearGradient>
       <radialGradient id="${u}-cw" cx=".38" cy=".32" r=".75">${stop(0, mix("--bg-checker-light", "white", 60))}${stop(0.65, mix("--bg-checker-light", "#1f2c4a", 8))}${stop(1, mix("--bg-checker-light", "#1f2c4a", 30))}</radialGradient>
       <radialGradient id="${u}-cb" cx=".38" cy=".32" r=".75">${stop(0, mix("--bg-checker-dark", "white", 18))}${stop(0.6, "var(--bg-checker-dark)")}${stop(1, mix("--bg-checker-dark", "black", 55))}</radialGradient>
-      <radialGradient id="${u}-medal" cx=".4" cy=".35" r=".8">${stop(0, mix("--bg-frame", "white", 8))}${stop(1, mix("--bg-frame", "black", 62))}</radialGradient>
-      <filter id="${u}-glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation=".9" result="b"/><feFlood style="flood-color: var(--bg-accent); flood-opacity: .55"/><feComposite in2="b" operator="in"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
       <filter id="${u}-cs" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#000" flood-opacity=".55"/></filter>`;
 
     el("rect", { x: 0, y: 0, width: 640, height: 460, rx: 13, fill: `url(#${u}-frame)` });
@@ -227,25 +217,6 @@ class OskolDemoBoard extends HTMLElement {
         opacity: 0.95,
       });
     }
-    // the maker's mark: the oskol inlaid in a medallion on the bar
-    const mark = el("g", { class: "db-mark" });
-    el("circle", { cx: 320, cy: 230, r: 23, fill: `url(#${u}-medal)`, class: "db-medal-rim" }, mark);
-    el("circle", { cx: 320, cy: 230, r: 18.5, fill: "none", class: "db-medal-ring" }, mark);
-    const bird = el(
-      "g",
-      {
-        transform: "translate(305.6 215.6) scale(1.2)",
-        fill: "none",
-        "stroke-width": 1.5,
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round",
-        filter: `url(#${u}-glow)`,
-        opacity: 0.92,
-        class: "db-bird",
-      },
-      mark,
-    );
-    for (const d of BIRD) el("path", { d }, bird);
     // inner edge sheen
     el("rect", { x: 1, y: 1, width: 638, height: 458, rx: 12, fill: "none", stroke: "rgba(255,255,255,.07)", "stroke-width": 2 });
 

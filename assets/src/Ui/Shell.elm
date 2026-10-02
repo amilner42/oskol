@@ -150,55 +150,48 @@ mark =
         [ bird, Html.span [ class "pixel text-[13px] sm:text-[16px] relative top-[2px]" ] [ Html.text "OSKOL" ] ]
 
 
-{-| The oskol itself: a small bird in profile, one line, before the
-wordmark at the type's height. The drawing is Lucide's "bird" icon
-(lucide.dev, MIT), a monoline built for this size.
+{-| The oskol itself: the bird that hides its food and forgets where, in
+profile on a 16-pixel grid with its eye half shut, before the wordmark at
+the type's height. The same drawing as the bar's and the favicon's.
 -}
 bird : Html msg
 bird =
     Svg.svg
-        [ SvgAttr.viewBox "0 0 24 24"
+        [ SvgAttr.viewBox "0 0 16 16"
         , SvgAttr.class "block h-[1.9em] w-auto mr-2 shrink-0"
-        , SvgAttr.fill "none"
-        , SvgAttr.stroke "currentColor"
-        , SvgAttr.strokeWidth "2"
-        , SvgAttr.strokeLinecap "round"
-        , SvgAttr.strokeLinejoin "round"
+        , SvgAttr.shapeRendering "crispEdges"
         , attribute "aria-hidden" "true"
         , attribute "style" "color: var(--ink)"
         ]
-        [ Svg.path [ SvgAttr.d "M16 7h.01" ] []
-        , Svg.path [ SvgAttr.d "M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 20" ] []
-        , Svg.path [ SvgAttr.d "m20 7 2 .5-2 .5" ] []
-        , Svg.path [ SvgAttr.d "M10 18v3" ] []
-        , Svg.path [ SvgAttr.d "M14 17.75V21" ] []
-        , Svg.path [ SvgAttr.d "M7 18a6 6 0 0 0 3.84-10.61" ] []
-        ]
+        birdPixels
 
 
 {-| The bar's left end: the bird, alone (the wordmark is the page's
 title), home. The same on both homes' bar and on the loading screen
-before either, so it never moves when one becomes the other.
+before either (`spa.html.heex` paints these same pixels), so it never
+moves when one becomes the other. Two screen pixels a grid pixel, so it
+stays crisp.
 -}
 barMark : Html msg
 barMark =
     Html.a [ href "/", class "lh-mark", attribute "aria-label" "Oskol home" ]
         [ Svg.svg
-            [ SvgAttr.viewBox "0 0 24 24"
-            , SvgAttr.width "24"
-            , SvgAttr.height "24"
-            , SvgAttr.fill "none"
-            , SvgAttr.stroke "currentColor"
-            , SvgAttr.strokeWidth "2"
-            , SvgAttr.strokeLinecap "round"
-            , SvgAttr.strokeLinejoin "round"
+            [ SvgAttr.viewBox "0 0 16 16"
+            , SvgAttr.width "32"
+            , SvgAttr.height "32"
+            , SvgAttr.shapeRendering "crispEdges"
             , attribute "aria-hidden" "true"
             ]
-            [ Svg.path [ SvgAttr.d "M16 7h.01" ] []
-            , Svg.path [ SvgAttr.d "M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 20" ] []
-            , Svg.path [ SvgAttr.d "m20 7 2 .5-2 .5" ] []
-            , Svg.path [ SvgAttr.d "M10 18v3" ] []
-            , Svg.path [ SvgAttr.d "M14 17.75V21" ] []
-            , Svg.path [ SvgAttr.d "M7 18a6 6 0 0 0 3.84-10.61" ] []
-            ]
+            birdPixels
         ]
+
+
+{-| The body in the page's ink, the eye in paper, beak and feet in the
+highlighter's yellow.
+-}
+birdPixels : List (Svg.Svg msg)
+birdPixels =
+    [ Svg.path [ SvgAttr.fill "currentColor", SvgAttr.d "M8 1h4v1h-4zM7 2h6v1h-6zM6 3h7v1h-7zM6 4h2v1h-2zM9 4h1v1h-1zM11 4h2v1h-2zM6 5h2v1h-2zM11 5h2v1h-2zM6 6h7v1h-7zM2 7h1v1h-1zM6 7h7v1h-7zM2 8h2v1h-2zM5 8h8v1h-8zM2 9h11v1h-11zM3 10h10v1h-10zM4 11h9v1h-9zM5 12h7v1h-7zM6 13h1v1h-1zM10 13h1v1h-1z" ] []
+        , Svg.path [ SvgAttr.fill "#fbf9f3", SvgAttr.d "M8 4h1v1h-1zM10 4h1v1h-1zM8 5h3v1h-3z" ] []
+        , Svg.path [ SvgAttr.fill "#ffd93d", SvgAttr.d "M13 4h2v1h-2zM13 5h3v1h-3zM6 14h1v1h-1zM10 14h1v1h-1zM5 15h2v1h-2zM9 15h2v1h-2z" ] []
+    ]
