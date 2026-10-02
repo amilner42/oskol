@@ -334,16 +334,6 @@
   src: url("/fonts/ibm-plex-sans-latin-600.woff2") format("woff2");
 }
 
-/* The guest home's OSKOL (Bungee Shade, OFL): arcade-sign capitals with a
-   drawn shade. Self-hosted like the others. */
-@font-face {
-  font-family: "Bungee Shade";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("/fonts/bungee-shade-latin.woff2") format("woff2");
-}
-
 /* ---------- Multicade x notebook design system ----------
    Light and airy like a fresh notebook page, with 8-bit arcade bones:
    pixel headings, hard-shadow borders, marquees, scanlines. */
@@ -3032,9 +3022,6 @@ oskol-demo-board {
 }
 .demo-board .db-bar { fill: color-mix(in oklab, var(--bg-slot), black 28%); }
 .demo-board .db-barline { stroke: color-mix(in srgb, var(--bg-accent) 18%, transparent); stroke-width: 1; }
-.demo-board .db-medal-rim { stroke: color-mix(in srgb, color-mix(in oklab, var(--bg-accent), white 55%) 38%, transparent); stroke-width: 1.2; }
-.demo-board .db-medal-ring { stroke: color-mix(in srgb, color-mix(in oklab, var(--bg-accent), white 55%) 12%, transparent); stroke-width: 1; }
-.demo-board .db-bird { stroke: color-mix(in oklab, var(--bg-accent), white 72%); }
 .demo-board .db-men { transition: opacity .6s; }
 .demo-board .db-checker { will-change: transform; }
 .demo-board .db-light .db-face { stroke: color-mix(in oklab, var(--bg-checker-light), #1f2c4a 38%); }
@@ -3212,8 +3199,8 @@ oskol-demo-board {
 }
 .lh-head { flex: none; text-align: center; }
 .lh-title {
-  margin: clamp(4px, 1.6svh, 20px) 0 0; font-family: "Bungee Shade", "Press Start 2P", cursive; font-weight: 400;
-  line-height: 1.12; letter-spacing: 0.01em; color: var(--ink);
+  margin: clamp(4px, 1.6svh, 20px) 0 0; font-family: "Press Start 2P", monospace; font-weight: 400;
+  line-height: 1.12; letter-spacing: 0.04em; color: var(--ink);
   font-size: clamp(40px, min(6.4vw, 9svh), 96px);
 }
 .lh-tagline { margin: clamp(10px, 2.2svh, 26px) 0 0; font-size: 20px; color: var(--ink); opacity: 0.78; }
