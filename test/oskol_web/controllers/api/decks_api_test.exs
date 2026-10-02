@@ -297,7 +297,9 @@ defmodule OskolWeb.Api.DecksApiTest do
     assert Enum.all?(page["cells"], &(&1["band"] == ""))
   end
 
-  test "a deck that names nothing is refused on an answer", %{conn: conn} do
+  test "a deck that names nothing is not found on an answer, as somebody else's own set is", %{
+    conn: conn
+  } do
     [first | _] =
       conn |> get(~p"/papi/decks/openings") |> json_response(200) |> Map.get("puzzles")
 
@@ -311,8 +313,11 @@ defmodule OskolWeb.Api.DecksApiTest do
         "key" => "k1",
         "deck" => "chess-openings"
       })
-      |> json_response(422)
+      |> json_response(404)
 
-    assert %{"ok" => false, "error" => %{"code" => "validation_failed"}} = body
+    assert %{
+             "ok" => false,
+             "error" => %{"code" => "not_found", "message" => "There is no such set of puzzles."}
+           } = body
   end
 end
