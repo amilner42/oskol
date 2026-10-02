@@ -30,7 +30,7 @@ import Html.Attributes
 import Json.Decode as D
 import Test exposing (Test, describe, test)
 import Test.Html.Query as Query
-import Test.Html.Selector as Selector exposing (attribute, class, text)
+import Test.Html.Selector as Selector exposing (class, text)
 import Ui.Rolls as Rolls_
 
 
