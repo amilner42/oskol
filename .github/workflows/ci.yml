@@ -186,15 +186,16 @@ jobs:
   # The smokes used to be steps of one job sharing one server, and only
   # eight of the twelve `bin/check --browser` runs -- so home, puzzle,
   # puzzles-cards and puzzles-hub were guarded locally and nowhere else.
-  # All twelve run here now, in four shards, each bringing up its own server
-  # against its own database. Sharing a server was never the point; the cost
-  # was a whole setup per shard (containers, the browser, a database, the
-  # asset build), and on a public repository those runner minutes are free.
+  # All of them run here now, in five shards, each bringing up its own
+  # server against its own database. Sharing a server was never the point;
+  # the cost was a whole setup per shard (containers, the browser, a
+  # database, the asset build), and on a public repository those runner
+  # minutes are free.
   #
   # Shards are grouped by measured duration so they finish together, not by
   # subject. Every smoke's cost is in the matrix below; setup is about two
-  # minutes a shard and dwarfs all of it, which is why four is the number and
-  # not twelve.
+  # minutes a shard and dwarfs all of it, which is why a shard holds about a
+  # minute of smokes and there is not one per smoke.
   browser:
     name: Playwright smokes (${{ matrix.shard }})
     runs-on: ubuntu-24.04
@@ -213,8 +214,9 @@ jobs:
           # blind. Re-measure if a smoke grows.
           #
           # replay and puzzle arrange their own rooms (mix run setup.exs);
-          # replay's analysis is stubbed in the browser, so no engine is
-          # needed.
+          # replay's analysis is stubbed in the browser, and its SHARE part
+          # arranges the seeded match 821900 (share_setup.exs, from
+          # priv/dev/rooms) graded as it was, so no engine is needed.
           - shard: replay
             smokes: >-
               playwright/test-backgammon-replay/test.js
@@ -240,6 +242,14 @@ jobs:
               playwright/test-backgammon-board/test.js
               playwright/test-backgammon-dance/test.js
               playwright/test-guest-prefill/test.js
+          # The analysis board, all four parts (about 50 s, a shard's worth
+          # alone): it starts its own stand-in engine (setup.exs, in a VM of
+          # its own, on PORT + 10000 = 14400), which the server's ANALYSIS_URL
+          # below names, and arranges its own account (account.exs). No
+          # smoke reaches a real engine.
+          - shard: analysis
+            smokes: >-
+              playwright/test-analysis/test.js
     services:
       postgres:
         image: postgres:17
@@ -290,6 +300,10 @@ jobs:
       - name: Dev database
         run: mix ecto.create --quiet && mix ecto.migrate --quiet
       - name: Start the server
+        # The analysis board's stand-in engine listens here once its smoke
+        # starts it; for every other smoke nothing does, as in bin/check.
+        env:
+          ANALYSIS_URL: http://localhost:14400
         run: |
           mix phx.server > server.log 2>&1 &
           for i in $(seq 1 90); do
@@ -298,7 +312,7 @@ jobs:
           done
           curl -sf -o /dev/null http://localhost:4400/ || (cat server.log && exit 1)
       # Which smokes this shard runs is decided in the matrix above; between
-      # them the four shards run every smoke `bin/check --browser` does.
+      # them the shards run every smoke `bin/check --browser` does.
       - name: Smokes
         run: |
           for smoke in ${{ matrix.smokes }}; do

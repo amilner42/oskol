@@ -10,7 +10,7 @@ a tap walks the board and PLAY posts exactly the path walked with the
 page's key, the verdict and the move played are shown, the cube scale
 marks the engine's band, the level line reads each schedule right, NEXT
 follows the shell, and the memory line appears on a 200 and never on a
-404.
+
 
 -}
 
@@ -535,7 +535,7 @@ revealing =
                     |> Expect.all
                         [ \q -> q |> Query.find [ id "pz-verdict" ] |> Query.has [ attribute (Html.Attributes.attribute "data-verdict" "fail"), attribute (Html.Attributes.attribute "data-band" "doubtful"), text "?! DUBIOUS" ]
                         , \q -> q |> Query.find [ id "pz-verdict" ] |> Query.find [ class "pz-verdict-word" ] |> Query.has [ class "g-doubtful" ]
-                        , \q -> q |> Query.find [ id "pz-verdict" ] |> Query.has [ text "Gives up 0.07 — a mistake." ]
+                        , \q -> q |> Query.find [ id "pz-verdict" ] |> Query.has [ text "Gives up 0.07 — a dubious mistake." ]
                         , \q -> q |> Query.find [ id "pz-reveal" ] |> Query.has [ text "You played a dubious move." ]
                         , \q -> q |> Query.findAll [ class "rp-cand" ] |> Query.count (Expect.equal 3)
                         , \q -> q |> Query.findAll [ class "rp-cand", attribute (Html.Attributes.attribute "data-yours" "true") ] |> Query.count (Expect.equal 1)
@@ -555,7 +555,7 @@ revealing =
                         , attribute (Html.Attributes.href "/analysis?p=fixmove1")
                         , attribute (Html.Attributes.target "_blank")
                         , attribute (Html.Attributes.rel "noopener")
-                        , text "OPEN IN ANALYSIS"
+                        , text "ANALYSIS"
                         ]
         , test "after the reveal, SAVE beside SHARE opens the save sheet for this puzzle" <|
             \_ ->
@@ -575,11 +575,11 @@ revealing =
             \_ ->
                 Expect.all
                     [ \_ -> rendered (after "move_pass") |> Query.find [ id "pz-verdict" ] |> Query.has [ class "is-pass", text "RIGHT", text "That is the play." ]
-                    , \_ -> rendered (after "move_fail") |> Query.find [ id "pz-verdict" ] |> Query.has [ class "is-fail", attribute (Html.Attributes.attribute "data-band" "bad"), text "? BAD", text "Gives up 0.14 — a mistake." ]
+                    , \_ -> rendered (after "move_fail") |> Query.find [ id "pz-verdict" ] |> Query.has [ class "is-fail", attribute (Html.Attributes.attribute "data-band" "bad"), text "? BAD", text "Gives up 0.14 — a bad mistake." ]
                     , \_ ->
                         rendered (afterBody (String.replace "\"cost\":0.14" "\"cost\":0.4" (String.replace "\"band\":\"bad\"" "\"band\":\"very_bad\"" (reveal "move_fail"))))
                             |> Query.find [ id "pz-verdict" ]
-                            |> Query.has [ attribute (Html.Attributes.attribute "data-band" "very_bad"), text "?? VERY BAD", text "Gives up 0.40 — a mistake." ]
+                            |> Query.has [ attribute (Html.Attributes.attribute "data-band" "very_bad"), text "?? VERY BAD", text "Gives up 0.40 — a very bad mistake." ]
                     ]
                     ()
         , test "a miss on the player's schedule says it comes back" <|
@@ -587,7 +587,7 @@ revealing =
                 afterBody (revealWith "move_dubious" "schedule_amendable")
                     |> rendered
                     |> Query.find [ id "pz-verdict" ]
-                    |> Query.has [ text "?! DUBIOUS", text "Gives up 0.07 — a mistake, so it comes back." ]
+                    |> Query.has [ text "?! DUBIOUS", text "Gives up 0.07 — a dubious mistake, so it comes back." ]
         , test "right but not the best: within 0.02, not a mistake" <|
             \_ ->
                 page { hasNext = False } "take"
@@ -1550,7 +1550,8 @@ runEnd =
         ]
 
 
-{-| The end card's way on: a run is never the last word. -}
+{-| The end card's way on: a run is never the last word.
+-}
 wayOn : Test
 wayOn =
     let

@@ -1,8 +1,44 @@
 # The analysis board (backgammon)
 
-Set up any position, ask the engine about it, and keep or share the answer.
-Product intent and the wire: Aveline `analysis-plan` (and `decisions`). This
-file grows a section per piece as the milestone lands.
+Set up any position, ask the engine about it, play it out, and keep or share
+the answer. Product intent: Aveline `analysis-plan` and the 2026-10-02 lines
+in `decisions`; what each page shows a player: Aveline `pages` ("Analysis:
+the board", "Puzzles: your own sets", "The replay: SHARE"). The wire is in
+[api.md](api.md); own sets' rows and practice are in
+[puzzles.md](puzzles.md#own-sets).
+
+## At a glance
+
+- **One page, `/analysis`** (☰, right after Puzzles), open to everybody:
+  set a position up, ANALYZE it, play it out, SAVE it (an account), SHARE
+  it. Doors in: `/analysis` (the opening), `?xgid=<id>` (any pasted id, and
+  OPEN IN ANALYSIS from a replay step), `?p=<puzzle id>` (OPEN IN ANALYSIS
+  from any puzzle).
+- **An analyzed position is a puzzle row**, keyed on its question
+  (`oskol/puzzles.key`). A key already answered -- by a game's review, a
+  set, an earlier ask, a replay share -- answers at once and costs nothing.
+  Only ANALYZE on a new key spends engine time, through the asker's line
+  (two in flight, twenty waiting), the budgets (a guest 10 an hour and 30 a
+  day, an account 30 and 150, everybody 600 a day) and a 60 s circuit. A
+  page view never spends any; playing it out asks the server for legal plays
+  (`POST /papi/analysis/moves`), never the engine.
+- **Two share doors, one page.** SHARE on an answer and SHARE on a replay
+  step both hand out `/puzzles/<id>`: the ordinary puzzle page, which names
+  nobody and unfurls with the board. A replay share is written from the
+  game's stored review, never the engine; its page adds WATCH THE REPLAY.
+  Neither enters anybody's practice (no source row) or TRY ONE (`origin`).
+- **Saving** is the save sheet (`Ui.SaveToSet`), from the answer and from
+  every puzzle's reveal, into an account's own sets, which are practiced as
+  Openings is. A guest's SAVE is the sign-in, with the position kept in the
+  URL.
+- **Words.** To a player a collection is a *set* ("Your sets", "Save to a
+  set", "New set"); `deck` is code and URLs only. Nothing a player reads
+  says card or deck.
+
+Sections, in the order a position travels: the setup (Gleam, then the
+client), the position id, the route, asking the engine, the board, the two
+doors from the replay and the puzzle page, sharing from the replay, the
+answer, playing it out, own sets, and the tests and screenshots.
 
 ## The setup (`src/oskol/analysis/setup.gleam`)
 
@@ -351,6 +387,10 @@ and the column is beside both.
 - **Nothing moves**: the controls' widths, the line's two lines and the
   brushes' row are fixed, and the sheet and the dialog float over the
   page. `playwright/test-analysis` asserts the boxes across every change.
+- **Sideways** (a phone on its side, under 600px tall) the column beside
+  the board is taller than the screen, so the board is sticky under the
+  site's bar: scrolled down to the answer, the board, and a candidate shown
+  on it, stay in view.
 
 ## Open in analysis (the replay and every puzzle)
 
@@ -386,8 +426,9 @@ pastes anywhere). Neither spends engine time.
   `Route.analysisXgid`; on a step that is no decision it keeps its place
   unseen (`.is-off`, a span), so nothing moves as the reader steps. SHARE
   sits beside it (below).
-- **Every puzzle page**: OPEN IN ANALYSIS (`#pz-analysis`) after the
-  reveal, beside SHARE, to `Route.analysisPuzzle id` (`/analysis?p=<id>`).
+- **Every puzzle page**: ANALYSIS (`#pz-analysis`, one word and the
+  new-tab mark so SHARE, SAVE and it fit one row at 320) after the
+  reveal, beside SHARE and SAVE, to `Route.analysisPuzzle id` (`/analysis?p=<id>`).
 - `playwright/test-backgammon-replay` opens a graded turn, a double, a
   take, a turn of the Crawford game and one after it, and checks the new
   tab's 24 points (read from the editor's targets), bars, dice, cube and
@@ -604,14 +645,23 @@ come from the browser (`elm/random`), since it is a sandbox. Tests:
   (`Page.Analysis.notation`: one checker's steps joined, hits marked, the
   same move counted). The row over the board (the brushes' box,
   `#an-play-row`) says what the step asks: ROLL FOR ME (`#an-roll-random`)
-  for a roll not picked (the strip's ROLL picks one too), the table's
-  hint, DOUBLE / NO DOUBLE (`#an-cube-yes`, `#an-cube-no`), TAKE / PASS
+  for a roll not picked, beside PICK A ROLL (`#an-roll-pick`, the roll
+  sheet) and, where the cube lets the player double and the step before
+  was not this player's NO DOUBLE, DOUBLE? (`#an-roll-double`, the step
+  becomes the cube question); the table's hint, DOUBLE / NO DOUBLE (`#an-cube-yes`, `#an-cube-no`), TAKE / PASS
   (`#an-take`, `#an-pass`), or the sentence the line ended in
   (`#an-line-end`). Under a cube's answer PLAY IT OUT (`#an-play-out`)
   puts the board in PLAY. Every choice puts the board in PLAY. In PLAY the
   player acting sits at the bottom in their own colour, as at a table:
   the table can only be played from the bottom, so for Black the tree's
   points are drawn turned round (`Puzzle.Table.moverColor`).
+- **PLAY plays; SET UP edits.** In PLAY the strip (`#an-strip`) and the
+  quick starts' row are `<fieldset disabled>` (the strip faded where it
+  stands, the quick starts in a disabled button's grey) and IMPORT is
+  disabled too, so the position is changed only in SET UP. The position id
+  and COPY stay live: they read the step on the board and change nothing.
+  Every box is the same in both modes (part 3 asserts it, and that the
+  fieldset is disabled in PLAY and live again in SET UP).
 - **The legal plays.** No move generator in Elm. An answered step plays
   on its puzzle's own `tree` (lazy levels from `GET
   /papi/puzzles/:id/tree?node=`); any other step asks `POST
@@ -633,9 +683,10 @@ come from the browser (`elm/random`), since it is a sandbox. Tests:
   for the step left is dropped; asked again, the server has it). The same
   choice again walks on along the line as it was; a different one drops
   the steps after it. A new roll or cube question at a step (ROLL, ROLL
-  FOR ME, DOUBLE?, TAKE?) drops the steps after it; any other change --
-  SET UP and a tap, the turn, the cube, the score, a quick start, IMPORT
-  -- is another position and starts a fresh line from it.
+  FOR ME, PICK A ROLL, DOUBLE?, and in SET UP the strip's ROLL, DOUBLE?
+  and TAKE?) drops the steps after it; any other change -- in SET UP a tap,
+  the turn, the cube, the score, a quick start, IMPORT -- is another
+  position and starts a fresh line from it.
 - **Nothing moves.** The row over the board is the brushes' box in both
   modes, SET UP / PLAY are fixed widths, every button in the row is, the
   line is always there at one height with one plate or twenty, and the
@@ -643,3 +694,48 @@ come from the browser (`elm/random`), since it is a sandbox. Tests:
   under the board (the board's height allows for it); sideways it is in
   the column under the row, where it can be seen. Part 3 of the smoke
   asserts the boxes along the whole line at four sizes.
+
+## Own sets
+
+A set is an account's own deck: `decks` rows with an owner, its positions
+`deck_puzzles` rows, its ladder the retain scope `deck:<id>`, practiced by
+the same machinery as Openings. The analysis board reaches it through SAVE
+(above); everything else -- the rows, the API, privacy, enrolment, the hub's
+"Your sets" and the set's page with MANAGE -- is in
+[puzzles.md](puzzles.md#own-sets).
+
+## Tests and screenshots
+
+- **Gleam**: `analysis_setup_test` (the setup, its checks and the question),
+  `analysis_handler_test` (asking, the budgets, storing, the moves, on
+  stubs), `positions_test` (a replay share), `record_test` and
+  `record_handler_test` (the Crawford game), `analysis_test` (a record's
+  turns), `own_decks_test` (making, filling and emptying a set).
+- **Elixir**: `asker_test.exs` (the line, the circuit, the stub engine),
+  `positions_api_test.exs`, `own_decks_test.exs`, `decks_api_test.exs`.
+- **Elm**: `SetupTest`, `XgidTest` (the vectors and a fuzzer),
+  `AnalysisPageTest` (the editor, the answer, playing it out), `WordsTest`,
+  `ReplayTest` (`Setup.fromReplay` for every step), `PuzzlePageTest`,
+  `PracticePageTest`.
+- **Smokes**: `playwright/test-analysis` (four parts: setting up, ANALYZE,
+  playing it out, SAVE and MANAGE; every box held at four sizes; its own
+  stand-in engine) and `playwright/test-backgammon-replay` (OPEN IN
+  ANALYSIS on a graded turn, a double, a take and the Crawford game; part 7,
+  SHARE on the seeded match 821900 via `share_setup.exs`). Both run in
+  `bin/check --browser` and in CI (the analysis board is a shard of its
+  own; its server's `ANALYSIS_URL` names the stand-in's port, 14400).
+- **The review tour**: `playwright/review-analysis/run.sh` serves its own
+  port and database, arranges everything (`setup.exs`: the seeded match,
+  the universal sets on the complete stub engine, an account whose set
+  "Openings I like" `test.js` makes through the page's own API) and shoots
+  every state at 390x844, 320x568, 844x390 and 1440x900 into
+  `playwright/screenshots/review-analysis-<size>-<state>.png`: the empty
+  board with ☰ open, a position half set up, the roll sheet, the import
+  dialog, a move's answer, a candidate on the board (and, sideways, the
+  board in view beside the answer), a cube's answer, a line of three steps
+  in PLAY, the save sheet for an account and a guest, /puzzles with "Your
+  sets", the set's page with MANAGE, the replay's head with SHARE and OPEN
+  IN ANALYSIS, and a shared position's reveal with SAVE, ANALYSIS and
+  WATCH THE REPLAY. `serve.sh` serves the same data, with the
+  stand-in engine, until Ctrl-C, for walking it by hand (sign in as
+  analysis-review@oskol.test from `/dev/mailbox`).

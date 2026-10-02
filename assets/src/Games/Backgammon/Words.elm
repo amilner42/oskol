@@ -1,7 +1,7 @@
 module Games.Backgammon.Words exposing
     ( answerInWords
-    , bestInWords
     , answerWhy
+    , bestInWords
     , candidateInWords
     , chanceCells
     , cubeChances
@@ -9,16 +9,16 @@ module Games.Backgammon.Words exposing
     , cubeVerdict
     , doubleInWords
     , doubleWhy
+    , givesUp
     , gradeMark
     , gradeOf
-    , givesUp
     , gradeTag
     , inWords
     , lost
     , moveInWords
+    , nearlyBest
     , noDoubleInWords
     , noDoubleWhy
-    , nearlyBest
     , properDouble
     , signed
     , spoken
@@ -103,22 +103,28 @@ cubeVerdict who did verdict =
             who ++ " correctly " ++ did ++ "."
 
         Just _ ->
-            let
-                size =
-                    case verdict.grade of
-                        "doubtful" ->
-                            "a dubious"
+            who ++ " " ++ did ++ ", " ++ aMistake verdict.grade ++ "."
 
-                        "bad" ->
-                            "a bad"
 
-                        "very_bad" ->
-                            "a very bad"
+{-| A mistake named by its grade, in the words its badge uses: "a dubious
+mistake", "a bad mistake", "a very bad mistake" ("a small mistake" under
+the bands). The replay's cube verdict and a puzzle's reveal both say it
+this way, so the sentence never names another grade than the badge.
+-}
+aMistake : String -> String
+aMistake grade =
+    case grade of
+        "doubtful" ->
+            "a dubious mistake"
 
-                        _ ->
-                            "a small"
-            in
-            who ++ " " ++ did ++ ", " ++ size ++ " mistake."
+        "bad" ->
+            "a bad mistake"
+
+        "very_bad" ->
+            "a very bad mistake"
+
+        _ ->
+            "a small mistake"
 
 
 {-| Too good to double: the engine says "no double" for that too, but
@@ -519,19 +525,21 @@ againstBest grade played best =
 
 
 {-| What a puzzle's reveal says of an answer that missed: what it gave up,
-to two places, and -- when the answer is on the player's schedule -- that
-it is coming back. 0.02 or more is a mistake by the same bands the replay
-marks, so the sentence calls it one.
+to two places, the grade its badge shows (`aMistake band`, so "?? VERY
+BAD" is never beside a plainer word), and -- when the answer is on the
+player's schedule -- that it is coming back.
 -}
-givesUp : Float -> Bool -> String
-givesUp cost comesBack =
+givesUp : String -> Float -> Bool -> String
+givesUp band cost comesBack =
     "Gives up "
         ++ Replay.fixed 2 cost
+        ++ " — "
+        ++ aMistake band
         ++ (if comesBack then
-                " — a mistake, so it comes back."
+                ", so it comes back."
 
             else
-                " — a mistake."
+                "."
            )
 
 

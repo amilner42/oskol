@@ -1975,6 +1975,19 @@ button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shado
 .pz-controls { padding-top: 0.4rem; }
 .pz-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .pz-action { gap: 6px; padding: 7px 14px; font-family: "Press Start 2P", monospace; font-size: 8px; }
+/* SHARE, SAVE and ANALYSIS: one row at every width, each a fixed box, so
+   SHARE's "Copied" / "Copy failed" moves nothing beside it. */
+.pz-act-share, .pz-act-save, .pz-act-analysis { justify-content: center; height: 32px; padding: 0 6px; white-space: nowrap; overflow: hidden; }
+.pz-act-share { width: 124px; }
+.pz-act-save { width: 76px; }
+.pz-act-analysis { width: 106px; }
+@media (max-width: 359px) {
+  .pz-actions { gap: 6px; }
+  .pz-act-share, .pz-act-save, .pz-act-analysis { gap: 4px; padding: 0 4px; font-size: 7px; }
+  .pz-act-share { width: 110px; }
+  .pz-act-save { width: 64px; }
+  .pz-act-analysis { width: 90px; }
+}
 
 .rp-page {
   height: var(--page-h);
@@ -3434,9 +3447,26 @@ oskol-demo-board {
   .an-hint-mouse { display: block; }
   .an-hint-touch { display: none; }
 }
+/* The mouse's hint is the longer one: in a narrow window (or a phone whose
+   browser reports a fine pointer, as headless Chromium on Linux does) its
+   short form, whole, rather than the long one cut off. */
+@media (hover: hover) and (pointer: fine) and (max-width: 479px) {
+  .an-hint-mouse .an-hint-long { display: none; }
+  .an-hint-mouse .an-hint-short { display: inline; }
+}
 
 .an-side { gap: 10px; }
 .an-strip { flex: none; display: flex; flex-direction: column; gap: 8px; }
+/* The strip and the quick starts are fieldsets, so PLAY disables them at
+   once (the position is edited in SET UP only): no fieldset frame, and
+   locked the strip fades where it is, its settings still readable, while
+   the quick starts and IMPORT wear a disabled button's grey. Nothing is
+   resized either way. */
+fieldset.an-strip, fieldset.an-quick-row { margin: 0; padding: 0; border: 0; min-width: 0; }
+.an-strip { transition: opacity 0.15s; }
+.an-strip.is-locked { opacity: 0.4; }
+.an-strip.is-locked .an-seg, .an-strip.is-locked .an-step { cursor: default; }
+.an-strip.is-locked .an-seg.is-on { color: #fff; }
 .an-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
 .an-group { display: flex; flex-direction: column; gap: 4px; flex: none; }
 .an-label { font-size: 6px; line-height: 7px; height: 7px; color: var(--pencil); letter-spacing: 0.04em; white-space: nowrap; }
@@ -3621,6 +3651,10 @@ oskol-demo-board {
   .an-hint { font-size: 11px; }
   .an-hint-long { display: none; }
   .an-hint-short { display: inline; }
+  /* "Place every checker first" whole in the id's field */
+  .an-xgid { font-size: 9.5px; padding: 0 5px; }
+  .an-xgid-row { gap: 6px; }
+  .an-xgid-row .an-quick { width: 58px; }
 }
 
 /* Sideways: the board down the left at the screen's height, everything
@@ -3632,6 +3666,10 @@ oskol-demo-board {
   .an-page .an-line-wrap { grid-column: 2; grid-row: 3; }
   .an-page .rp-side { grid-row: 4; }
   .an-page .rp-board, .an-page .rp-side { align-self: start; }
+  /* The column is taller than the screen (ANALYZE and the answer are
+     under the fold): the board stays in view under the site's bar while
+     it scrolls, so a candidate shown is seen on the board. */
+  .an-page .rp-board { position: sticky; top: calc(var(--bar-h) + 6px); }
 }
 
 /* A desktop: the brushes over the board, the column beside both -- a
@@ -3776,7 +3814,9 @@ a.dk-go { text-decoration: none; }
 .dp-member-board .bg-still .player-bar { display: none; }
 .dp-member-board .bg-still .bg-stack { box-shadow: none; border-radius: 10px; }
 .dp-member-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.dp-member-prompt { font-size: 14px; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Two lines at most: on a narrow phone one line was "White to play…" for
+   every position, which told them apart by nothing. */
+.dp-member-prompt { font-size: 14px; font-weight: 600; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 .dp-member-level { font-size: 12.5px; color: var(--pencil); }
 .dp-member-remove { width: 40px; height: 40px; border-radius: 10px; font-size: 15px; color: var(--pencil); cursor: pointer; }
 @media (hover: hover) { .dp-member-remove:hover { color: var(--red); background: var(--paper-2); } }

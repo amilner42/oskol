@@ -760,7 +760,8 @@ viewMember model row =
                         Html.text ""
                 ]
             , Html.span [ class "dp-member-text" ]
-                [ Html.span [ class "dp-member-prompt" ] [ Html.text member.prompt ]
+                [ -- a roll ("3-1") never breaks at its hyphen
+                  Html.span [ class "dp-member-prompt" ] [ Html.text (String.replace "-" "‑" member.prompt) ]
                 , Html.span [ class "dp-member-level" ] [ Html.text row.word ]
                 ]
             ]

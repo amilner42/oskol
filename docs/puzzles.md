@@ -460,10 +460,14 @@ cube question is two buttons, as at the table (DOUBLE / NO DOUBLE, TAKE /
 PASS). The reveal opens on the verdict line (`#pz-verdict`): RIGHT ("That
 is the play." / "Within 0.02 of the best. Not a mistake."), or a miss by its
 band in the replay's mark and colour (?! DUBIOUS, ? BAD, ?? VERY BAD) with
-"Gives up 0.04 — a mistake, so it comes back." (no "so it comes back"
-without a schedule). Then the replay's words and table (`Words`, with
+"Gives up 0.04 — a dubious mistake, so it comes back." (no "so it comes
+back" without a schedule). The sentence names the badge's own band
+(`Words.aMistake`: dubious, bad, very bad), as the replay's cube verdict
+does, so the two never disagree. Then the replay's words and table (`Words`, with
 `doubleWhy`/`noDoubleWhy`/`answerWhy` for a position nobody has acted on
-yet) with "you" marked and a candidate tappable onto the board; the cube's
+yet) with "you" marked (a play outside the five the engine described is
+the row "your play", which needs no badge) and a candidate tappable onto
+the board; the cube's
 scale marks the engine's band over `cubeLine`. The attempt's key is minted
 once per page load (`elm/random`) and a PLAY that lands before it waits for
 it, so a retry is the same answer. Signed in with a `schedule`, the level
@@ -489,9 +493,12 @@ laid out; `review-verdict/outcomes.js` and `test-puzzle` measure it). A schedule
 when that answer took the mistake to `deck.patched_level` from below (the
 level line then reads "Mastered. Four right in a row — back in 21 days",
 `.pz-level.is-patched`). SHARE is the table's `shareInvite` port on the
-clean URL. Beside it, on every puzzle, OPEN IN ANALYSIS (`#pz-analysis`) is
-a link to `/analysis?p=<id>` in a new tab: the analysis board on the
-position as this page shows it (`docs/analysis.md`).
+clean URL. Beside it, on every puzzle, ANALYSIS (`#pz-analysis`, the
+new-tab mark after it; "Open in analysis" to a screen reader) is a link to
+`/analysis?p=<id>` in a new tab: the analysis board on the position as this
+page shows it (`docs/analysis.md`). SHARE, SAVE and ANALYSIS are fixed boxes
+on one row at every width down to 320 (`.pz-act-*`), so SHARE's "Copied" or
+"Copy failed" moves nothing.
 
 **A run is the shell's** (`assets/src/Run.elm`, pure, kept by `Main` across
 `pushUrl`s because every page is rebuilt on one). `Run.Run` is `{ids, at,
@@ -760,8 +767,8 @@ universal-set machinery with an owner, so there are no new practice rules.
   (`Run.InSet`), exactly as Openings'. Its page (`Page.Practice`) adds
   MANAGE (`#practice-manage`) under the card: the name in a field
   (`#practice-rename`, RENAME, `PATCH`), the positions as a list -- a 72px
-  still board (`viewStill` on `Setup.fromQuestion`), the prompt, where it
-  stands ("to learn", "back at the start", "level 2", "mastered"), and an
+  still board (`viewStill` on `Setup.fromQuestion`), the prompt (two lines
+  at most, a roll never broken at its hyphen), where it stands ("to learn", "back at the start", "level 2", "mastered"), and an
   x (`#practice-remove-<pid>`) -- and DELETE SET (`#practice-delete`),
   which asks in its own slot ("Delete Openings I like? Its positions stay
   where they are; your progress on them is kept aside.", YES, DELETE

@@ -1,5 +1,6 @@
 port module Page.Puzzle exposing
     ( After(..)
+    , Answer
     , Attempt(..)
     , Celebration
     , CelebrationDeck(..)
@@ -8,27 +9,26 @@ port module Page.Puzzle exposing
     , Loadable(..)
     , Model
     , Msg(..)
-    , Answer
     , Out(..)
     , Progress
     , Score
     , Way(..)
     , WayState(..)
     , asksMemory
-    , countsToday
-    , dueDate
     , attemptBody
     , backIn
     , celebrate
     , celebrationRead
     , celebrationTiming
+    , countsToday
+    , dueDate
     , endRun
     , init
     , levelLine
     , levelLineFor
+    , masteredLine
     , memoryLine
     , offering
-    , masteredLine
     , preselected
     , runProgress
     , runScore
@@ -88,7 +88,9 @@ practice home, or the table a result card's PRACTICE was pressed at).
 -}
 
 import Api
+import Api.Decks
 import Api.Practice exposing (Today)
+import Api.PracticeDecks as PracticeDecks
 import Dict
 import Games.Backgammon.Puzzle as Puzzle exposing (Candidate, Puzzle, Reveal, Schedule, Verdict(..))
 import Games.Backgammon.Replay as Replay
@@ -104,14 +106,12 @@ import Process
 import Random
 import Route
 import Session exposing (Session)
-import Task
-import Time
 import Svg
 import Svg.Attributes as SvgA
+import Task
+import Time
 import Ui.Candidates as Candidates
 import Ui.Charts as Charts
-import Api.Decks
-import Api.PracticeDecks as PracticeDecks
 import Ui.Deck
 import Ui.Decks as Decks
 import Ui.Mistakes as Mistakes
@@ -150,6 +150,7 @@ about one.
 The marks are the shell's (`Main.run`) at the moment the page opened;
 this page adds its own as it is answered, which is the only one it can
 change.
+
 -}
 type alias Progress =
     { at : Int
@@ -1231,6 +1232,7 @@ what they settled on and not about the engine's first word.
 
 NEVER takes the card out of the deck, so it stands nowhere and counts
 for nothing in that line -- whatever schedule the attempt still carries.
+
 -}
 amended : String -> Maybe Schedule -> Model -> ( Model, Cmd Msg, Out )
 amended outcome schedule model =
@@ -1564,6 +1566,7 @@ or the button is pressed.
 KEEP GOING where the deck still has work today, or where today's set is
 done and there are mistakes never shown (it starts the deck's pace of
 them); PRACTICE ANYWAY where everything is started and nothing is due.
+
 -}
 viewWay : Model -> End -> Html Msg
 viewWay model end =
@@ -2362,33 +2365,37 @@ viewControls model puzzle =
                 -- the clean link. The server refuses a story to anyone else
                 -- anyway.
                 ((if Maybe.map .who model.memory == Just "you" then
-                    button [ class "q-btn plain pz-action", id "pz-share-story", onClick ShareStory ]
+                    button [ class "q-btn plain pz-action pz-act-share", id "pz-share-story", onClick ShareStory ]
                         [ span [ class "hero-link w-4 h-4", attribute "aria-hidden" "true" ] []
                         , text (Maybe.withDefault "SHARE" model.storyLabel)
                         ]
 
                   else
-                    button [ class "q-btn plain pz-action", id "pz-share", onClick Share ]
+                    button [ class "q-btn plain pz-action pz-act-share", id "pz-share", onClick Share ]
                         [ span [ class "hero-link w-4 h-4", attribute "aria-hidden" "true" ] []
                         , text (Maybe.withDefault "SHARE" model.shareLabel)
                         ]
                  )
                     -- Into a set of your own (the sheet the analysis board
                     -- opens too).
-                    :: button [ class "q-btn plain pz-action", id "pz-save", onClick PressedSave ]
+                    :: button [ class "q-btn plain pz-action pz-act-save", id "pz-save", onClick PressedSave ]
                         [ span [ class "hero-bookmark w-4 h-4", attribute "aria-hidden" "true" ] []
                         , text "SAVE"
                         ]
                     -- Every puzzle opens on the analysis board, as this
                     -- page shows it, in a new tab: this one stays put.
+                    -- One word and the new-tab mark, so the three fit one
+                    -- row on a 320 phone.
                     :: a
-                        [ class "q-btn plain pz-action"
+                        [ class "q-btn plain pz-action pz-act-analysis"
                         , id "pz-analysis"
                         , href (Route.href (Route.analysisPuzzle puzzle.id))
                         , target "_blank"
                         , rel "noopener"
+                        , attribute "aria-label" "Open in analysis (a new tab)"
+                        , Html.Attributes.title "Open in analysis"
                         ]
-                        [ text "OPEN IN ANALYSIS"
+                        [ text "ANALYSIS"
                         , span [ class "hero-arrow-top-right-on-square w-4 h-4", attribute "aria-hidden" "true" ] []
                         ]
                     -- A run is open-ended: after every reveal, one more
@@ -2520,7 +2527,7 @@ viewVerdict reveal =
 
                     else
                         ( mark ++ " " ++ String.toUpper (Mistakes.bandName reveal.band)
-                        , Words.givesUp cost (reveal.schedule /= Nothing)
+                        , Words.givesUp reveal.band cost (reveal.schedule /= Nothing)
                         , reveal.band
                         )
 
@@ -2648,7 +2655,9 @@ viewCandidates model reveal =
                     , on = on_
                     , played = isYours
                     , badge =
-                        if isYours then
+                        -- "your play" says it already, and a narrow
+                        -- column would cut the badge to "??..."
+                        if isYours && c.notation /= "" then
                             Just "you"
 
                         else
@@ -2718,6 +2727,7 @@ viewCubeReveal model puzzle cube =
     , cubeLine review
     , cubeChances "White" review
     ]
+
 
 
 -- TODAY'S SET, DONE
@@ -3106,6 +3116,7 @@ slot are always laid out, so nothing under them moves when a choice is
 tapped. GOT IT after a miss keeps its column, disabled, and says why
 when tapped. Once NEVER has gone through the four stay where they are,
 disabled.
+
 -}
 viewSchedule : Model -> Reveal -> List (Html Msg)
 viewSchedule model reveal =

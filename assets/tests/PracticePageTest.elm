@@ -774,7 +774,7 @@ manage =
                     |> Query.children []
                     |> Expect.all
                         [ Query.count (Expect.equal 3)
-                        , Query.index 0 >> Query.has [ id "practice-member-k0", text "White to play 6-4. What's your play?", text "level 2" ]
+                        , Query.index 0 >> Query.has [ id "practice-member-k0", text "White to play 6\u{2011}4. What's your play?", text "level 2" ]
                         , Query.index 0 >> Query.findAll [ class "bg-still" ] >> Query.count (Expect.equal 1)
                         , Query.index 1 >> Query.has [ text "mastered" ]
                         , Query.index 2 >> Query.has [ text "to learn" ]

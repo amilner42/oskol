@@ -1,9 +1,43 @@
 port module Page.Analysis exposing
-    ( Model, Msg(..), Brush(..), Button(..), Target(..), Press, Asking(..), Refusal, Out(..)
-    , init, update, updateWithOut, view, title, withSession, subscriptions
-    , Off, paint, toPlace, offFrom, positionId, line, analyzable, rolls, longPressMs, defaultMatch
-    , puzzleGone, pollLimit, tooLongMessage, depthLine, shownSetup
-    , Mode(..), Line, Step, Moves(..), lineNow, plate, ending, notation
+    ( Asking(..)
+    , Brush(..)
+    , Button(..)
+    , Line
+    , Mode(..)
+    , Model
+    , Moves(..)
+    , Msg(..)
+    , Off
+    , Out(..)
+    , Press
+    , Refusal
+    , Step
+    , Target(..)
+    , analyzable
+    , defaultMatch
+    , depthLine
+    , ending
+    , init
+    , line
+    , lineNow
+    , longPressMs
+    , notation
+    , offFrom
+    , paint
+    , plate
+    , pollLimit
+    , positionId
+    , puzzleGone
+    , rolls
+    , shownSetup
+    , subscriptions
+    , title
+    , toPlace
+    , tooLongMessage
+    , update
+    , updateWithOut
+    , view
+    , withSession
     )
 
 {-| `/analysis` -- the analysis board. A position set up by tapping, with
@@ -102,8 +136,8 @@ import Games.Backgammon.Xgid as Xgid
 import Html exposing (Html, a, button, div, input, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, href, id, readonly, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
-import Page.Play exposing (shareInvite, shareResult)
 import Json.Decode as D
+import Page.Play exposing (shareInvite, shareResult)
 import Process
 import Random
 import Route
@@ -648,7 +682,7 @@ plate step =
            )
 
 
-{-| A walk through a move tree as it reads: "8/5 6/5", "24/18*/13",
+{-| A walk through a move tree as it reads: "8/5 6/5", "24/18\*/13",
 "6/off(2)", "bar/22"; "" for a walk of nothing. The points are the
 mover's own, as the tree numbers them. One checker's steps are joined
 (24/18 then 18/13 is 24/13, the stop written only where it hit) and the
@@ -2357,6 +2391,10 @@ viewPlayRow model =
                 ]
                 [ text label ]
 
+        -- a roll still to come: "Pick a roll" is what this row answers
+        free actId label msg =
+            button [ type_ "button", id actId, class "q-btn plain an-act pixel", onClick msg ] [ text label ]
+
         hint words =
             span [ class "an-hint an-play-hint", id "an-play-hint" ] [ text words ]
     in
@@ -2368,8 +2406,17 @@ viewPlayRow model =
             Nothing ->
                 case model.setup.ask of
                     Move Nothing ->
+                        -- The strip is SET UP's, so the row offers what a
+                        -- player on roll can do: roll (at random or a roll
+                        -- picked from the sheet), or double first where the
+                        -- cube allows and the line did not just say no.
                         [ button [ type_ "button", id "an-roll-random", class "q-btn yellow an-act an-roll-random pixel", onClick PressedRollForMe ] [ text "ROLL FOR ME" ]
-                        , hint "or pick one with ROLL"
+                        , free "an-roll-pick" "PICK A ROLL" OpenedRolls
+                        , if mayDouble model then
+                            free "an-roll-double" "DOUBLE?" PickedDouble
+
+                          else
+                            text ""
                         ]
 
                     Move (Just _) ->
@@ -2408,6 +2455,27 @@ viewPlayRow model =
                         , act "an-pass" "PASS" (Chose Setup.Passed) (chosen == Just Setup.Passed)
                         ]
         )
+
+
+{-| In PLAY, the player on roll may turn to the cube first: where the cube
+lets them, and unless the step before was this very player saying NO
+DOUBLE (the line would only go round).
+-}
+mayDouble : Model -> Bool
+mayDouble model =
+    let
+        l =
+            lineNow model
+
+        saidNo =
+            case stepAt (l.at - 1) l.steps of
+                Just before ->
+                    before.chosen == Just Setup.NoDouble
+
+                Nothing ->
+                    False
+    in
+    Setup.canDouble model.setup.toPlay model.setup && not saidNo
 
 
 {-| The line under the board: the four arrows outside, a plate per step
@@ -2725,7 +2793,13 @@ viewStrip model =
                 (inMatch && n < m.length - 1)
                 ""
     in
-    div [ class "an-strip", id "an-strip" ]
+    -- A fieldset, so PLAY disables every control in it at once: the
+    -- position is edited in SET UP only. Same boxes either way.
+    Html.fieldset
+        [ classList [ ( "an-strip", True ), ( "is-locked", model.mode == Play ) ]
+        , id "an-strip"
+        , disabled (model.mode == Play)
+        ]
         [ div [ class "an-row" ]
             [ group "TO PLAY"
                 [ div [ class "an-segs", id "an-turn" ]
@@ -2886,11 +2960,20 @@ pipCells n =
 viewQuick : Model -> Html Msg
 viewQuick model =
     let
+        -- In PLAY the board is played, not set up: the quick starts and
+        -- IMPORT wait for SET UP. The id and COPY stay live: they read the
+        -- position on the board, whichever step of the line it is.
+        locked =
+            model.mode == Play
+
         quick quickId label msg =
             button [ type_ "button", id quickId, class "q-btn plain an-quick pixel", onClick msg ] [ text label ]
     in
     div [ class "an-quicks" ]
-        [ div [ class "an-quick-row" ]
+        [ Html.fieldset
+            [ classList [ ( "an-quick-row", True ), ( "is-locked", locked ) ]
+            , disabled locked
+            ]
             [ quick "an-opening" "OPENING" PressedOpening
             , quick "an-clear" "CLEAR" PressedClear
             , quick "an-flip" "FLIP" PressedFlip
@@ -2921,7 +3004,14 @@ viewQuick model =
                         "COPY"
                     )
                 ]
-            , button [ type_ "button", id "an-xgid-import", class "q-btn plain an-quick pixel", onClick OpenedImport ] [ text "IMPORT" ]
+            , button
+                [ type_ "button"
+                , id "an-xgid-import"
+                , classList [ ( "q-btn plain an-quick pixel", True ), ( "is-locked", locked ) ]
+                , disabled locked
+                , onClick OpenedImport
+                ]
+                [ text "IMPORT" ]
             ]
         ]
 

@@ -42,10 +42,10 @@ const SHAPES = [
 const WORDS = {
   best: ['RIGHT', 'That is the play.'],
   ok: ['RIGHT', 'Within 0.02 of the best. Not a mistake.'],
-  dubious: ['?! DUBIOUS', 'Gives up 0.04 — a mistake.'],
-  'dubious-scheduled': ['?! DUBIOUS', 'Gives up 0.04 — a mistake, so it comes back.'],
-  bad: ['? BAD', 'Gives up 0.11 — a mistake.'],
-  'very-bad': ['?? VERY BAD', 'Gives up 0.37 — a mistake.'],
+  dubious: ['?! DUBIOUS', 'Gives up 0.04 — a dubious mistake.'],
+  'dubious-scheduled': ['?! DUBIOUS', 'Gives up 0.04 — a dubious mistake, so it comes back.'],
+  bad: ['? BAD', 'Gives up 0.11 — a bad mistake.'],
+  'very-bad': ['?? VERY BAD', 'Gives up 0.37 — a very bad mistake.'],
 };
 
 function must(ok, what) {

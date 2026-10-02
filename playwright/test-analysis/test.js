@@ -85,6 +85,10 @@ const HELD = [
 
 async function boxes(page) {
   return page.evaluate((sels) => {
+    // Measured at the top of the page: the board is sticky sideways, so
+    // where it sits depends on the scroll, not on the layout.
+    const sx = window.scrollX, sy = window.scrollY;
+    window.scrollTo({ left: 0, top: 0, behavior: 'instant' });
     const out = {};
     for (const s of sels) {
       const el = document.querySelector(s);
@@ -92,6 +96,7 @@ async function boxes(page) {
       const r = el.getBoundingClientRect();
       out[s] = [r.x + window.scrollX, r.y + window.scrollY, r.width, r.height].map((n) => Math.round(n * 2) / 2);
     }
+    window.scrollTo({ left: sx, top: sy, behavior: 'instant' });
     return out;
   }, HELD);
 }
@@ -112,6 +117,13 @@ function settled(page) {
   const tap = page.tap.bind(page);
   page.click = async (...args) => { await click(...args); await settle(page); };
   page.tap = async (...args) => { await tap(...args); await settle(page); };
+  // A whole page is shot from its top: sideways the board is sticky, and a
+  // page shot while scrolled would draw it halfway down.
+  const screenshot = page.screenshot.bind(page);
+  page.screenshot = async (opts = {}) => {
+    if (opts.fullPage) { await page.evaluate(() => window.scrollTo({ left: 0, top: 0, behavior: 'instant' })); await settle(page); }
+    return screenshot(opts);
+  };
   return page;
 }
 
@@ -184,13 +196,36 @@ async function fits(page, tag, sel) {
 }
 
 // Whichever hint this screen shows (a mouse's or a finger's), whole.
+// Which one shows is the browser's pointer media (CI's headless Chromium on
+// Linux reports a fine pointer even for a touch phone), so the check takes
+// whichever is drawn -- and it must be whole either way.
 async function hintFits(page, tag) {
   let seen = 0;
   for (const hint of ['.an-hint-touch', '.an-hint-mouse']) {
-    const shown = await page.$eval(hint, (el) => getComputedStyle(el).display !== 'none');
+    const shown = await page.$eval(hint, (el) => el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden');
     if (shown) { seen++; await fits(page, tag, hint); }
   }
   if (seen !== 1) throw new Error(`${tag}: ${seen} hints show`);
+}
+
+// A mouse in a phone-wide window draws the mouse's hint whatever the font:
+// it must be whole down to 320.
+async function mouseHints(browser, errors) {
+  for (const width of [480, 430, 390, 360, 320]) {
+    const context = await browser.newContext({ viewport: { width, height: 844 } });
+    try {
+      const page = settled(await context.newPage());
+      watch(page, `mouse ${width}`, errors);
+      await open(page);
+      if (!(await page.$eval('.an-hint-mouse', (el) => el.offsetParent !== null))) throw new Error(`${width}: a mouse does not get the mouse's hint`);
+      await hintFits(page, `a mouse at ${width}`);
+      await page.click('#an-brush-remove');
+      await hintFits(page, `a mouse at ${width}, the x`);
+    } finally {
+      await context.close();
+    }
+  }
+  log('a mouse in a narrow window: its hint whole at 480, 430, 390, 360 and 320');
 }
 
 // The dead cube: White two away on a cube of 2 that White owns, so the
@@ -568,6 +603,10 @@ const ASKED = [...HELD.filter((s) => s !== '#an-analyze'), '.an-analyze', '#an-p
 
 async function askedBoxes(page) {
   return page.evaluate((sels) => {
+    // Measured at the top of the page: the board is sticky sideways, so
+    // where it sits depends on the scroll, not on the layout.
+    const sx = window.scrollX, sy = window.scrollY;
+    window.scrollTo({ left: 0, top: 0, behavior: 'instant' });
     const out = {};
     for (const s of sels) {
       const el = document.querySelector(s);
@@ -576,6 +615,7 @@ async function askedBoxes(page) {
       out[s] = [r.x + window.scrollX, r.y + window.scrollY, r.width, r.height].map((n) => Math.round(n * 2) / 2);
     }
     out.pageHeight = document.documentElement.scrollHeight;
+    window.scrollTo({ left: sx, top: sy, behavior: 'instant' });
     return out;
   }, ASKED);
 }
@@ -759,6 +799,10 @@ const LINE_HELD = [
 async function lineBoxes(page) {
   await settle(page);
   return page.evaluate((sels) => {
+    // Measured at the top of the page: the board is sticky sideways, so
+    // where it sits depends on the scroll, not on the layout.
+    const sx = window.scrollX, sy = window.scrollY;
+    window.scrollTo({ left: 0, top: 0, behavior: 'instant' });
     const out = {};
     for (const s of sels) {
       const el = document.querySelector(s);
@@ -767,6 +811,7 @@ async function lineBoxes(page) {
       out[s] = [r.x + window.scrollX, r.y + window.scrollY, r.width, r.height].map((n) => Math.round(n * 2) / 2);
     }
     out.pageHeight = document.documentElement.scrollHeight;
+    window.scrollTo({ left: sx, top: sy, behavior: 'instant' });
     return out;
   }, LINE_HELD);
 }
@@ -808,6 +853,24 @@ async function playByHand(page, press) {
   }
   if (!(await page.locator('#bg-action-play').count())) throw new Error('PLAY is not offered once the roll is played');
   await press(page.locator('#bg-action-play'));
+}
+
+// PLAY locks what edits the position and leaves what reads it.
+async function lockedInPlay(page, tag, locked) {
+  await settle(page);
+  const state = await page.evaluate(() => ({
+    strip: document.querySelector('#an-strip').disabled,
+    cube: document.querySelector('#an-cube').matches(':disabled'),
+    opening: document.querySelector('#an-opening').matches(':disabled'),
+    imp: document.querySelector('#an-xgid-import').disabled,
+    copy: document.querySelector('#an-xgid-copy').disabled,
+    id: document.querySelector('#an-xgid').value,
+  }));
+  const want = { strip: locked, cube: locked, opening: locked, imp: locked, copy: false };
+  for (const k of Object.keys(want)) {
+    if (state[k] !== want[k]) throw new Error(`${tag}: in ${locked ? 'PLAY' : 'SET UP'} ${k} is ${state[k] ? 'disabled' : 'live'}`);
+  }
+  if (!state.id.startsWith('XGID=')) throw new Error(`${tag}: the id is "${state.id}" in ${locked ? 'PLAY' : 'SET UP'}`);
 }
 
 async function playItOut(browser, errors, tag, viewport) {
@@ -873,7 +936,15 @@ async function playItOut(browser, errors, tag, viewport) {
     await tableUp(page);
     await playByHand(page, press);
     await expectPlates(page, `${tag} by hand`, ['W 3-1 · 8/5 6/5', /^B [1-6]-[1-6] · \S/, 'W to roll']);
-    await press('#an-ask-double');
+    // In PLAY the position is not edited: the strip, the quick starts and
+    // IMPORT are disabled where they stand (the boxes are held above); the
+    // id and COPY still read the step on the board. The row over the board
+    // offers what a player on roll can do.
+    await lockedInPlay(page, tag, true);
+    for (const sel of ['#an-roll-random', '#an-roll-pick', '#an-roll-double']) {
+      if (!(await page.isVisible(sel))) throw new Error(`${tag}: White to roll has no ${sel}`);
+    }
+    await press('#an-roll-double');
     await expectPlates(page, `${tag} double?`, ['W 3-1 · 8/5 6/5', /^B /, 'W double?']);
     await press('#an-cube-yes');
     await press('#an-pass');
@@ -889,13 +960,23 @@ async function playItOut(browser, errors, tag, viewport) {
     await expectPlates(page, `${tag} another 3-1`, [/^W 3-1 · (?!8\/5 6\/5$)/, 'B to roll']);
     sameLine(`${tag} another 3-1`, held, await lineBoxes(page));
 
+    // PICK A ROLL: the sheet, in PLAY, picks Black's roll; the table follows.
+    await press('#an-roll-pick');
+    await page.waitForSelector('#an-roll-sheet');
+    await press('#an-roll-52');
+    await expectPlates(page, `${tag} a roll picked`, [/^W 3-1 · /, 'B 5-2']);
+    await tableUp(page);
+    sameLine(`${tag} a roll picked`, held, await lineBoxes(page));
+
     // SET UP at a later step: an edit starts a fresh line from it.
     await press('#an-mode-setup');
+    await lockedInPlay(page, tag, false);
     await press('#an-turn-white');
-    await expectPlates(page, `${tag} a fresh line`, ['W to roll']);
+    // (the roll picked for Black stays the ask; only the side changed)
+    await expectPlates(page, `${tag} a fresh line`, ['W 5-2']);
     sameLine(`${tag} a fresh line`, held, await lineBoxes(page));
     await noSideScroll(page, `line ${tag}`);
-    log(`line ${tag}: the best 3-1, ROLL FOR ME, analyzed, back and forward with no fetch, by hand, a pass; nothing moved`);
+    log(`line ${tag}: the best 3-1, ROLL FOR ME, analyzed, back and forward with no fetch, by hand (the strip locked), a pass, PICK A ROLL; nothing moved`);
   } finally {
     await context.close();
   }
@@ -1208,6 +1289,7 @@ async function part4(browser, errors) {
       await menu(browser, errors);
       await desktop(browser, errors);
       await phone(browser, errors);
+      await mouseHints(browser, errors);
       await aim(browser, errors, '320', { width: 320, height: 568 });
       await aim(browser, errors, '844x390', { width: 844, height: 390 });
       await doors(browser, errors);

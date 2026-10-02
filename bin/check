@@ -195,8 +195,10 @@ if [[ "$mode" == "--browser" ]]; then
   # unlimited session and a single game (setup.exs), a guest runs one and
   # is asked to sign in, an account runs the other.
   node playwright/test-puzzles-cards/test.js
-  # The analysis board: a position set up by mouse and by finger, every
-  # setting in the strip, the id in and out, and nothing moving.
+  # The analysis board, all four parts: a position set up by mouse and by
+  # finger, every setting in the strip, the id in and out; ANALYZE against
+  # the stand-in engine it starts (setup.exs, on ANALYSIS_STUB_PORT above);
+  # playing it out; SAVE into a set and MANAGE it -- nothing moving.
   node playwright/test-analysis/test.js
 fi
 
