@@ -21,7 +21,8 @@ import Json.Decode as D
 import Page.Analysis as Analysis exposing (Brush(..), Button(..), Msg(..), Target(..))
 import PuzzleApiFixtures
 import Session
-import Test exposing (Test, describe, test)
+import Fuzz exposing (Fuzzer)
+import Test exposing (Test, describe, fuzz, test)
 import Test.Html.Event as Event
 import Test.Html.Query as Query
 import Test.Html.Selector exposing (attribute, class, id, text)
@@ -38,7 +39,13 @@ suite =
         , theLine
         , settings
         , answering
+        , placing
         ]
+
+
+none : Analysis.Off
+none =
+    { white = 0, black = 0 }
 
 
 page : Analysis.Model
@@ -104,16 +111,16 @@ painting =
         , test "a right click (or a long press) is the other colour's brush" <|
             \_ ->
                 Expect.all
-                    [ \_ -> Analysis.paint (Paint White) Secondary (Point 5) Setup.empty |> Result.map (at 5) |> Expect.equal (Ok -1)
-                    , \_ -> Analysis.paint (Paint Black) Secondary (Point 5) Setup.empty |> Result.map (at 5) |> Expect.equal (Ok 1)
+                    [ \_ -> Analysis.paint (Paint White) Secondary (Point 5) ( Setup.empty, none ) |> Result.map (Tuple.first >> at 5) |> Expect.equal (Ok -1)
+                    , \_ -> Analysis.paint (Paint Black) Secondary (Point 5) ( Setup.empty, none ) |> Result.map (Tuple.first >> at 5) |> Expect.equal (Ok 1)
                     ]
                     ()
         , test "the x takes one off whatever is there, with either button" <|
             \_ ->
                 Expect.all
-                    [ \_ -> Analysis.paint Erase Primary (Point 6) Setup.opening |> Result.map (at 6) |> Expect.equal (Ok 4)
-                    , \_ -> Analysis.paint Erase Secondary (Point 12) Setup.opening |> Result.map (at 12) |> Expect.equal (Ok -4)
-                    , \_ -> Analysis.paint Erase Primary (Point 3) Setup.opening |> Result.map (at 3) |> Expect.equal (Ok 0)
+                    [ \_ -> Analysis.paint Erase Primary (Point 6) ( Setup.opening, none ) |> Result.map (Tuple.first >> at 6) |> Expect.equal (Ok 4)
+                    , \_ -> Analysis.paint Erase Secondary (Point 12) ( Setup.opening, none ) |> Result.map (Tuple.first >> at 12) |> Expect.equal (Ok -4)
+                    , \_ -> Analysis.paint Erase Primary (Point 3) ( Setup.opening, none ) |> Result.map (Tuple.first >> at 3) |> Expect.equal (Ok 0)
                     ]
                     ()
         , test "the bar's halves take the same taps" <|
@@ -438,8 +445,11 @@ theLine =
         , test "each sentence is the setup's own" <|
             \_ ->
                 Expect.all
-                    [ \_ -> send PressedClear page |> Analysis.line |> Expect.equal (Just (Setup.noneMessage White))
-                    , \_ -> sendAll (PressedClear :: List.repeat 15 (Pressed Primary (Point 6))) page |> Analysis.line |> Expect.equal (Just (Setup.noneMessage Black))
+                    [ \_ -> send PressedClear page |> Analysis.line |> Expect.equal (Just "Place 15 more White and 15 more Black checkers")
+                    , \_ -> sendAll (PressedClear :: List.repeat 15 (Pressed Primary (Point 6))) page |> Analysis.line |> Expect.equal (Just "Place 15 more Black checkers")
+                    , \_ -> sendAll [ PickedRoll ( 3, 1 ), PickedBrush Erase, Pressed Primary (Point 6) ] page |> Analysis.line |> Expect.equal (Just "Place 1 more White checker")
+                    , \_ -> sendAll [ PickedBrush Erase, Pressed Primary (Point 6) ] page |> Analysis.line |> Expect.equal (Just "Place 1 more White checker")
+                    , \_ -> sendAll [ PickedBrush Erase, Pressed Primary (Point 6), PickedBrush (Paint White), Pressed Primary (Tray White) ] page |> Analysis.line |> Expect.equal (Just "Pick a roll")
                     , \_ -> sendAll [ CycledCube, CycledOwner, PickedDouble ] page |> Analysis.line |> Expect.equal (Just (Setup.cubeOwnedMessage Black))
                     , \_ -> sendAll [ CycledCube, PickedTake ] page |> Analysis.line |> Expect.equal (Just (Setup.cubeOwnedMessage White))
                     , \_ -> sendAll [ PickedDouble ] page |> Analysis.line |> Expect.equal Nothing
@@ -840,3 +850,142 @@ isAsking ask =
 
         _ ->
             False
+
+
+placing : Test
+placing =
+    describe "every checker placed, borne off, or not placed yet"
+        [ test "a checker taken off the board is not placed, not borne off" <|
+            \_ ->
+                sendAll [ PickedRoll ( 3, 1 ), PickedBrush Erase, Pressed Primary (Point 6) ] page
+                    |> Expect.all
+                        [ .off >> Expect.equal none
+                        , \m -> Analysis.toPlace White ( m.setup, m.off ) |> Expect.equal 1
+                        , Analysis.analyzable >> Expect.equal False
+                        , Analysis.view >> Query.fromHtml >> Query.find [ id "an-left-white" ] >> Query.has [ text "1" ]
+                        , Analysis.view >> Query.fromHtml >> Query.find [ id "an-off-white" ] >> Query.has [ text "0 off" ]
+                        ]
+        , test "a tap on a tray bears one of those not placed off" <|
+            \_ ->
+                sendAll [ PickedRoll ( 3, 1 ), PickedBrush Erase, Pressed Primary (Point 6), PickedBrush (Paint Black), Pressed Primary (Tray White) ] page
+                    |> Expect.all
+                        [ .off >> Expect.equal { white = 1, black = 0 }
+                        , Analysis.line >> Expect.equal Nothing
+                        , Analysis.analyzable >> Expect.equal True
+                        , Analysis.view >> Query.fromHtml >> Query.find [ id "an-off-white" ] >> Query.has [ text "1 off" ]
+                        , Analysis.view >> Query.fromHtml >> Query.find [ id "an-left-white" ] >> Query.has [ class "is-none" ]
+                        ]
+        , test "the other button, or the x, takes one back from the tray to be placed" <|
+            \_ ->
+                let
+                    borne =
+                        sendAll [ PickedBrush Erase, Pressed Primary (Point 6), PickedBrush (Paint White), Pressed Primary (Tray White) ] page
+                in
+                Expect.all
+                    [ send (Pressed Secondary (Tray White)) >> .off >> Expect.equal none
+                    , sendAll [ PickedBrush Erase, Pressed Primary (Tray White) ] >> .off >> Expect.equal none
+                    , send (Pressed Secondary (Tray White)) >> Analysis.line >> Expect.equal (Just "Place 1 more White checker")
+                    ]
+                    borne
+        , test "a tray refuses what it cannot do, and flashes" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> send (Pressed Primary (Tray White)) page |> Expect.all [ .off >> Expect.equal none, .refused >> Expect.equal (Just ( White, 1 )) ]
+                    , \_ -> send (Pressed Secondary (Tray Black)) page |> .refused |> Expect.equal (Just ( Black, 1 ))
+                    ]
+                    ()
+        , test "with none left to place, a checker on the board comes back from the tray" <|
+            \_ ->
+                Analysis.init Session.empty "http://oskol.test" { xgid = Just "XGID=-b----E-C---eE---c-e----B-:0:0:1:31:0:0:1:0:10", puzzle = Nothing }
+                    |> Tuple.first
+                    |> sendAll [ PickedBrush Erase, Pressed Primary (Point 6), PickedBrush (Paint White), Pressed Primary (Tray White), Pressed Primary (Point 4) ]
+                    |> Expect.all
+                        [ .off >> Expect.equal none
+                        , .setup >> at 4 >> Expect.equal 1
+                        , Analysis.line >> Expect.equal Nothing
+                        ]
+        , test "CLEAR: every checker not placed, nothing borne off" <|
+            \_ ->
+                sendAll [ PickedBrush Erase, Pressed Primary (Point 6), Pressed Primary (Tray White), PressedClear ] page
+                    |> Expect.all
+                        [ .off >> Expect.equal none
+                        , \m -> ( Analysis.toPlace White ( m.setup, m.off ), Analysis.toPlace Black ( m.setup, m.off ) ) |> Expect.equal ( 15, 15 )
+                        ]
+        , test "a door in has nothing not placed: what is not on the board is borne off" <|
+            \_ ->
+                Analysis.init Session.empty "http://oskol.test" { xgid = Just "XGID=--A-bBBBB--BbB-----dbbc-B-:0:0:1:31:6:4:1:7:10", puzzle = Nothing }
+                    |> Tuple.first
+                    |> Expect.all
+                        [ \m -> m.off |> Expect.equal (Analysis.offFrom m.setup)
+                        , Analysis.line >> Expect.equal Nothing
+                        , Analysis.analyzable >> Expect.equal True
+                        ]
+        , test "FLIP swaps the trays" <|
+            \_ ->
+                sendAll [ PickedBrush Erase, Pressed Primary (Point 6), PickedBrush (Paint White), Pressed Primary (Tray White), PressedFlip ] page
+                    |> .off
+                    |> Expect.equal { white = 0, black = 1 }
+        , fuzz edits "ANALYZE is on exactly when every checker is placed or off, a move has its roll, and the setup checks" <|
+            \msgs ->
+                let
+                    m =
+                        sendAll msgs page
+
+                    complete =
+                        Analysis.toPlace White ( m.setup, m.off ) == 0 && Analysis.toPlace Black ( m.setup, m.off ) == 0
+
+                    rolled =
+                        m.setup.ask /= Move Nothing
+                in
+                Expect.all
+                    [ Analysis.analyzable >> Expect.equal (complete && rolled && Setup.check m.setup == Nothing)
+                    , \_ -> List.all (\c -> Analysis.toPlace c ( m.setup, m.off ) >= 0) [ White, Black ] |> Expect.equal True
+                    , \_ ->
+                        if complete then
+                            m.off |> Expect.equal (Analysis.offFrom m.setup)
+
+                        else
+                            Expect.pass
+                    ]
+                    m
+        ]
+
+
+{-| Any run of what the page's controls send, from the opening.
+-}
+edits : Fuzzer (List Msg)
+edits =
+    let
+        targets =
+            List.map Point (List.range 1 24) ++ [ Bar White, Bar Black, Tray White, Tray Black ]
+    in
+    Fuzz.listOfLengthBetween 0 80
+        (Fuzz.oneOf
+            [ Fuzz.map2 Pressed (Fuzz.oneOfValues [ Primary, Secondary ]) (Fuzz.oneOfValues targets)
+            , Fuzz.oneOfValues
+                [ PickedBrush (Paint White)
+                , PickedBrush (Paint Black)
+                , PickedBrush Erase
+                , PickedTurn White
+                , PickedTurn Black
+                , PickedRoll ( 3, 1 )
+                , PickedRoll ( 6, 6 )
+                , OpenedRolls
+                , ClosedRolls
+                , PickedDouble
+                , PickedTake
+                , CycledCube
+                , CycledOwner
+                , ToggledGame
+                , SteppedLength 1
+                , SteppedLength -1
+                , SteppedScore White 1
+                , SteppedScore Black 1
+                , SteppedScore White -1
+                , ToggledCrawford
+                , PressedOpening
+                , PressedClear
+                , PressedFlip
+                ]
+            ]
+        )

@@ -287,6 +287,21 @@ and the column is beside both.
   scroll. A sixteenth checker is refused and that colour's tray flashes
   (`an-flash-<color>-<parity>` on the page). `Page.Analysis.paint` is the
   rule, pure.
+- **Every checker is somewhere.** Each colour's fifteen are on the board,
+  borne off, or **not placed** yet. `Setup` cannot say "not placed" (to it,
+  and to the server, off is whatever is not on the board), so the page
+  keeps each colour's borne off itself (`Model.off`, `Off`) and derives
+  the rest (`toPlace`). A checker taken off the board -- painted over, the
+  x -- is not placed, never borne off; a checker put on comes from the not
+  placed, or with none from the tray. The trays are places
+  (`#an-off-white`, `#an-off-black`, which say "3 off" in a held slot): a
+  tap bears one not-placed checker off, the other button, a long press or
+  the x takes one back. Each brush wears its colour's not-placed count
+  (`#an-left-white`, `#an-left-black`, a floating badge, hidden at 0). The
+  pip counts are held to their widest so the trays beside them never move.
+  CLEAR makes all thirty not placed; OPENING places them all; FLIP swaps
+  the trays; every door in (`?xgid=`, `?p=`, IMPORT) has nothing not
+  placed, so its off is fifteen less the board (`offFrom`).
 - **The strip** (`#an-strip`), two rows at every width, every control a
   fixed width: TO PLAY (`#an-turn`); the ask (`#an-ask`): ROLL
   (`#an-dice`, opening `#an-roll-sheet`, the 21 rolls, a bottom sheet on a
@@ -312,12 +327,17 @@ and the column is beside both.
   and `#an-import-go`; "That is not a position id" in its fixed line).
 - **The line** (`#an-check`, two lines tall, always there): "Opening the
   puzzle…" while `?p=` is read, a door's refusal ("That puzzle is gone.",
-  "That is not a position id") until the first edit, else the first
-  sentence of `Setup.check`. ANALYZE (`#an-analyze`) is disabled while
-  `check` says anything; pressing it is the next section. Every edit goes
-  through one function (`edit`) that clears the notice, and, when the
-  position really changed, the answer (a control that changes nothing, the
-  turn already White, leaves it up).
+  "That is not a position id") until the first edit, else what is left to
+  place ("Place 3 more White checkers", "Place 3 more White and 2 more
+  Black checkers"), else the first sentence of `Setup.check`. ANALYZE
+  (`#an-analyze`) is disabled while the line says anything (`analyzable`:
+  every checker placed or off, a roll for a move, `check` clear), so the
+  page only ever sends a complete position, whose off the server's
+  fifteen-less-the-board agrees with; pressing it is the next section.
+  Every edit goes through one function (`edit`, or `editWith` where the
+  trays change too) that clears the notice, and, when the position really
+  changed -- a checker borne off or taken back counts -- the answer (a
+  control that changes nothing, the turn already White, leaves it up).
 - **Doors in.** `/analysis` is `Setup.opening`. `?xgid=` opens on the id
   as it is: an id with Black on roll stays Black to play (the board is
   not turned round, so COPY gives back the id that was pasted; FLIP turns

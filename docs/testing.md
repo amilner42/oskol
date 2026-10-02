@@ -90,7 +90,11 @@ the three schedule shapes), and `AnalysisFixtures.elm` (the analysis board's
   / CLEAR / FLIP, the XGID field following every change, IMPORT and its
   refusal, `?xgid=` and `?p=` on every `PuzzleApiFixtures` question, a gone
   puzzle, the check line's sentences and ANALYZE, CRAWFORD only one away,
-  the cube's owner at 1, the match's bounds. The answer, on
+  the cube's owner at 1, the match's bounds; every checker placed, borne
+  off or not placed (a taken-off checker is not placed, the trays bear off
+  and give back, CLEAR, the doors' off), and a fuzz over runs of every
+  control: ANALYZE is on exactly when every checker is placed or off, a
+  move has its roll and `Setup.check` is clear. The answer, on
   `AnalysisFixtures`: every one decodes; the plate counting seconds; pending
   then done (the best play in words, the table, "4-ply · asked just now");
   a cached answer at once ("already analyzed"); the double and the take; a
