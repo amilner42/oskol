@@ -1,6 +1,7 @@
 module Api.Analysis exposing
     ( Status(..), Answer, Reveal, Levels, Refusal
     , ask, status, statusDecoder, revealDecoder, refusalOf
+    , moves, movesLevel
     )
 
 {-| The analysis board's two requests (analysis-ask-api): ask the engine
@@ -30,6 +31,7 @@ import Games.Backgammon.Puzzle as Puzzle
 import Games.Backgammon.Setup as Setup exposing (Setup)
 import Http
 import Json.Decode as D
+import Json.Encode as E
 import Session exposing (Session)
 
 
@@ -144,6 +146,34 @@ statusDecoder =
                     _ ->
                         D.fail ("not an analysis status: " ++ s)
             )
+
+
+{-| Every legal way to play a set-up position's roll (`POST
+/papi/analysis/moves`), for a step of the line played out on the board:
+the puzzle page's own tree (`Puzzle.Tree`, the mover drawn as White),
+worked out on the server by move generation. Never the engine, and the
+position need not have been analyzed. A tree too big to send whole comes
+`lazy`, its levels from `movesLevel`.
+-}
+moves : Session -> Setup -> (Result Api.Error Puzzle.Tree -> msg) -> Cmd msg
+moves session setup toMsg =
+    Api.post session
+        "/papi/analysis/moves"
+        (E.object [ ( "setup", Setup.toJson setup ) ])
+        (D.field "tree" Puzzle.treeDecoder)
+        toMsg
+
+
+{-| One level of a lazy tree from `moves`, by the node id its build gave
+it, exactly as `GET /papi/puzzles/:id/tree?node=` serves a puzzle's.
+-}
+movesLevel : Session -> Setup -> String -> (Result Api.Error Puzzle.Node -> msg) -> Cmd msg
+movesLevel session setup node toMsg =
+    Api.post session
+        "/papi/analysis/moves"
+        (E.object [ ( "setup", Setup.toJson setup ), ( "node", E.string node ) ])
+        (D.field "tree" Puzzle.nodeDecoder)
+        toMsg
 
 
 revealDecoder : D.Decoder Reveal

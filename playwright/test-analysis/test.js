@@ -726,13 +726,169 @@ async function panelAt(browser, errors, tag, viewport) {
   }
 }
 
+// ---------- Part 3: playing it out ----------
+
+// The boxes that hold all along the line: the board, the row over it (the
+// brushes' box, PLAY's row in it), the head's SET UP / PLAY, the strip, the
+// line and its arrows, ANALYZE's slot and the panel.
+const LINE_HELD = [
+  '#an-board', '.an-brushes', '#an-modes', '#an-strip', '.an-line-wrap', '#an-line', '#an-plates',
+  '#an-first', '#an-prev', '#an-next', '#an-last', '.an-analyze', '#an-panel',
+];
+
+async function lineBoxes(page) {
+  await settle(page);
+  return page.evaluate((sels) => {
+    const out = {};
+    for (const s of sels) {
+      const el = document.querySelector(s);
+      if (!el) { out[s] = null; continue; }
+      const r = el.getBoundingClientRect();
+      out[s] = [r.x + window.scrollX, r.y + window.scrollY, r.width, r.height].map((n) => Math.round(n * 2) / 2);
+    }
+    out.pageHeight = document.documentElement.scrollHeight;
+    return out;
+  }, LINE_HELD);
+}
+
+function sameLine(tag, before, after) {
+  for (const s of [...LINE_HELD, 'pageHeight']) {
+    if (JSON.stringify(before[s]) !== JSON.stringify(after[s]))
+      throw new Error(`${tag}: ${s} moved from ${JSON.stringify(before[s])} to ${JSON.stringify(after[s])}`);
+  }
+}
+
+const plates = (page) => page.$$eval('#an-plates .an-plate', (ps) => ps.map((p) => p.textContent.trim()));
+const onPlate = (page) => page.$$eval('#an-plates .an-plate', (ps) => ps.findIndex((p) => p.classList.contains('is-on')));
+
+async function expectPlates(page, tag, want) {
+  await settle(page);
+  const got = await plates(page);
+  const ok = got.length === want.length && want.every((w, i) => (w instanceof RegExp ? w.test(got[i]) : w === got[i]));
+  if (!ok) throw new Error(`${tag}: the line reads ${JSON.stringify(got)}, not ${want.map(String).join(' | ')}`);
+}
+
+// The table is up for the step on the board: its legal plays are in.
+async function tableUp(page) {
+  await page.waitForFunction(() => {
+    const h = document.querySelector('#an-play-hint');
+    return h && /then PLAY|PLAY passes/.test(h.textContent);
+  }, null, { timeout: 15000 });
+  await settle(page);
+}
+
+// Stage the whole roll on the table, a tap on a source per die, and PLAY.
+async function playByHand(page, press) {
+  for (let i = 0; i < 6; i++) {
+    if (await page.locator('#bg-action-play').count()) break;
+    const source = page.locator('.bg-point.source, .bg-bar.source');
+    if (!(await source.count())) throw new Error('the table offers no checker to move');
+    await press(source.first());
+    await page.waitForTimeout(120);
+  }
+  if (!(await page.locator('#bg-action-play').count())) throw new Error('PLAY is not offered once the roll is played');
+  await press(page.locator('#bg-action-play'));
+}
+
+async function playItOut(browser, errors, tag, viewport) {
+  const touch = viewport.width < 1024;
+  const context = await browser.newContext({ viewport, hasTouch: touch, isMobile: touch });
+  try {
+    const page = settled(await context.newPage());
+    watch(page, `line ${tag}`, errors);
+    const press = async (target) => {
+      const loc = typeof target === 'string' ? page.locator(target) : target;
+      await (touch ? loc.tap() : loc.click());
+      await settle(page);
+    };
+    // Nothing on the way asks the engine but ANALYZE.
+    let asks = 0;
+    page.on('request', (r) => { if (/\/papi\/analysis$/.test(new URL(r.url()).pathname) && r.method() === 'POST') asks += 1; });
+
+    await open(page, `/analysis?xgid=${encodeURIComponent(OPENING_31)}`);
+    const held = await lineBoxes(page);
+    await expectPlates(page, `${tag} the start`, ['W 3-1']);
+    if (!(await page.$('#an-first:disabled')) || !(await page.$('#an-last:disabled'))) throw new Error(`${tag}: one step and the arrows are live`);
+
+    // The best 3-1, played.
+    await analyze(page, press);
+    if ((await text(page, '#an-play-candidate')) !== 'PLAY BEST') throw new Error(`${tag}: PLAY BEST is not offered`);
+    await press('#an-play-candidate');
+    await expectPlates(page, `${tag} the best 3-1`, ['W 3-1 · 8/5 6/5', 'B to roll']);
+    if ((await onPlate(page)) !== 1) throw new Error(`${tag}: the board is not on Black's step`);
+    if (!(await page.$('#an-mode-play.is-on'))) throw new Error(`${tag}: playing did not put the board in PLAY`);
+    sameLine(`${tag} played`, held, await lineBoxes(page));
+    if (tag === '390') await page.screenshot({ path: `${SHOTS}/analysis-${tag}-line-01-played.png`, fullPage: true });
+
+    // ROLL FOR ME for Black, the table on its legal plays, and ANALYZE.
+    await press('#an-roll-random');
+    await expectPlates(page, `${tag} rolled`, ['W 3-1 · 8/5 6/5', /^B [1-6]-[1-6]$/]);
+    await tableUp(page);
+    sameLine(`${tag} the table`, held, await lineBoxes(page));
+    await page.screenshot({ path: `${SHOTS}/analysis-${tag}-line-02-table.png`, fullPage: true });
+    const before = asks;
+    await analyze(page, press);
+    if (asks !== before + 1) throw new Error(`${tag}: ANALYZE asked ${asks - before} times`);
+    if (!(await page.$('#an-answer'))) throw new Error(`${tag}: Black's roll was not answered`);
+    sameLine(`${tag} Black analyzed`, held, await lineBoxes(page));
+    await page.screenshot({ path: `${SHOTS}/analysis-${tag}-line-03-black.png`, fullPage: true });
+
+    // Back to the opening and forward again: no fetch, the answers kept.
+    const walking = asks;
+    await press('#an-first');
+    if ((await onPlate(page)) !== 0) throw new Error(`${tag}: FIRST is not the opening`);
+    if (!(await page.$('#an-answer'))) throw new Error(`${tag}: the opening's answer is gone`);
+    if ((await page.inputValue('#an-xgid')) !== OPENING_31) throw new Error(`${tag}: step 0 is ${await page.inputValue('#an-xgid')}`);
+    if (!(await page.$('#an-candidates .rp-cand[data-rank="1"]'))) throw new Error(`${tag}: the opening's candidates are gone`);
+    sameLine(`${tag} back to the opening`, held, await lineBoxes(page));
+    await press('#an-next');
+    if ((await onPlate(page)) !== 1) throw new Error(`${tag}: NEXT is not Black's step`);
+    if (!(await page.$('#an-answer'))) throw new Error(`${tag}: Black's answer is gone`);
+    if (asks !== walking) throw new Error(`${tag}: walking the line asked the engine`);
+    sameLine(`${tag} forward`, held, await lineBoxes(page));
+
+    // Black plays by hand on the table (Black at the bottom), then White
+    // doubles and Black passes: the line ends in its sentence.
+    await press('#an-mode-play');
+    await tableUp(page);
+    await playByHand(page, press);
+    await expectPlates(page, `${tag} by hand`, ['W 3-1 · 8/5 6/5', /^B [1-6]-[1-6] · \S/, 'W to roll']);
+    await press('#an-ask-double');
+    await expectPlates(page, `${tag} double?`, ['W 3-1 · 8/5 6/5', /^B /, 'W double?']);
+    await press('#an-cube-yes');
+    await press('#an-pass');
+    await expectPlates(page, `${tag} passed`, ['W 3-1 · 8/5 6/5', /^B /, 'W doubles', 'B passes']);
+    if ((await text(page, '#an-line-end')) !== 'Black passes. White wins 1 point.') throw new Error(`${tag}: the line ends "${await text(page, '#an-line-end')}"`);
+    sameLine(`${tag} passed`, held, await lineBoxes(page));
+    await page.screenshot({ path: `${SHOTS}/analysis-${tag}-line-04-passed.png`, fullPage: true });
+
+    // A different move at step 1 drops what came after it.
+    await press('#an-plate-0');
+    await press('#an-candidates .rp-cand[data-rank="3"]');
+    await press('#an-play-candidate');
+    await expectPlates(page, `${tag} another 3-1`, [/^W 3-1 · (?!8\/5 6\/5$)/, 'B to roll']);
+    sameLine(`${tag} another 3-1`, held, await lineBoxes(page));
+
+    // SET UP at a later step: an edit starts a fresh line from it.
+    await press('#an-mode-setup');
+    await press('#an-turn-white');
+    await expectPlates(page, `${tag} a fresh line`, ['W to roll']);
+    sameLine(`${tag} a fresh line`, held, await lineBoxes(page));
+    await noSideScroll(page, `line ${tag}`);
+    log(`line ${tag}: the best 3-1, ROLL FOR ME, analyzed, back and forward with no fetch, by hand, a pass; nothing moved`);
+  } finally {
+    await context.close();
+  }
+}
+
 (async () => {
   fs.mkdirSync(SHOTS, { recursive: true });
   const browser = await playwright.chromium.launch({ headless: true, executablePath: process.env.PW_CHROMIUM, args: ['--no-sandbox'] });
   const errors = [];
   try {
-    // PART=2 runs part 2 alone (while working on the answer).
-    if (process.env.PART !== '2') {
+    // PART=2 runs parts 2 and 3, PART=3 part 3 alone (while working on them).
+    const part = process.env.PART || '1';
+    if (part === '1') {
       await menu(browser, errors);
       await desktop(browser, errors);
       await phone(browser, errors);
@@ -743,11 +899,17 @@ async function panelAt(browser, errors, tag, viewport) {
 
     const stopEngine = await startEngine();
     try {
-      await verdict(browser, errors);
-      await panelAt(browser, errors, '390', { width: 390, height: 844 });
-      await panelAt(browser, errors, '320', { width: 320, height: 568 });
-      await panelAt(browser, errors, '844x390', { width: 844, height: 390 });
-      await panelAt(browser, errors, 'desktop', { width: 1440, height: 900 });
+      if (part !== '3') {
+        await verdict(browser, errors);
+        await panelAt(browser, errors, '390', { width: 390, height: 844 });
+        await panelAt(browser, errors, '320', { width: 320, height: 568 });
+        await panelAt(browser, errors, '844x390', { width: 844, height: 390 });
+        await panelAt(browser, errors, 'desktop', { width: 1440, height: 900 });
+      }
+      await playItOut(browser, errors, 'desktop', { width: 1440, height: 900 });
+      await playItOut(browser, errors, '390', { width: 390, height: 844 });
+      await playItOut(browser, errors, '320', { width: 320, height: 568 });
+      await playItOut(browser, errors, '844x390', { width: 844, height: 390 });
     } finally {
       stopEngine();
     }

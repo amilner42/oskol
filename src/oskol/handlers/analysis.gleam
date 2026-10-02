@@ -2,6 +2,7 @@
 ////
 ////     POST /papi/analysis        a set-up position (`analysis/setup`'s wire)
 ////     GET  /papi/analysis/:key   where that ask stands
+////     POST /papi/analysis/moves  the legal plays of a set-up roll: no engine
 ////
 //// **An analyzed position is a puzzle row.** The question is the key
 //// (`oskol/puzzles.key`), so a position asked before -- by anyone, as a
@@ -25,6 +26,7 @@
 
 import backgammon/analysis
 import gleam/bool
+import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
@@ -382,6 +384,111 @@ fn failed_body(message: String) -> String {
     #("status", json.string("failed")),
     #("message", json.string(message)),
   ])
+}
+
+// ---------- POST /papi/analysis/moves ----------
+
+/// A cube question has no checkers to move.
+pub const no_moves_message = "Only a roll has moves to play"
+
+pub const moves_limited_message = "That is a lot of moves at once. Try again in a minute."
+
+/// How many move trees one caller may ask for in a minute. A step of a
+/// line is one; a turn too big to send whole is one more per checker.
+pub const moves_per_minute = 120
+
+/// Every caller's together, a minute: a guard against a loop, far above
+/// what the site's players could press.
+pub const moves_global_per_minute = 3000
+
+const minute_s = 60
+
+/// Every legal way to play a set-up position's roll, for the analysis
+/// board's line (analysis-play-it-out): the puzzle page's own tree
+/// (`puzzles/tree`, `handlers/puzzles.tree_of`), worked out on the server
+/// from the setup, mover-relative as a puzzle's is. **Never the engine**:
+/// it is move generation in Gleam, and the position need not have been
+/// analyzed. The body is `{setup, node}`: with no node, the whole turn (or
+/// its root, `lazy`, where it is too big to send); with a node, one level
+/// of it, exactly as `GET /papi/puzzles/:id/tree?node=` serves one.
+///
+/// A position `check` refuses, or one that asks the cube, is a 422 with its
+/// sentence. A roll that plays nothing is not refused: its root has no
+/// children, which is the turn. The tree is kept under the question's key
+/// (`setup:<key>`), so a level request is a lookup. Charged to the caller
+/// (`moves_buckets`), because a turn too big to send whole is worked out in
+/// full once, which is the only work here worth bounding.
+pub fn moves_json(
+  ctx: Ctx,
+  session: Session,
+  body_json: String,
+) -> Result(String, ApiError) {
+  let reader = {
+    use s <- decode.field("setup", setup.decoder())
+    use node <- decode.optional_field(
+      "node",
+      None,
+      decode.optional(decode.string),
+    )
+    decode.success(#(s, node))
+  }
+  use #(s, node) <- result.try(
+    json.parse(body_json, reader)
+    |> result.replace_error(error.validation_failed(not_a_position_message)),
+  )
+  use s <- result.try(
+    setup.check(s) |> result.map_error(error.validation_failed),
+  )
+  use <- bool.guard(
+    case s.ask {
+      setup.Move(_) -> False
+      _ -> True
+    },
+    Error(error.validation_failed(no_moves_message)),
+  )
+  use _ <- result.try(
+    ctx.analysis.allow_ask(moves_buckets(session))
+    |> result.map_error(fn(refused: Refused) {
+      error.Limited(
+        rate_limited_code,
+        moves_limited_message,
+        int.max(refused.retry_after_s, 1),
+      )
+    }),
+  )
+  let question = setup.question(s)
+  let id = "setup:" <> puzzles.key(question)
+  case node {
+    None | Some("") ->
+      Ok(
+        envelope.ok([
+          #("tree", puzzle_page.tree_of(ctx, id, question)),
+        ]),
+      )
+    Some(node) -> puzzle_page.level_json(ctx, id, question, node)
+  }
+}
+
+/// The buckets one moves request is charged to: the caller's minute (an
+/// account's when signed in, else the browser's) and everybody's.
+pub fn moves_buckets(session: Session) -> List(LimitBucket) {
+  let who = case session.user_id, session.guest_id {
+    Some(user_id), _ -> "moves:user:" <> user_id
+    None, Some(guest_id) -> "moves:guest:" <> guest_id
+    None, None -> "moves:guest:none"
+  }
+  [
+    LimitBucket(
+      key: who <> ":minute",
+      limit: moves_per_minute,
+      window_s: minute_s,
+    ),
+    LimitBucket(
+      key: "moves:global:minute",
+      limit: moves_global_per_minute,
+      window_s: minute_s,
+    ),
+  ]
 }
 
 // ---------- The engine's answer, kept ----------

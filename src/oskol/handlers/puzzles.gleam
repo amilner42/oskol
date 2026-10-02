@@ -352,8 +352,10 @@ fn question_json(q: Question) -> Json {
 ///
 /// The payload is a pure function of the stored question, so it is worked
 /// out once per puzzle and kept: the store is bounded and may forget, and a
-/// miss only costs the build again.
-fn tree_of(ctx: Ctx, id: String, question: Question) -> Json {
+/// miss only costs the build again. `id` is what it is kept under: a
+/// puzzle's id, or for a position nobody has stored (the analysis board's
+/// line, `handlers/analysis.moves_json`) a name made from its key.
+pub fn tree_of(ctx: Ctx, id: String, question: Question) -> Json {
   case question.kind, question.dice {
     MoveKind, Some(roll) ->
       case ctx.puzzles.cached_tree(id) {
@@ -487,11 +489,23 @@ pub fn tree_node_json(
   id: String,
   node: String,
 ) -> Result(String, ApiError) {
-  let nothing = error.NotFound(not_found_message)
   use stored <- result.try(fetch(ctx, id))
   use question <- result.try(question_of(stored))
+  level_json(ctx, stored.id, question, node)
+}
+
+/// One level of the turn `question` asks about, kept under `id` as
+/// `tree_of` keeps it: the node by the id the build gave it, or a 404 for
+/// an id the build never minted.
+pub fn level_json(
+  ctx: Ctx,
+  id: String,
+  question: Question,
+  node: String,
+) -> Result(String, ApiError) {
+  let nothing = error.NotFound(not_found_message)
   use whole <- result.try(
-    moves_of(ctx, stored.id, question) |> option.to_result(nothing),
+    moves_of(ctx, id, question) |> option.to_result(nothing),
   )
   use found <- result.try(
     tree.node_by_id(whole, node) |> option.to_result(nothing),

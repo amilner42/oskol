@@ -3494,7 +3494,7 @@ oskol-demo-board {
    as tall before the answer as after it, and filling or clearing it
    moves nothing. The heights hold the tallest answer: a move's sentence
    over five candidates, the depth line and the buttons. */
-.an-panel { flex: none; display: flex; flex-direction: column; min-height: 25rem; }
+.an-panel { flex: none; display: flex; flex-direction: column; min-height: 28rem; }
 .an-panel-hint { margin: 0; padding: 10px 12px; font-size: 13px; line-height: 1.4; color: var(--pencil); border: 1.5px dashed color-mix(in oklab, var(--ink) 30%, transparent); border-radius: 8px; }
 .an-answer.rp-note { min-height: 0; max-height: none; overflow: visible; padding: 8px 10px 10px; }
 .an-answer .rp-words:first-child { margin-top: 0; }
@@ -3544,8 +3544,43 @@ oskol-demo-board {
 @keyframes an-flash-0 { 0%, 45% { background: rgba(255, 210, 63, 0.85); box-shadow: 0 0 0 3px #ffd23f; } 100% { background: transparent; box-shadow: 0 0 0 3px transparent; } }
 @keyframes an-flash-1 { 0%, 45% { background: rgba(255, 210, 63, 0.85); box-shadow: 0 0 0 3px #ffd23f; } 100% { background: transparent; box-shadow: 0 0 0 3px transparent; } }
 
+/* Playing it out (analysis-play-it-out). SET UP / PLAY at the head's right
+   end; in PLAY the row over the board (the brushes' own box) holds what
+   the step asks for; under the board the line, one plate per step between
+   the arrows, scrolling sideways at a fixed height. Every control a fixed
+   width, so nothing moves as the line grows or the step changes. */
+.an-segs.an-modes { margin-left: auto; height: 26px; }
+.an-mode { width: 58px; }
+#an-mode-play { width: 46px; }
+.an-playrow { gap: 8px; }
+.an-act { flex: none; width: 92px; height: 30px; padding: 0; font-size: 7px; border-radius: 7px; box-shadow: 2px 2px 0 0 var(--ink); white-space: nowrap; }
+.an-act.is-on { background: var(--ink); color: #fff; }
+.an-act:disabled { box-shadow: 2px 2px 0 0 #a9a9b2; }
+.an-act.an-roll-random { width: 112px; }
+.an-play-end { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-line-wrap { flex: none; height: 2.2rem; display: flex; align-items: center; min-width: 0; }
+.an-line-wrap .bg-scrub { display: flex; width: 100%; min-width: 0; gap: 6px; }
+.an-plates {
+  flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 5px;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; padding: 0 1px;
+}
+.an-plates::-webkit-scrollbar { display: none; }
+.an-plate {
+  flex: none; height: 1.8rem; padding: 0 8px; border: 1.5px solid var(--ink); border-radius: 7px;
+  background: #fff; color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer;
+  font-variant-numeric: tabular-nums; transition: background 0.12s, color 0.12s;
+}
+.an-plate:hover:not(.is-on) { background: var(--paper-2); }
+.an-plate.is-on { background: var(--ink); color: #fff; }
+.an-action-wide { grid-column: span 2; }
+
 /* A narrow phone: the same two rows, a size down. */
 @media (max-width: 359px) {
+  .an-mode { width: 52px; }
+  #an-mode-play { width: 42px; }
+  .an-act { width: 84px; }
+  .an-act.an-roll-random { width: 100px; }
+  .an-plate { font-size: 11px; padding: 0 6px; }
   .an-seg { font-size: 6px; }
   .an-step { width: 18px; }
   #an-turn-white, #an-turn-black { width: 26px; }
@@ -3569,8 +3604,11 @@ oskol-demo-board {
 /* Sideways: the board down the left at the screen's height, everything
    else the column beside it, the brushes at its top. */
 @media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
-  .rp-page.an-page { height: auto; min-height: var(--page-h); overflow: visible; grid-template-rows: auto auto 1fr; }
+  .rp-page.an-page { height: auto; min-height: var(--page-h); overflow: visible; grid-template-rows: auto auto auto 1fr; }
   .an-page .an-brushes { grid-column: 2; grid-row: 2; }
+  /* the line in the column too, under the brushes, where it can be seen */
+  .an-page .an-line-wrap { grid-column: 2; grid-row: 3; }
+  .an-page .rp-side { grid-row: 4; }
   .an-page .rp-board, .an-page .rp-side { align-self: start; }
 }
 
@@ -3579,13 +3617,21 @@ oskol-demo-board {
    the big board, and the position id on a line of its own. The board's
    width term is the replay's with this column's width. */
 @media (min-width: 1024px) {
-  .an-page .rp-main { grid-template-columns: max-content 26rem; grid-template-rows: auto auto; row-gap: 8px; }
+  .an-page .rp-main { grid-template-columns: max-content 26rem; grid-template-rows: auto auto auto 1fr; row-gap: 8px; }
   .an-page .an-brushes { grid-column: 1; grid-row: 1; }
   .an-page .rp-board { grid-column: 1; grid-row: 2; }
-  .an-page .rp-side { grid-column: 2; grid-row: 1 / span 2; width: 26rem; gap: 14px; }
+  .an-page .an-line-wrap { grid-column: 1; grid-row: 3; height: 2.6rem; }
+  .an-page .rp-side { grid-column: 2; grid-row: 1 / span 4; width: 26rem; gap: 14px; }
+  .an-segs.an-modes { height: 30px; }
+  .an-mode { width: 66px; }
+  #an-mode-play { width: 52px; }
+  .an-act { width: 110px; height: 36px; font-size: 8px; }
+  .an-act.an-roll-random { width: 130px; }
+  .an-plate { height: 2.1rem; font-size: 13px; padding: 0 10px; }
+  /* the board's height less the line under it (its 2.6rem and a gap) */
   .an-page .bg-still {
     --bg-point-h: min(
-      calc((var(--page-h) - 28px - 2.5rem - 2.6rem - 3.2rem - 5.5rem - var(--bg-band-h) - 2 * var(--bg-lip) - 1rem) / 2),
+      calc((var(--page-h) - 28px - 2.5rem - 2.6rem - 3.2rem - 5.5rem - 3.1rem - var(--bg-band-h) - 2 * var(--bg-lip) - 1rem) / 2),
       calc((100vw - 48px - 26rem - 16px - 4rem) / 2.9)
     );
   }

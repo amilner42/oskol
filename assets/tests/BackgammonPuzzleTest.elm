@@ -560,6 +560,7 @@ onTable json f =
                 , theme = View.defaultTheme
                 , swaps = 0
                 , key = 1
+                , moverColor = "white"
                 }
         )
 

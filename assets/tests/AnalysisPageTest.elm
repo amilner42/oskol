@@ -11,6 +11,7 @@ cube's owner).
 import AnalysisFixtures
 import Api
 import Api.Analysis as AnalysisApi
+import Dict
 import Expect
 import Games.Backgammon.Puzzle as Puzzle
 import Games.Backgammon.Setup as Setup exposing (Ask(..), Color(..), Setup)
@@ -40,6 +41,8 @@ suite =
         , settings
         , answering
         , placing
+        , theNextPosition
+        , playingItOut
         ]
 
 
@@ -1000,3 +1003,355 @@ edits =
                 ]
             ]
         )
+
+
+
+
+-- PLAYING IT OUT (analysis-play-it-out)
+
+
+{-| A board drawn from the mover's side (the mover as White), as a
+candidate's position and a tree's node are, from signed counts in the
+mover's numbering.
+-}
+boardOf : List Int -> Puzzle.Board
+boardOf points =
+    let
+        white =
+            List.map (max 0) points
+
+        black =
+            List.map (negate >> max 0) points
+    in
+    { white = { points = white, bar = 0, off = 15 - List.sum white }
+    , black = { points = black, bar = 0, off = 15 - List.sum black }
+    }
+
+
+{-| The opening after 8/5 6/5.
+-}
+after31 : List Int
+after31 =
+    [ -2, 0, 0, 0, 2, 4, 0, 2, 0, 0, 0, -5, 5, 0, 0, 0, -3, 0, -5, 0, 0, 0, 0, 2 ]
+
+
+withRoll31 : Setup
+withRoll31 =
+    { opening | ask = Move (Just ( 3, 1 )) }
+
+
+opening : Setup
+opening =
+    Setup.opening
+
+
+theNextPosition : Test
+theNextPosition =
+    describe "Setup.next: the position a choice leaves"
+        [ test "a play: the other colour to play, no roll yet" <|
+            \_ ->
+                Setup.next (Setup.Played { notation = "8/5 6/5", board = boardOf after31 }) withRoll31
+                    |> Expect.equal (Ok { opening | points = after31, toPlay = Black, ask = Move Nothing })
+        , test "Black's play is turned back round onto the board" <|
+            \_ ->
+                let
+                    black =
+                        { opening | toPlay = Black, ask = Move (Just ( 3, 1 )) }
+                in
+                -- the opening is the same from either side, so Black's 8/5 6/5
+                -- is White's after-3-1 board turned round
+                Setup.next (Setup.Played { notation = "8/5 6/5", board = boardOf after31 }) black
+                    |> Result.map (\s -> ( s.points, s.toPlay ))
+                    |> Expect.equal (Ok ( after31 |> List.reverse |> List.map negate, White ))
+        , test "a play that bears the last checker off ends the line" <|
+            \_ ->
+                Setup.next (Setup.Played { notation = "1/off", board = boardOf (List.repeat 23 0 ++ [ -15 ]) }) withRoll31
+                    |> Expect.equal (Err "White has borne off.")
+        , test "NO DOUBLE: the same colour to roll" <|
+            \_ ->
+                Setup.next Setup.NoDouble { opening | ask = Double }
+                    |> Expect.equal (Ok { opening | ask = Move Nothing })
+        , test "DOUBLE: the other colour asked to take, the cube as it stood" <|
+            \_ ->
+                Setup.next Setup.Doubled { opening | ask = Double }
+                    |> Expect.equal (Ok { opening | ask = Take, toPlay = Black })
+        , test "TAKE: the cube doubled and the taker's, the doubler to roll" <|
+            \_ ->
+                Setup.next Setup.Took { opening | ask = Take, toPlay = Black, cubeValue = 2, cubeOwner = Just Black }
+                    |> Expect.equal (Ok { opening | ask = Move Nothing, toPlay = White, cubeValue = 4, cubeOwner = Just Black })
+        , test "PASS ends the line at the cube's value" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Setup.next Setup.Passed { opening | ask = Take, toPlay = Black } |> Expect.equal (Err "Black passes. White wins 1 point.")
+                    , \_ -> Setup.next Setup.Passed { opening | ask = Take, toPlay = White, cubeValue = 2, cubeOwner = Just White } |> Expect.equal (Err "White passes. Black wins 2 points.")
+                    ]
+                    ()
+        , test "a choice that does not answer the question is no step" <|
+            \_ ->
+                Setup.next Setup.Took withRoll31 |> Expect.equal (Err "")
+        ]
+
+
+{-| The opening 3-1 answered (the "move" fixture), White to play.
+-}
+answered31 : Analysis.Model
+answered31 =
+    sendAll [ PickedRoll ( 3, 1 ), PressedAnalyze, GotAsk 1 (done "move") ] page
+
+
+lineSteps : Analysis.Model -> List Analysis.Step
+lineSteps model =
+    (Analysis.lineNow model).steps
+
+
+platesOf : Analysis.Model -> List String
+platesOf model =
+    List.map Analysis.plate (lineSteps model)
+
+
+{-| A turn of one checker 8/5 then 6/5: the opening, the 8/5, then the
+terminal board (the opening after 3-1). A tree as the server sends one.
+-}
+tree31 : Puzzle.Tree
+tree31 =
+    let
+        node points dice moved children =
+            { board = boardOf points, diceLeft = dice, terminal = children == [], moved = moved, children = children }
+
+        afterOne =
+            [ -2, 0, 0, 0, 1, 5, 0, 2, 0, 0, 0, -5, 5, 0, 0, 0, -3, 0, -5, 0, 0, 0, 0, 2 ]
+    in
+    { root = "r"
+    , nodes =
+        Dict.fromList
+            [ ( "r", node opening.points [ 3, 1 ] Nothing [ { die = 3, from = "8", to = "5", node = "n1" } ] )
+            , ( "n1", node afterOne [ 1 ] (Just { from = "8", to = "5", hit = False }) [ { die = 1, from = "6", to = "5", node = "n2" } ] )
+            , ( "n2", node after31 [] (Just { from = "6", to = "5", hit = False }) [] )
+            ]
+    , lazy = False
+    }
+
+
+{-| White's last checker on the 1, 2-1 to play: bearing it off ends the game.
+-}
+lastChecker : Analysis.Model
+lastChecker =
+    let
+        points =
+            [ 1 ] ++ List.repeat 22 0 ++ [ -15 ]
+
+        setup =
+            { opening | points = points, ask = Move (Just ( 2, 1 )) }
+
+        model =
+            Analysis.init Session.empty "http://oskol.test" { xgid = Just (Xgid.encode setup), puzzle = Nothing } |> Tuple.first |> send (PickedMode Analysis.Play)
+
+        last =
+            { root = "r"
+            , nodes =
+                Dict.fromList
+                    [ ( "r", { board = boardOf points, diceLeft = [ 2, 1 ], terminal = False, moved = Nothing, children = [ { die = 2, from = "1", to = "off", node = "n1" } ] } )
+                    , ( "n1", { board = boardOf (List.repeat 23 0 ++ [ -15 ]), diceLeft = [ 1 ], terminal = True, moved = Just { from = "1", to = "off", hit = False }, children = [] } )
+                    ]
+            , lazy = False
+            }
+    in
+    model |> send (GotMoves model.movesAsked (Ok last))
+
+
+playingItOut : Test
+playingItOut =
+    describe "the line"
+        [ test "PLAY BEST plays the best: a step with the other colour to play, in PLAY" <|
+            \_ ->
+                answered31
+                    |> send PressedPlayCandidate
+                    |> Expect.all
+                        [ .line >> .at >> Expect.equal 1
+                        , lineSteps >> List.length >> Expect.equal 2
+                        , .setup >> .toPlay >> Expect.equal Black
+                        , .setup >> .ask >> Expect.equal (Move Nothing)
+                        , .mode >> Expect.equal Analysis.Play
+                        , .ask >> Expect.equal Analysis.NotAsked
+                        , platesOf >> Expect.equal [ "W 3-1 · play 1", "B to roll" ]
+                        ]
+        , test "PLAY THIS plays the candidate on the board" <|
+            \_ ->
+                answered31
+                    |> sendAll [ Show (Just 2), PressedPlayCandidate ]
+                    |> platesOf
+                    |> Expect.equal [ "W 3-1 · play 2", "B to roll" ]
+        , test "back and forward keep each step's answer, with nothing asked" <|
+            \_ ->
+                let
+                    out =
+                        answered31 |> sendAll [ PressedPlayCandidate, PickedRoll ( 6, 4 ), PressedAnalyze ]
+                in
+                out
+                    |> send (GotAsk out.asks (done "move"))
+                    |> send (Walked 0)
+                    |> Expect.all
+                        [ .ask >> isAnswered >> Expect.equal True
+                        , .setup >> .ask >> Expect.equal (Move (Just ( 3, 1 )))
+                        , send (Walked 1) >> .ask >> isAnswered >> Expect.equal True
+                        , send (Walked 1) >> .setup >> .ask >> Expect.equal (Move (Just ( 6, 4 )))
+                        , send (Walked 1) >> platesOf >> Expect.equal [ "W 3-1 · play 1", "B 6-4" ]
+                        ]
+        , test "a different choice at step 1 drops the steps after it" <|
+            \_ ->
+                answered31
+                    |> sendAll
+                        [ PressedPlayCandidate
+                        , PickedDouble
+                        , Chose Setup.Doubled
+                        , Chose Setup.Took
+                        , Walked 1
+                        , Chose Setup.NoDouble
+                        ]
+                    |> Expect.all
+                        [ platesOf >> Expect.equal [ "W 3-1 · play 1", "B no double", "B to roll" ]
+                        , .line >> .at >> Expect.equal 2
+                        ]
+        , test "the same choice again walks on along the line as it was" <|
+            \_ ->
+                answered31
+                    |> sendAll [ PressedPlayCandidate, PickedDouble, Chose Setup.Doubled, Chose Setup.Took, Walked 1, Chose Setup.Doubled ]
+                    |> Expect.all
+                        [ platesOf >> Expect.equal [ "W 3-1 · play 1", "B doubles", "W takes", "B to roll" ]
+                        , .line >> .at >> Expect.equal 2
+                        ]
+        , test "a new roll at an earlier step drops what came after; another position starts a fresh line" <|
+            \_ ->
+                answered31
+                    |> sendAll [ PressedPlayCandidate, PickedRoll ( 5, 2 ), Walked 0 ]
+                    |> Expect.all
+                        [ send (PickedRoll ( 6, 1 )) >> platesOf >> Expect.equal [ "W 6-1" ]
+                        , send (Walked 1) >> send (PickedTurn White) >> platesOf >> Expect.equal [ "W 5-2" ]
+                        ]
+        , test "PASS ends the line in its sentence, and nothing more is chosen" <|
+            \_ ->
+                answered31
+                    |> sendAll [ PressedPlayCandidate, PickedDouble, Chose Setup.Doubled, Chose Setup.Passed ]
+                    |> Expect.all
+                        [ Analysis.ending >> Expect.equal (Just "White passes. Black wins 1 point.")
+                        , platesOf >> Expect.equal [ "W 3-1 · play 1", "B doubles", "W passes" ]
+                        , Analysis.view >> Query.fromHtml >> Query.find [ id "an-line-end" ] >> Query.has [ text "White passes. Black wins 1 point." ]
+                        , Analysis.view >> Query.fromHtml >> Query.hasNot [ id "an-take" ]
+                        , send (Chose Setup.Took) >> platesOf >> Expect.equal [ "W 3-1 · play 1", "B doubles", "W passes" ]
+                        ]
+        , test "PLAY on the table commits the board its path reaches, as it reads" <|
+            \_ ->
+                let
+                    model =
+                        sendAll [ PickedRoll ( 3, 1 ), PickedMode Analysis.Play ] page
+                in
+                model
+                    |> sendAll
+                        [ GotMoves model.movesAsked (Ok tree31)
+                        , BoardOut (Puzzle.Stepped [ "n1" ])
+                        , BoardOut (Puzzle.Stepped [ "n2" ])
+                        , BoardOut Puzzle.Play
+                        ]
+                    |> Expect.all
+                        [ lineSteps >> List.head >> Maybe.andThen .chosen >> Expect.equal (Just (Setup.Played { notation = "8/5 6/5", board = boardOf after31 }))
+                        , .setup >> .points >> Expect.equal after31
+                        , .setup >> .toPlay >> Expect.equal Black
+                        , platesOf >> Expect.equal [ "W 3-1 · 8/5 6/5", "B to roll" ]
+                        ]
+        , test "UNDO walks back, and PLAY waits for the whole roll" <|
+            \_ ->
+                let
+                    model =
+                        sendAll [ PickedRoll ( 3, 1 ), PickedMode Analysis.Play ] page
+                in
+                model
+                    |> sendAll
+                        [ GotMoves model.movesAsked (Ok tree31)
+                        , BoardOut (Puzzle.Stepped [ "n1" ])
+                        , BoardOut Puzzle.Play
+                        , BoardOut Puzzle.Undo
+                        ]
+                    |> Expect.all
+                        [ .path >> Expect.equal []
+                        , platesOf >> Expect.equal [ "W 3-1" ]
+                        ]
+        , test "a play that bears the last checker off ends the line" <|
+            \_ ->
+                lastChecker
+                    |> sendAll [ BoardOut (Puzzle.Stepped [ "n1" ]), BoardOut Puzzle.Play ]
+                    |> Expect.all
+                        [ Analysis.ending >> Expect.equal (Just "White has borne off.")
+                        , platesOf >> Expect.equal [ "W 2-1 · 1/off" ]
+                        ]
+        , test "a tree for a step no longer on the board is dropped" <|
+            \_ ->
+                let
+                    model =
+                        sendAll [ PickedRoll ( 3, 1 ), PickedMode Analysis.Play ] page
+                in
+                model
+                    |> sendAll [ PickedRoll ( 6, 4 ), GotMoves model.movesAsked (Ok tree31) ]
+                    |> .moves
+                    |> Expect.equal Analysis.MovesAsked
+        , test "a choice that does not answer the step's question changes nothing" <|
+            \_ ->
+                answered31
+                    |> send (Chose Setup.Took)
+                    |> Expect.all
+                        [ platesOf >> Expect.equal [ "W 3-1" ]
+                        , .mode >> Expect.equal Analysis.SetUp
+                        ]
+        , test "PLAY waits for a complete position" <|
+            \_ ->
+                send PressedClear page
+                    |> send (PickedMode Analysis.Play)
+                    |> .mode
+                    |> Expect.equal Analysis.SetUp
+        , test "the plates read who, the roll and the play, or the cube" <|
+            \_ ->
+                [ { setup = withRoll31, answer = Nothing, chosen = Just (Setup.Played { notation = "8/5 6/5", board = boardOf after31 }) }
+                , { setup = { opening | toPlay = Black, ask = Move (Just ( 6, 2 )) }, answer = Nothing, chosen = Nothing }
+                , { setup = { opening | toPlay = Black, ask = Move (Just ( 6, 4 )) }, answer = Nothing, chosen = Just (Setup.Played { notation = "", board = boardOf opening.points }) }
+                , { setup = opening, answer = Nothing, chosen = Nothing }
+                , { setup = { opening | ask = Double }, answer = Nothing, chosen = Just Setup.Doubled }
+                , { setup = { opening | ask = Double }, answer = Nothing, chosen = Just Setup.NoDouble }
+                , { setup = { opening | ask = Take, toPlay = Black }, answer = Nothing, chosen = Just Setup.Took }
+                , { setup = { opening | ask = Take, toPlay = Black }, answer = Nothing, chosen = Just Setup.Passed }
+                , { setup = { opening | ask = Take, toPlay = Black }, answer = Nothing, chosen = Nothing }
+                ]
+                    |> List.map Analysis.plate
+                    |> Expect.equal [ "W 3-1 · 8/5 6/5", "B 6-2", "B 6-4 · no play", "W to roll", "W doubles", "W no double", "B takes", "B passes", "B take?" ]
+        , test "the strip: a plate per step, the one on the board marked, the arrows where there is somewhere to go" <|
+            \_ ->
+                answered31
+                    |> sendAll [ PressedPlayCandidate, Walked 0 ]
+                    |> Analysis.view
+                    |> Query.fromHtml
+                    |> Expect.all
+                        [ Query.find [ id "an-line" ] >> Query.findAll [ class "an-plate" ] >> Query.count (Expect.equal 2)
+                        , Query.find [ id "an-plate-0" ] >> Query.has [ class "is-on" ]
+                        , Query.find [ id "an-first" ] >> Query.has [ attribute (Html.Attributes.disabled True) ]
+                        , Query.find [ id "an-next" ] >> Event.simulate Event.click >> Event.expect (Walked 1)
+                        ]
+        , test "notation joins one checker's steps and counts the same move" <|
+            \_ ->
+                let
+                    at_ dice moved children =
+                        { board = boardOf opening.points, diceLeft = dice, terminal = children == [], moved = moved, children = children }
+
+                    chain =
+                        { root = "r"
+                        , nodes =
+                            Dict.fromList
+                                [ ( "r", at_ [ 6, 6, 6, 6 ] Nothing [ { die = 6, from = "24", to = "18", node = "a" } ] )
+                                , ( "a", at_ [ 6, 6, 6 ] (Just { from = "24", to = "18", hit = True }) [ { die = 6, from = "18", to = "12", node = "b" } ] )
+                                , ( "b", at_ [ 6, 6 ] (Just { from = "18", to = "12", hit = False }) [ { die = 6, from = "13", to = "7", node = "c" } ] )
+                                , ( "c", at_ [ 6 ] (Just { from = "13", to = "7", hit = False }) [ { die = 6, from = "13", to = "7", node = "d" } ] )
+                                , ( "d", at_ [] (Just { from = "13", to = "7", hit = False }) [] )
+                                ]
+                        , lazy = False
+                        }
+                in
+                Analysis.notation chain [ "a", "b", "c", "d" ]
+                    |> Expect.equal "24/18*/12 13/7(2)"
+        ]

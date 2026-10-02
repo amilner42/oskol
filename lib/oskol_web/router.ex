@@ -102,6 +102,7 @@ defmodule OskolWeb.Router do
     # The analysis board: a set-up position asked of the engine on a
     # player's press, bounded and cached by its question.
     post "/analysis", AnalysisController, :create
+    post "/analysis/moves", AnalysisController, :moves
     get "/analysis/:key", AnalysisController, :show
   end
 
