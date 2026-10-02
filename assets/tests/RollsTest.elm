@@ -330,11 +330,19 @@ theSort =
                         List.map2 (\a b -> a >= b) values (List.drop 1 values)
                 in
                 Expect.equal (List.filter not falling) []
-        , test "how many of the thirty-six help" <|
+        , test "how many of the thirty-six help: the up bands, not merely a positive value" <|
             \_ ->
-                -- the up bands of the opening: 1-1, 3-3, 4-4, 6-6, 5-5 (one
-                -- each) and 3-1, 6-1 (two each), 2-4 is a hair under
-                Rolls.helped grid.cells |> Expect.equal 9
+                -- 1-1, 3-3, 4-4 and 6-6 strong-up and 5-5 slight-up (one
+                -- each), 3-1 slight-up (two) = 7. 6-1 is +0.007 and 2-4
+                -- -0.0007: both are drawn as the neutral paper, so neither
+                -- is counted -- the sentence has to say what the picture
+                -- shows or a reader counting the green cells finds two
+                -- missing.
+                Rolls.helped grid.cells |> Expect.equal 7
+        , test "and nothing helps in a grid that is all one band" <|
+            \_ ->
+                Rolls.helped (List.map (\c -> { c | band = Rolls.Neutral }) grid.cells)
+                    |> Expect.equal 0
         ]
 
 
@@ -570,7 +578,7 @@ theWords =
                         [ attr "aria-label"
                             ("The 3-ply luck of every roll for Arie."
                                 ++ " Best 6-6 at +0.392, worst 4-1 at −0.104."
-                                ++ " 9 rolls in 36 help."
+                                ++ " 7 rolls in 36 help."
                             )
                         ]
         , test "the map says the same sentence, so either drawing reads aloud" <|
@@ -578,10 +586,10 @@ theWords =
                 Rolls_.view config grid
                     |> Query.fromHtml
                     |> Query.find [ class "rl-map" ]
-                    |> Query.has [ text "", attr "aria-label" "The 3-ply luck of every roll for Arie. Best 6-6 at +0.392, worst 4-1 at −0.104. 9 rolls in 36 help." ]
+                    |> Query.has [ text "", attr "aria-label" "The 3-ply luck of every roll for Arie. Best 6-6 at +0.392, worst 4-1 at −0.104. 7 rolls in 36 help." ]
         , test "a comparison calls its numbers something else" <|
             \_ ->
                 bars { config | words = Rolls_.difference }
                     |> Query.find [ attr "data-rolls" "bars" ]
-                    |> Query.has [ attr "aria-label" "The 3-ply difference of every roll for Arie. Best 6-6 at +0.392, worst 4-1 at −0.104. 9 rolls in 36 better." ]
+                    |> Query.has [ attr "aria-label" "The 3-ply difference of every roll for Arie. Best 6-6 at +0.392, worst 4-1 at −0.104. 7 rolls in 36 better." ]
         ]

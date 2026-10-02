@@ -277,14 +277,21 @@ rollIndex dice =
         |> Maybe.withDefault 99
 
 
-{-| How many of the thirty-six help: the weight of every roll above the
-position's own average. The companion to the map's colours in a sentence --
-"20 in 36 help" -- which is what a reader who cannot see the colours gets.
+{-| How many of the thirty-six help: the weight of every roll in one of the
+three bands above the middle.
+
+**Bands and not merely a positive value**, because this sentence is what a
+reader who cannot see the drawing is given instead of it, and both drawings
+colour by band. A roll a hundredth above the average is drawn as the
+neutral paper -- counting it here would have the sentence say nine where
+seven cells are green, and a reader checking one against the other would be
+right to think something was wrong.
+
 -}
 helped : List Cell -> Int
 helped cells =
     cells
-        |> List.filter (\c -> c.value > 0)
+        |> List.filter (\c -> List.member c.band [ StrongUp, Up, SlightUp ])
         |> List.map .weight
         |> List.sum
 
