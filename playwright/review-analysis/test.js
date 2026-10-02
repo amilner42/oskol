@@ -6,7 +6,7 @@
  *   01-menu        the empty board (CLEAR) with ☰ open on Analysis
  *   02-building    a position half set up, the brushes over it
  *   03-rolls       the roll sheet
- *   04-import      the import dialog with an id typed
+ *   04-black-to-play  Black to play: TO PLAY, and Black's bar the one to move
  *   05-move        the answer for a move (the opening 3-1)
  *   06-candidate   the engine's #2 on the board (06b, sideways: scrolled to
  *                  the answer, the board still in view)
@@ -45,8 +45,6 @@ const STUB_PORT = Number(process.env.ANALYSIS_STUB_PORT || Number(new URL(BASE).
 const OPENING_31 = 'XGID=-b----E-C---eE---c-e----B-:0:0:1:31:0:0:1:0:10';
 // The opening with nobody on roll yet: White may double.
 const OPENING_CUBE = 'XGID=-b----E-C---eE---c-e----B-:0:0:1:00:0:0:1:0:10';
-// bgonline's "How to post positions": a match to 7 at 6-4, Crawford.
-const POSTED = 'XGID=--A-bBBBB--BbB-----dbbc-B-:0:0:1:31:6:4:1:7:10';
 
 const SIZES = [
   ['390', { width: 390, height: 844 }, true],
@@ -222,11 +220,9 @@ async function theBoard(browser, tag, viewport, touch, errors) {
     await press('#an-roll-42');
     await page.waitForSelector('#an-roll-sheet', { state: 'detached' });
 
-    // 04: the import dialog, an id typed.
-    await press('#an-xgid-import');
-    await page.waitForSelector('#an-import-text');
-    await page.fill('#an-import-text', POSTED);
-    await shot(page, `${tag}-04-import`, { full: false });
+    // 04: Black to play: TO PLAY says it, Black's bar is the one to move.
+    await press('#an-turn-black');
+    await shot(page, `${tag}-04-black-to-play`, { full: false });
 
     // 05, 06: a move's answer, then the engine's #2 on the board.
     await open(page, board(OPENING_31));
@@ -270,7 +266,7 @@ async function theBoard(browser, tag, viewport, touch, errors) {
     if (!(await page.$('fieldset#an-strip:disabled'))) throw new Error(`${tag}: the strip is live in PLAY`);
     await noSideScroll(page, `${tag} the line`);
     await shot(page, `${tag}-08-line`);
-    log(`${tag}: the board, the sheet, the dialog, a move, a candidate, the cube, the line ${plates.join(' | ')}`);
+    log(`${tag}: the board, the sheet, Black to play, a move, a candidate, the cube, the line ${plates.join(' | ')}`);
   } finally {
     await ctx.close();
   }

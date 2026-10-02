@@ -1,4 +1,4 @@
-port module Page.Analysis exposing
+module Page.Analysis exposing
     ( Asking(..)
     , Brush(..)
     , Button(..)
@@ -26,7 +26,6 @@ port module Page.Analysis exposing
     , paint
     , plate
     , pollLimit
-    , positionId
     , puzzleGone
     , rolls
     , shownSetup
@@ -67,8 +66,10 @@ picked from a sheet of the 21; DOUBLE?; TAKE?); the cube's value and owner
 (the owner is the middle at 1, and a cube turned off 1 goes to whoever is
 acting, so the strip never builds a cube `check` refuses); unlimited play
 or a match to 1..25 with both scores and Crawford, which can only be on
-while somebody is one away. Then OPENING, CLEAR, FLIP, and the position as
-an XGID: COPY, and IMPORT from one.
+while somebody is one away. Then OPENING, CLEAR and FLIP. TO PLAY is each
+colour's checker with its word, the chosen one ringed, never a checker on
+an inverted tile; the board's bar for that colour is the one to move and
+says "to play".
 
 **The line under the strip** says the first thing left to do: "Place 3
 more White checkers" until every checker is placed or off, then the first
@@ -112,14 +113,13 @@ own colour, as at a table.
 
 **Doors in.** `/analysis` is the opening position, White to play, no roll
 picked. `?xgid=` opens on that id, whoever is to play: an id with Black on
-roll stays Black to play, so COPY gives back the id that was pasted (FLIP
-turns it round). `?p=<id>` reads the puzzle (`GET /papi/puzzles/:id`, no
+roll stays Black to play (FLIP turns it round). `?p=<id>` reads the puzzle (`GET /papi/puzzles/:id`, no
 engine) and opens it as its page shows it (`Setup.fromQuestion`); a puzzle
 that is not there opens the opening position and says so.
 
 Nothing moves when anything changes: every control has a fixed-size slot,
-the line under the strip is a fixed height, and the sheet and the import
-dialog float over the page.
+the line under the strip is a fixed height, and the sheets float over the
+page.
 
 -}
 
@@ -133,9 +133,9 @@ import Games.Backgammon.Setup as Setup exposing (Ask(..), Color(..), Match, Setu
 import Games.Backgammon.View as Board
 import Games.Backgammon.Words as Words
 import Games.Backgammon.Xgid as Xgid
-import Html exposing (Html, a, button, div, input, span, text)
-import Html.Attributes exposing (attribute, class, classList, disabled, href, id, readonly, type_, value)
-import Html.Events exposing (onClick, onInput, onSubmit)
+import Html exposing (Html, a, button, div, span, text)
+import Html.Attributes exposing (attribute, class, classList, disabled, href, id, type_)
+import Html.Events exposing (onClick)
 import Json.Decode as D
 import Page.Play exposing (shareInvite, shareResult)
 import Process
@@ -144,16 +144,8 @@ import Route
 import Session exposing (Session)
 import Task
 import Ui.Candidates as Candidates
-import Ui.Dialog
 import Ui.SaveToSet as SaveToSet
 import Ui.Scrub as Scrub
-
-
-{-| Write `text` to the clipboard, or, where the browser will not, select
-the position id's field so the reader can copy it themselves.
--}
-port copyText : String -> Cmd msg
-
 
 
 -- MODEL
@@ -171,14 +163,9 @@ type alias Model =
     , rolling : Bool -- the sheet of the 21 rolls is open
     , lastRoll : Maybe ( Int, Int ) -- the roll ROLL goes back to after DOUBLE? or TAKE?
     , lastMatch : Match -- the match MATCH TO goes back to after UNLIMITED
-    , importOpen : Bool
-    , importText : String
-    , importError : Maybe String
     , refused : Maybe ( Color, Int ) -- the colour a sixteenth was refused for, and how many times: its tray flashes
     , notice : Maybe String -- a door in that could not open what it was asked to; gone at the first edit
     , loading : Bool -- `?p=` is being read
-    , copied : Int -- COPY presses; the label says COPIED for a moment after each
-    , copiedShown : Bool
 
     -- The engine's answer for the position on the board, and the line
     -- played out from it (analysis-play-it-out). Every edit clears `ask`.
@@ -345,14 +332,9 @@ init session origin door =
             , rolling = False
             , lastRoll = Nothing
             , lastMatch = defaultMatch
-            , importOpen = False
-            , importText = ""
-            , importError = Nothing
             , refused = Nothing
             , notice = Nothing
             , loading = False
-            , copied = 0
-            , copiedShown = False
             , ask = NotAsked
             , asks = 0
             , showing = Nothing
@@ -487,19 +469,6 @@ placeLine model =
 
         ( w, b ) ->
             Just ("Place " ++ more w White ++ " and " ++ more b Black ++ " checkers")
-
-
-{-| The position's XGID, once every checker is placed or borne off. An id
-has no "not placed": written earlier, it would quietly count those
-checkers as borne off.
--}
-positionId : Model -> Maybe String
-positionId model =
-    if toPlace White ( model.setup, model.off ) == 0 && toPlace Black ( model.setup, model.off ) == 0 then
-        Just (Xgid.encode model.setup)
-
-    else
-        Nothing
 
 
 {-| ANALYZE is enabled: every checker is on the board or borne off, and
@@ -1070,12 +1039,6 @@ type Msg
     | PressedOpening
     | PressedClear
     | PressedFlip
-    | PressedCopy
-    | CopiedFaded Int
-    | OpenedImport
-    | ClosedImport
-    | ImportInput String
-    | ImportSubmitted
     | PressedAnalyze
     | PressedRetry
     | GotAsk Int (Result Analysis.Refusal Analysis.Status)
@@ -1335,47 +1298,6 @@ updateOne msg model =
 
         PressedFlip ->
             ( editWith { white = model.off.black, black = model.off.white } Setup.flip model, Cmd.none )
-
-        PressedCopy ->
-            let
-                n =
-                    model.copied + 1
-            in
-            case positionId model of
-                Just id ->
-                    ( { model | copied = n, copiedShown = True }
-                    , Cmd.batch
-                        [ copyText id
-                        , Process.sleep 1500 |> Task.perform (\_ -> CopiedFaded n)
-                        ]
-                    )
-
-                Nothing ->
-                    ( model, Cmd.none )
-
-        CopiedFaded n ->
-            if n == model.copied then
-                ( { model | copiedShown = False }, Cmd.none )
-
-            else
-                ( model, Cmd.none )
-
-        OpenedImport ->
-            ( { model | importOpen = True, importText = "", importError = Nothing }, Cmd.none )
-
-        ClosedImport ->
-            ( { model | importOpen = False }, Cmd.none )
-
-        ImportInput raw ->
-            ( { model | importText = raw, importError = Nothing }, Cmd.none )
-
-        ImportSubmitted ->
-            case Xgid.decode model.importText of
-                Ok setup ->
-                    ( remembered (edit (\_ -> setup) { model | importOpen = False, importText = "" }), Cmd.none )
-
-                Err reason ->
-                    ( { model | importError = Just reason }, Cmd.none )
 
         PressedAnalyze ->
             analyze model
@@ -2152,6 +2074,17 @@ view model =
             , ( flashClass model, model.refused /= Nothing )
             ]
         , id "analysis"
+
+        -- The position as an XGID, for the browser smokes to read back
+        -- (the page shows none): empty while a checker is not placed,
+        -- since an id would count those as borne off.
+        , attribute "data-xgid"
+            (if toPlace White ( model.setup, model.off ) == 0 && toPlace Black ( model.setup, model.off ) == 0 then
+                Xgid.encode model.setup
+
+             else
+                ""
+            )
         ]
         [ div [ class "rp-head" ]
             [ span [ class "rp-tag pixel text-[7px] sm:text-[8px]" ] [ text "ANALYSIS" ]
@@ -2235,11 +2168,6 @@ view model =
 
           else
             text ""
-        , if model.importOpen then
-            viewImport model
-
-          else
-            text ""
         , case model.save of
             Just sheet ->
                 Html.map SaveMsg (SaveToSet.view sheet)
@@ -2292,7 +2220,7 @@ viewBoard model =
             Html.map BoardOut (Puzzle.view (table model roll m.tree))
 
         ( Play, _, _ ) ->
-            Board.viewStill NoOp (still model)
+            Board.viewStillTurn NoOp (still model)
 
 
 {-| The roll on the puzzle page's table: the mover's seat in their own
@@ -2504,9 +2432,14 @@ viewLine model =
                 , id ("an-plate-" ++ String.fromInt i)
                 , classList [ ( "an-plate", True ), ( "is-on", i == l.at ) ]
                 , attribute "aria-current" (boolString (i == l.at))
+                , attribute "aria-label" (Setup.colorName s.setup.toPlay ++ String.dropLeft 1 (plate s))
                 , onClick (Walked i)
                 ]
-                [ text (plate s) ]
+                -- the colour as a checker, as the board draws it, in place
+                -- of the plate's W or B
+                [ span [ class ("an-chip " ++ Setup.colorId s.setup.toPlay), attribute "aria-hidden" "true" ] []
+                , span [ attribute "aria-hidden" "true" ] [ text (String.dropLeft 2 (plate s)) ]
+                ]
     in
     div [ class "an-line-wrap" ]
         [ Scrub.row { id = "an-line", stale = False }
@@ -2760,6 +2693,26 @@ viewStrip model =
                 ]
                 content
 
+        -- A colour to play, drawn as the board draws it with its word; the
+        -- one chosen is ringed and in bold, never a checker on an
+        -- inverted tile, which reads as the other colour.
+        who color =
+            let
+                on =
+                    setup.toPlay == color
+            in
+            button
+                [ type_ "button"
+                , id ("an-turn-" ++ Setup.colorId color)
+                , classList [ ( "an-who", True ), ( "is-on", on ) ]
+                , attribute "aria-pressed" (boolString on)
+                , attribute "aria-label" (Setup.colorName color ++ " to play")
+                , onClick (PickedTurn color)
+                ]
+                [ span [ class ("an-chip " ++ Setup.colorId color) ] []
+                , span [ class "an-who-word pixel" ] [ text (String.toUpper (Setup.colorName color)) ]
+                ]
+
         isMove =
             case setup.ask of
                 Move _ ->
@@ -2802,10 +2755,8 @@ viewStrip model =
         ]
         [ div [ class "an-row" ]
             [ group "TO PLAY"
-                [ div [ class "an-segs", id "an-turn" ]
-                    [ seg "an-turn-white" (setup.toPlay == White) (PickedTurn White) [ span [ class "an-chip white", attribute "aria-label" "White" ] [] ]
-                    , seg "an-turn-black" (setup.toPlay == Black) (PickedTurn Black) [ span [ class "an-chip black", attribute "aria-label" "Black" ] [] ]
-                    ]
+                [ div [ class "an-whos", id "an-turn", attribute "role" "group", attribute "aria-label" "To play" ]
+                    [ who White, who Black ]
                 ]
             , group "ASK"
                 [ div [ class "an-segs", id "an-ask" ]
@@ -2814,7 +2765,9 @@ viewStrip model =
                     , seg "an-ask-take" (setup.ask == Take) PickedTake [ text "TAKE?" ]
                     ]
                 ]
-            , group "CUBE"
+            ]
+        , div [ class "an-row" ]
+            [ group "CUBE"
                 [ div [ class "an-segs" ]
                     [ button [ type_ "button", id "an-cube", class "an-seg an-cube", onClick CycledCube, attribute "aria-label" "Cube value" ]
                         [ text (String.fromInt setup.cubeValue) ]
@@ -2840,9 +2793,7 @@ viewStrip model =
                         ]
                     ]
                 ]
-            ]
-        , div [ class "an-row" ]
-            [ group "GAME"
+            , group "GAME"
                 [ stepper "an-length"
                     (button
                         [ type_ "button"
@@ -2865,7 +2816,9 @@ viewStrip model =
                     (inMatch && m.length < 25)
                     ""
                 ]
-            , group "SCORE"
+            ]
+        , div [ class "an-row" ]
+            [ group "SCORE"
                 [ score White m.white
                 , score Black m.black
                 ]
@@ -2960,9 +2913,8 @@ pipCells n =
 viewQuick : Model -> Html Msg
 viewQuick model =
     let
-        -- In PLAY the board is played, not set up: the quick starts and
-        -- IMPORT wait for SET UP. The id and COPY stay live: they read the
-        -- position on the board, whichever step of the line it is.
+        -- In PLAY the board is played, not set up: the quick starts wait
+        -- for SET UP.
         locked =
             model.mode == Play
 
@@ -2977,41 +2929,6 @@ viewQuick model =
             [ quick "an-opening" "OPENING" PressedOpening
             , quick "an-clear" "CLEAR" PressedClear
             , quick "an-flip" "FLIP" PressedFlip
-            ]
-        , div [ class "an-xgid-row" ]
-            [ input
-                [ id "an-xgid"
-                , class "q-field an-xgid"
-                , readonly True
-                , value (positionId model |> Maybe.withDefault "")
-                , Html.Attributes.placeholder "Place every checker first"
-                , attribute "aria-label" "Position id (XGID)"
-                , attribute "spellcheck" "false"
-                ]
-                []
-            , button
-                [ type_ "button"
-                , id "an-xgid-copy"
-                , class "q-btn plain an-quick an-copy pixel"
-                , disabled (positionId model == Nothing)
-                , onClick PressedCopy
-                ]
-                [ text
-                    (if model.copiedShown then
-                        "COPIED"
-
-                     else
-                        "COPY"
-                    )
-                ]
-            , button
-                [ type_ "button"
-                , id "an-xgid-import"
-                , classList [ ( "q-btn plain an-quick pixel", True ), ( "is-locked", locked ) ]
-                , disabled locked
-                , onClick OpenedImport
-                ]
-                [ text "IMPORT" ]
             ]
         ]
 
@@ -3351,38 +3268,6 @@ viewRollSheet model =
                                 row
                         )
                 )
-            ]
-        ]
-
-
-viewImport : Model -> Html Msg
-viewImport model =
-    Ui.Dialog.view
-        { id = "an-import"
-        , closeId = "an-import-close"
-        , label = "Import a position"
-        , heading = "IMPORT A POSITION"
-        , onClose = ClosedImport
-        , width = "max-w-md"
-        }
-        [ Html.form [ onSubmit ImportSubmitted, class "flex flex-col gap-2" ]
-            [ Html.label [ class "text-sm", Html.Attributes.for "an-import-text" ] [ text "Paste an XGID from XG, GNU Backgammon or a forum post." ]
-            , div [ class "flex gap-2" ]
-                [ input
-                    [ id "an-import-text"
-                    , class "q-field flex-1 min-w-0 px-3 py-2 text-sm an-mono"
-                    , value model.importText
-                    , onInput ImportInput
-                    , Html.Attributes.placeholder "XGID=-b----E-C---eE---c-e----B-:0:0:1:00:0:0:1:0:10"
-                    , Html.Attributes.autofocus True
-                    , attribute "autocomplete" "off"
-                    , attribute "autocapitalize" "off"
-                    , attribute "spellcheck" "false"
-                    ]
-                    []
-                , button [ type_ "submit", id "an-import-go", class "q-btn yellow px-4 pixel text-[9px]" ] [ text "IMPORT" ]
-                ]
-            , Html.p [ class "an-import-error", id "an-import-error" ] [ text (Maybe.withDefault "" model.importError) ]
             ]
         ]
 

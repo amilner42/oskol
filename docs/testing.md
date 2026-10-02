@@ -87,8 +87,7 @@ the three schedule shapes), and `AnalysisFixtures.elm` (the analysis board's
   colour and paints over the other one, a right click and a long press are
   the other brush (once, whichever comes first; a slide is a scroll), the
   x, the bar's halves, the sixteenth refused with its tray's flash, OPENING
-  / CLEAR / FLIP, the XGID field following every change, IMPORT and its
-  refusal, `?xgid=` and `?p=` on every `PuzzleApiFixtures` question, a gone
+  / CLEAR / FLIP, `?xgid=` and `?p=` on every `PuzzleApiFixtures` question, a gone
   puzzle, the check line's sentences and ANALYZE, CRAWFORD only one away,
   the cube's owner at 1, the match's bounds; every checker placed, borne
   off or not placed (a taken-off checker is not placed, the trays bear off
@@ -258,7 +257,9 @@ node playwright/review-puzzle/test.js           # screenshots of the puzzle page
 node playwright/test-analysis/test.js           # the analysis board. Part 1, setting up: ☰ Analysis;
                                                # a desktop by left and right clicks, the x, the bar,
                                                # the sixteenth's flash, ROLL, the cube, DOUBLE? and
-                                               # TAKE?, a match and Crawford, FLIP, IMPORT, COPY; a
+                                               # TAKE?, a match and Crawford, FLIP, whose move (TO
+                                               # PLAY ringed not inverted, the bar to move says "to
+                                               # play"); a
                                                # phone by taps and long presses (CDP touch); every
                                                # point hit where it is drawn at 320x568 and 844x390;
                                                # ?xgid= and a gone ?p=. The board, the strip, each
@@ -279,8 +280,7 @@ node playwright/test-analysis/test.js           # the analysis board. Part 1, se
                                                # its legal plays (Black at the bottom), ANALYZE;
                                                # FIRST and NEXT with the answers kept and no ask;
                                                # Black's roll played by hand, the strip, the quick
-                                               # starts and IMPORT disabled in PLAY (the id and COPY
-                                               # live), White's DOUBLE? from the row and Black's PASS
+                                               # starts disabled in PLAY, White's DOUBLE? from the row and Black's PASS
                                                # ending the line in its sentence; a different play
                                                # at step 0 dropping the rest; PICK A ROLL in PLAY;
                                                # SET UP live again, and an edit at a later step
@@ -341,7 +341,7 @@ playwright/review-decks/run.sh                  # screenshots of the sets on /pu
                                                # database and builds the sets on a stub engine
 playwright/review-analysis/run.sh               # the Analysis milestone whole, at four sizes: the
                                                # empty board with ☰ open, a position half set up,
-                                               # the roll sheet, IMPORT, a move's answer and a
+                                               # the roll sheet, Black to play, a move's answer and a
                                                # candidate (sideways: the board in view beside the
                                                # answer), a cube's answer, a line of three steps in
                                                # PLAY, the save sheet (an account, a guest), /puzzles

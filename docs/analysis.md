@@ -337,10 +337,26 @@ and the column is beside both.
   (`#an-left-white`, `#an-left-black`, a floating badge, hidden at 0). The
   pip counts are held to their widest so the trays beside them never move.
   CLEAR makes all thirty not placed; OPENING places them all; FLIP swaps
-  the trays; every door in (`?xgid=`, `?p=`, IMPORT) has nothing not
+  the trays; every door in (`?xgid=`, `?p=`) has nothing not
   placed, so its off is fifteen less the board (`offFrom`).
-- **The strip** (`#an-strip`), two rows at every width, every control a
-  fixed width: TO PLAY (`#an-turn`); the ask (`#an-ask`): ROLL
+- **Whose move it is**, at a glance and everywhere the page shows it. TO
+  PLAY (`#an-turn`) is two buttons, each the colour's checker as the
+  board draws it with its word (`#an-turn-white` "WHITE",
+  `#an-turn-black` "BLACK", heard as "White to play"); the chosen one is
+  the highlighter with an ink ring and its word underlined in ink. A
+  brush, TO PLAY and a step of the line are all chosen that way, never as
+  an inverted tile (a white checker on a dark square reads as the other
+  colour). On the board the mover's bar is the live game's to-move bar,
+  highlighted with its ▸, and says "to play" by the name, in SET UP
+  (`View.viewEdit`) and PLAY alike (`View.viewStillTurn` for a picture,
+  the table's own for a roll); the dice sit on the mover's half as the
+  live game puts them. SET UP keeps White at the bottom; PLAY puts the
+  actor there. The plates draw the colour as a checker in place of W or
+  B. The bars never set the slab's width, so "to play" moving from one to
+  the other moves nothing; under 360px the pip counts make room for it.
+- **The strip** (`#an-strip`), three rows at every width (TO PLAY and the
+  ask; the cube and the game; the scores and Crawford), every control a
+  fixed width: TO PLAY; the ask (`#an-ask`): ROLL
   (`#an-dice`, opening `#an-roll-sheet`, the 21 rolls, a bottom sheet on a
   phone and a card wider; stored high die first), DOUBLE?
   (`#an-ask-double`), TAKE? (`#an-ask-take`); CUBE (`#an-cube` cycles 1, 2
@@ -352,18 +368,17 @@ and the column is beside both.
   CRAWFORD (`#an-crawford`, which can be turned on only while somebody is
   one away and off at any time; it is turned off when nobody is). The
   match's controls stay in place, disabled, in unlimited play. Every door
-  in (`?xgid=`, `?p=`, IMPORT, MATCH TO coming back) and every edit runs
+  in (`?xgid=`, `?p=`, MATCH TO coming back) and every edit runs
   the same `normalize`: Crawford only one away, a cube at 1 centered.
 - **Quick starts**: OPENING (`#an-opening`: the checkers where a game
   starts, the cube in the middle; who is to play, the ask and the match
   stay), CLEAR (`#an-clear`: no checkers, the rest kept), FLIP
-  (`#an-flip`, `Setup.flip`). The position id: `#an-xgid` (read-only, the
-  live `Xgid.encode` once every checker is placed or borne off; until then
-  empty, "Place every checker first", and COPY disabled, since an id has
-  no "not placed" and would count those checkers as borne off), COPY (`#an-xgid-copy`, the `copyText` port: the
-  clipboard, or the field selected where the browser refuses), IMPORT
-  (`#an-xgid-import`, a `Ui.Dialog` `#an-import` with `#an-import-text`
-  and `#an-import-go`; "That is not a position id" in its fixed line).
+  (`#an-flip`, `Setup.flip`). The page shows no position id (the human,
+  2026-10-02: the id row, COPY and IMPORT wasted space); a position comes
+  in by `?xgid=` (OPEN IN ANALYSIS from the replay) or `?p=` (from a
+  puzzle), and SHARE is the puzzle's link. The page root carries the id
+  for the browser smokes alone (`data-xgid`, empty while a checker is not
+  placed).
 - **The line** (`#an-check`, two lines tall, always there): "Opening the
   puzzle…" while `?p=` is read, a door's refusal ("That puzzle is gone.",
   "That is not a position id") until the first edit, else what is left to
@@ -379,8 +394,7 @@ and the column is beside both.
   control that changes nothing, the turn already White, leaves it up).
 - **Doors in.** `/analysis` is `Setup.opening`. `?xgid=` opens on the id
   as it is: an id with Black on roll stays Black to play (the board is
-  not turned round, so COPY gives back the id that was pasted; FLIP turns
-  it). `?p=` reads `GET /papi/puzzles/:id` and opens
+  not turned round; FLIP turns it). `?p=` reads `GET /papi/puzzles/:id` and opens
   `Setup.fromQuestion kind question` (the solver White at the bottom, a
   take from the taker's side); a missing puzzle opens the opening and says
   "That puzzle is gone." Nothing on the page spends engine time.
@@ -657,9 +671,8 @@ come from the browser (`elm/random`), since it is a sandbox. Tests:
   points are drawn turned round (`Puzzle.Table.moverColor`).
 - **PLAY plays; SET UP edits.** In PLAY the strip (`#an-strip`) and the
   quick starts' row are `<fieldset disabled>` (the strip faded where it
-  stands, the quick starts in a disabled button's grey) and IMPORT is
-  disabled too, so the position is changed only in SET UP. The position id
-  and COPY stay live: they read the step on the board and change nothing.
+  stands, the quick starts in a disabled button's grey), so the position
+  is changed only in SET UP.
   Every box is the same in both modes (part 3 asserts it, and that the
   fieldset is disabled in PLAY and live again in SET UP).
 - **The legal plays.** No move generator in Elm. An answered step plays
@@ -685,7 +698,7 @@ come from the browser (`elm/random`), since it is a sandbox. Tests:
   the steps after it. A new roll or cube question at a step (ROLL, ROLL
   FOR ME, PICK A ROLL, DOUBLE?, and in SET UP the strip's ROLL, DOUBLE?
   and TAKE?) drops the steps after it; any other change -- in SET UP a tap,
-  the turn, the cube, the score, a quick start, IMPORT -- is another
+  the turn, the cube, the score, a quick start -- is another
   position and starts a fresh line from it.
 - **Nothing moves.** The row over the board is the brushes' box in both
   modes, SET UP / PLAY are fixed widths, every button in the row is, the

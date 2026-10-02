@@ -7,7 +7,7 @@
  *    takes one off, the bar's halves take the same clicks; a sixteenth is
  *    refused and its tray flashes; ROLL, the cube, DOUBLE?, a match, its
  *    scores and Crawford; FLIP and FLIP back; IMPORT reads an id (and
- *    refuses one that is not); COPY puts the id on the clipboard
+ *    refuses one that is not)
  * 3. A phone (390x844) builds one with taps and a long press, and picks a
  *    roll from the sheet
  * 4. At 320x568 and sideways (844x390) a tap on every point lands on that
@@ -79,7 +79,7 @@ const HELD = [
   '#an-brush-white', '#an-brush-black', '#an-brush-remove',
   '#an-turn', '#an-ask', '#an-dice', '#an-ask-double', '#an-ask-take', '#an-cube', '#an-cube-owner',
   '#an-length', '#an-game', '#an-score-white', '#an-score-black', '#an-crawford',
-  '#an-opening', '#an-clear', '#an-flip', '#an-xgid', '#an-xgid-copy', '#an-xgid-import',
+  '#an-opening', '#an-clear', '#an-flip', '#an-turn-white', '#an-turn-black',
   '#an-off-white', '#an-off-black', '#an-left-white', '#an-left-black',
 ];
 
@@ -127,7 +127,9 @@ function settled(page) {
   return page;
 }
 
-const xgid = async (page) => { await settle(page); return page.inputValue('#an-xgid'); };
+// The position as an XGID: the page shows none, and carries it for this
+// script on its root (`data-xgid`, empty while a checker is not placed).
+const xgid = async (page) => { await settle(page); return (await page.getAttribute('#analysis', 'data-xgid')) || ''; };
 
 const field = (id, n) => id.slice(5).split(':')[n];
 
@@ -234,14 +236,42 @@ const DEAD = 'XGID=-b----E-C---eE---c-e----B-:1:1:1:00:5:0:0:7:10';
 const DEAD_LINE = 'No double is possible here: the cube already covers what White needs';
 
 async function deadCube(page, tag, press) {
-  await press('#an-xgid-import');
-  await page.waitForSelector('#an-import');
-  await page.fill('#an-import-text', DEAD);
-  await press('#an-import-go');
-  await page.waitForSelector('#an-import', { state: 'detached' });
+  await open(page, `/analysis?xgid=${encodeURIComponent(DEAD)}`);
   await press('#an-ask-double');
   await expectLine(page, tag, DEAD_LINE);
   await fits(page, tag, '#an-check');
+}
+
+// Whose move it is, at a glance: TO PLAY's chosen colour is ringed and
+// named (never a checker on an inverted tile), the board's bar for that
+// colour is the one to move and says "to play", and the plates draw the
+// colour as a checker.
+async function whoseMove(page, tag, press) {
+  for (const color of ['black', 'white']) {
+    await press(`#an-turn-${color}`);
+    await settle(page);
+    const state = await page.evaluate((c) => {
+      const btn = document.querySelector(`#an-turn-${c}`);
+      const active = [...document.querySelectorAll('.an-board .player-bar.active .bar-name')].map((n) => n.textContent.trim());
+      const after = getComputedStyle(document.querySelector('.an-board .player-bar.active .bar-name'), '::after').content;
+      return {
+        on: btn.classList.contains('is-on'),
+        label: btn.getAttribute('aria-label'),
+        word: btn.querySelector('.an-who-word').textContent.trim(),
+        bg: getComputedStyle(btn).backgroundColor,
+        chip: getComputedStyle(btn.querySelector('.an-chip')).backgroundColor,
+        active,
+        after,
+      };
+    }, color);
+    const Name = color === 'white' ? 'White' : 'Black';
+    if (!state.on || state.label !== `${Name} to play` || state.word !== Name.toUpperCase())
+      throw new Error(`${tag}: TO PLAY ${Name} reads ${JSON.stringify(state)}`);
+    // the chosen tile is the highlighter, never ink behind the checker
+    if (state.bg === 'rgb(35, 36, 58)') throw new Error(`${tag}: TO PLAY ${Name} is an inverted tile`);
+    if (JSON.stringify(state.active) !== JSON.stringify([Name])) throw new Error(`${tag}: the bar to move is ${JSON.stringify(state.active)}, not ${Name}`);
+    if (!/to play/.test(state.after)) throw new Error(`${tag}: ${Name}'s bar does not say "to play" (${state.after})`);
+  }
 }
 
 async function noSideScroll(page, tag) {
@@ -286,9 +316,7 @@ async function desktop(browser, errors) {
     await page.click('#an-clear');
     // Nothing placed: no id yet, and nothing to copy.
     if ((await xgid(page)) !== '') throw new Error(`CLEAR left the id ${await xgid(page)}`);
-    if ((await page.getAttribute('#an-xgid', 'placeholder')) !== 'Place every checker first') throw new Error('the empty id field does not say why');
-    if (!(await page.isDisabled('#an-xgid-copy'))) throw new Error('COPY is on with checkers not placed');
-    if (await page.isDisabled('#an-xgid-import')) throw new Error('IMPORT is off with checkers not placed');
+    if (await page.$('#an-xgid, #an-xgid-copy, #an-xgid-import')) throw new Error('the position id row is back');
     await expectLine(page, 'cleared', 'Place 15 more White and 15 more Black checkers');
     if ((await page.innerText('#an-left-white')).trim() !== '15') throw new Error("White's brush does not say 15 to place");
     await still('CLEAR');
@@ -413,36 +441,15 @@ async function desktop(browser, errors) {
     await page.click('#an-game');
     await still('FLIP');
 
-    // IMPORT.
-    const pasted = 'XGID=--A-bBBBB--BbB-----dbbc-B-:0:0:1:31:6:4:1:7:10';
-    await page.click('#an-xgid-import');
-    await page.waitForSelector('#an-import');
-    await page.fill('#an-import-text', 'not one');
-    await page.click('#an-import-go');
-    if ((await page.innerText('#an-import-error')).trim() !== 'That is not a position id') throw new Error('a bad id was not refused in the dialog');
-    await page.fill('#an-import-text', pasted);
-    await page.click('#an-import-go');
-    await page.waitForSelector('#an-import', { state: 'detached' });
-    if ((await xgid(page)) !== pasted) throw new Error(`IMPORT gave ${await xgid(page)}, not ${pasted}`);
-    await still('IMPORT');
-
     // Who is to play, and the longest line.
-    await page.click('#an-turn-black');
-    if (!(await page.$('#an-turn-black.is-on'))) throw new Error('TO PLAY Black did not take');
+    await whoseMove(page, 'desktop', (sel) => page.click(sel));
     await still('TO PLAY');
     await deadCube(page, 'desktop dead cube', (sel) => page.click(sel));
     await still('the longest line');
     await hintFits(page, 'desktop');
-    await fits(page, 'desktop: the whole id shows', '#an-xgid');
     await page.screenshot({ path: `${SHOTS}/analysis-desktop-04-dead-cube.png` });
 
-    // COPY.
-    await page.click('#an-xgid-copy');
-    if ((await page.innerText('#an-xgid-copy')).trim() !== 'COPIED') throw new Error('COPY did not say so');
-    const copied = await page.evaluate(() => navigator.clipboard.readText());
-    if (copied !== (await xgid(page))) throw new Error(`COPY put "${copied}" on the clipboard`);
-    await still('COPY');
-    log('desktop: clicks, right clicks, the x, the bar, the sixteenth, the strip, FLIP, IMPORT, COPY; nothing moved');
+    log('desktop: clicks, right clicks, the x, the bar, the sixteenth, the strip, FLIP, whose move; nothing moved');
   } finally {
     await context.close();
   }
@@ -490,7 +497,7 @@ async function phone(browser, errors) {
     await page.screenshot({ path: `${SHOTS}/analysis-390-03-set.png`, fullPage: true });
     await page.tap('#an-flip');
     await still('FLIP');
-    await page.tap('#an-turn-black');
+    await whoseMove(page, 'phone', (sel) => page.tap(sel));
     await still('TO PLAY');
     await deadCube(page, 'phone dead cube', (sel) => page.tap(sel));
     await still('the longest line');
@@ -823,7 +830,11 @@ function sameLine(tag, before, after) {
   }
 }
 
-const plates = (page) => page.$$eval('#an-plates .an-plate', (ps) => ps.map((p) => p.textContent.trim()));
+// A plate draws its colour as a checker: read back as W or B before its words.
+const plates = (page) =>
+  page.$$eval('#an-plates .an-plate', (ps) =>
+    ps.map((p) => `${p.querySelector('.an-chip.white') ? 'W' : p.querySelector('.an-chip.black') ? 'B' : '?'} ${p.textContent.trim()}`)
+  );
 const onPlate = (page) => page.$$eval('#an-plates .an-plate', (ps) => ps.findIndex((p) => p.classList.contains('is-on')));
 
 async function expectPlates(page, tag, want) {
@@ -862,11 +873,9 @@ async function lockedInPlay(page, tag, locked) {
     strip: document.querySelector('#an-strip').disabled,
     cube: document.querySelector('#an-cube').matches(':disabled'),
     opening: document.querySelector('#an-opening').matches(':disabled'),
-    imp: document.querySelector('#an-xgid-import').disabled,
-    copy: document.querySelector('#an-xgid-copy').disabled,
-    id: document.querySelector('#an-xgid').value,
+    id: document.querySelector('#analysis').dataset.xgid,
   }));
-  const want = { strip: locked, cube: locked, opening: locked, imp: locked, copy: false };
+  const want = { strip: locked, cube: locked, opening: locked };
   for (const k of Object.keys(want)) {
     if (state[k] !== want[k]) throw new Error(`${tag}: in ${locked ? 'PLAY' : 'SET UP'} ${k} is ${state[k] ? 'disabled' : 'live'}`);
   }
@@ -921,7 +930,7 @@ async function playItOut(browser, errors, tag, viewport) {
     await press('#an-first');
     if ((await onPlate(page)) !== 0) throw new Error(`${tag}: FIRST is not the opening`);
     if (!(await page.$('#an-answer'))) throw new Error(`${tag}: the opening's answer is gone`);
-    if ((await page.inputValue('#an-xgid')) !== OPENING_31) throw new Error(`${tag}: step 0 is ${await page.inputValue('#an-xgid')}`);
+    if ((await xgid(page)) !== OPENING_31) throw new Error(`${tag}: step 0 is ${await xgid(page)}`);
     if (!(await page.$('#an-candidates .rp-cand[data-rank="1"]'))) throw new Error(`${tag}: the opening's candidates are gone`);
     sameLine(`${tag} back to the opening`, held, await lineBoxes(page));
     await press('#an-next');
