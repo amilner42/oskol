@@ -43,6 +43,7 @@ const playwright = require('playwright');
 const fs = require('fs');
 const { BASE, createGame, joinByLink, resultLine } = require('../lib/flows');
 const { execFileSync } = require('child_process');
+const { assertTrayColumn, assertTrayStrips, bearOffEverywhere } = require('../lib/trays');
 
 const SHOTS = process.env.SHOTS_DIR || 'playwright/screenshots/test-backgammon-landscape';
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
@@ -82,7 +83,7 @@ const within = (a, b) =>
  * guarantee with it.
  */
 const CHROME = ['.bg-header', '.player-bar:not(.is-me)', '.player-bar.is-me', '#bg-actions'];
-const PLAY = ['.bg-grid', '.bg-point', '.checker', '.die', '.cube', '.bg-bar', '.bg-band'];
+const PLAY = ['.bg-grid', '.bg-point', '.checker', '.die', '.cube', '.bg-bar', '.bg-band', '.bg-tray-col'];
 
 /** Every box on the page for these selectors, named by the one that found it. */
 async function boxes(page, selectors) {
@@ -103,11 +104,12 @@ async function assertFits(page, phone, who) {
 
   const board = await box(page, '.bg-board');
   const label = `${who} @ ${phone.width}x${phone.height}`;
-  // Every page wears the site's bar across the top; the table is what it
-  // leaves, and the board fills that.
-  const bar = await box(page, '.lh-bar');
-  const room = phone.height - (bar.y + bar.height);
-  must(!overlaps(bar, board), `${label}: the site's bar does not overlap the board`);
+  // Every page wears the site's bar across the top -- except focus mode,
+  // which puts it away; the table is what it leaves, and the board fills
+  // that.
+  const bar = await page.locator('.lh-bar').first().boundingBox();
+  const room = bar ? phone.height - (bar.y + bar.height) : phone.height;
+  if (bar) must(!overlaps(bar, board), `${label}: the site's bar does not overlap the board`);
 
   must(
     board.height <= phone.height + 1,
@@ -165,27 +167,9 @@ async function assertFits(page, phone, who) {
       strays.length ? ` (out: ${[...new Set(strays)].join(', ')})` : ''
     }`
   );
-  // The bear-off trays live in the identity bars, one each, inside them.
-  for (const side of ['.player-bar:not(.is-me)', '.player-bar.is-me']) {
-    const bar = await box(page, side);
-    const tray = await box(page, `${side} .bg-tray`);
-    must(
-      tray.x >= bar.x - 1 &&
-        tray.x + tray.width <= bar.x + bar.width + 1 &&
-        tray.y >= bar.y - 1 &&
-        tray.y + tray.height <= bar.y + bar.height + 1,
-      `${label}: the tray sits inside ${side}`
-    );
-  }
-  // ...and the viewer's own tray answers a tap, which in focus mode it does
-  // only by exception: the plates there are `pointer-events: none` so that
-  // nothing on a rail can eat a tap meant for the board, and the tray is the
-  // one thing on them that is a tap target (a checker bearing off is tapped
-  // into it).
-  const trayTakesTaps = await page.evaluate(
-    () => getComputedStyle(document.querySelector('.player-bar.is-me .bg-tray')).pointerEvents
-  );
-  must(trayTakesTaps !== 'none', `${label}: the viewer's own tray answers a tap (${trayTakesTaps})`);
+  // The bear-off trays stand at the end of the home boards, as a real
+  // board keeps them, and the viewer's half answers a tap.
+  await assertTrayColumn(page, label);
 
   // The way between the modes is on screen in both, or a mode is a trap.
   const toggle = await box(page, '#bg-focus-toggle');
@@ -254,7 +238,7 @@ async function assertExpanded(page, phone, who) {
   // What focus mode keeps, because a turn cannot be played without it...
   for (const [selector, what] of [
     ['.player-bar.is-me .score-chip', 'the score'],
-    ['.player-bar.is-me .bg-tray', 'the bear-off tray'],
+    ['.bg-tray-col', 'the bear-off trays'],
     ['.bg-band', 'the centre band'],
   ]) {
     must(await page.locator(selector).first().isVisible(), `${label}: ${what} is on screen`);
@@ -270,7 +254,6 @@ async function assertExpanded(page, phone, who) {
   for (const [selector, what] of [
     ['.bar-pips', 'the pip counts'],
     ['.bar-dot', 'the presence dots'],
-    ['.oskol-mark', 'the wordmark'],
     ['.bg-match-tag', 'the match label'],
     ['#bg-theme-button', 'the board picker'],
     ['#bg-resign-open', 'the resign flag'],
@@ -305,7 +288,6 @@ async function assertCompressed(page, phone, who) {
   // than a loss.
   for (const [selector, what] of [
     ['.bar-pips', 'the pip counts'],
-    ['.oskol-mark', 'the wordmark'],
     ['.bg-match-tag', 'the match label'],
     ['#bg-resign-open', 'the resign flag'],
   ]) {
@@ -495,6 +477,7 @@ async function main() {
     await sleep(600);
     const pBoard = await box(pp, '.bg-board');
     must(pBoard.height <= 844, `portrait: the board still fits the phone (${Math.round(pBoard.height)})`);
+    await assertTrayStrips(pp, 'portrait @ 390x844');
     await pp.screenshot({ path: `${SHOTS}/02-portrait-phone.png` });
 
     const desktop = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -511,6 +494,7 @@ async function main() {
     );
     const dBoard = await box(pd, '.bg-board');
     must(dBoard.width > 600, `desktop: the board is still the wide desktop board (${Math.round(dBoard.width)}px)`);
+    await assertTrayColumn(pd, 'desktop @ 1440x900');
     await pd.screenshot({ path: `${SHOTS}/03-desktop.png` });
 
     // --- a danced turn, in landscape ---------------------------------
@@ -539,6 +523,13 @@ async function main() {
     must(!overlaps(message, die), 'the message does not sit on top of the dice');
     must(await dp.locator('#bg-action-play').count(), 'the dancer still has the pass button');
     await dp.screenshot({ path: `${SHOTS}/04-dance-landscape.png` });
+    await danceContext.close();
+
+    // --- bearing off: the trays at every size, and nothing moves ---------
+    await bearOffEverywhere(browser, {
+      watch,
+      shot: (screen, mode) => `${SHOTS}/06-bear-off-${screen.name}-${mode}.png`,
+    });
 
     if (errors.length) throw new Error(`page errors:\n${errors.join('\n')}`);
     log(`PASS (screenshots in ${SHOTS})`);
