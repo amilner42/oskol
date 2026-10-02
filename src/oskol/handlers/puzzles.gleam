@@ -199,7 +199,7 @@ pub fn describe(q: Question) -> String {
   let cube = case q.cube_owner {
     Mover -> "Cube at " <> int.to_string(q.cube_value) <> ", White's."
     Opponent -> "Cube at " <> int.to_string(q.cube_value) <> ", Black's."
-    _ -> "Cube centred."
+    _ -> "Cube centered."
   }
   score <> ". " <> cube <> " A backgammon puzzle: play it on the board."
 }
@@ -589,6 +589,8 @@ fn judge_move(
   Ok(#(
     verdict,
     [
+      #("band", json.string(grade.band_name(cost))),
+      #("cost", json.nullable(cost, json.float)),
       #("yours", case yours(question, answer, landed_on, cost, best) {
         Some(c) -> c
         None -> json.null()
@@ -711,9 +713,12 @@ fn judge_cube(
     grade.engine_band(question.kind, answer)
     |> option.to_result(error.Internal(not_found_message)),
   )
+  let cost = grade.cube_cost(question.kind, answer, answered)
   Ok(#(
     grade.cube_verdict(answered, engine),
     [
+      #("band", json.string(grade.band_name(cost))),
+      #("cost", json.nullable(cost, json.float)),
       #("yours", json.null()),
       #("best", json.null()),
       #("top", json.array([], fn(_) { json.null() })),
@@ -911,7 +916,14 @@ fn move_ladder(
     // Answered again before it is due: the reveal, and nothing else.
     _, False, _ -> {
       let body =
-        schedule_json(card.level, card.level, card.due_ms, False, False)
+        schedule_json(
+          card.level,
+          card.level,
+          card.due_ms,
+          False,
+          False,
+          held(ctx, card.level),
+        )
       settle(ctx, attempt, False, None, body)
       Ok(caps.Scheduled(grade.verdict_name(verdict), body))
     }
@@ -924,7 +936,8 @@ fn move_ladder(
         Ok(graded) -> graded.level_after
         Error(_) -> card.level
       }
-      let body = schedule_json(card.level, level, due, False, True)
+      let body =
+        schedule_json(card.level, level, due, False, True, held(ctx, level))
       settle(ctx, attempt, False, None, body)
       Ok(caps.Scheduled(grade.verdict_name(verdict), body))
     }
@@ -939,6 +952,7 @@ fn move_ladder(
               graded.due_ms,
               True,
               False,
+              held(ctx, graded.level_after),
             )
           settle(ctx, attempt, True, Some(graded.review_id), body)
           Ok(caps.Scheduled(grade.verdict_name(verdict), body))
@@ -949,12 +963,14 @@ fn move_ladder(
 
 /// How the deck reads a verdict. A miss goes back to the start rather than
 /// down a rung: the brief promises a puzzle you got wrong tomorrow, whatever
-/// level it had.
+/// level it had. Grading no longer produces `Hold` (0.02 lost is a miss);
+/// it is here for the rows that still carry it. `Unknown` never reaches
+/// this: it is snoozed for the player to grade first.
 fn outcome_of(verdict: Verdict) -> Outcome {
   case verdict {
     Pass -> PassOutcome
     Hold -> Partial
-    _ -> Again
+    Fail | Unknown -> Again
   }
 }
 
@@ -968,6 +984,11 @@ fn settle(
   ctx.puzzles.settle_attempt(attempt.id, scheduled, review_id, None, body)
 }
 
+/// How long a card waits at this level, off the ladder the deck runs on.
+fn held(ctx: Ctx, level: Int) -> Int {
+  deck.held_days(ctx.practice.intervals(), level)
+}
+
 /// The schedule as the wire carries it. Public so the fixture task can hand
 /// the client's tests every shape a page has to draw.
 pub fn schedule_json(
@@ -976,6 +997,7 @@ pub fn schedule_json(
   due_ms: Int,
   amendable: Bool,
   self_grade: Bool,
+  held_days: Int,
 ) -> String {
   json.to_string(
     json.object([
@@ -985,6 +1007,11 @@ pub fn schedule_json(
       #("due", json.int(due_ms)),
       #("amendable", json.bool(amendable)),
       #("self_grade", json.bool(self_grade)),
+      // How many days a card waits at `level_after` when an answer holds
+      // it there (`config :retain, intervals`): what GOT IT on an answer
+      // nothing checked would do, said before it is pressed. The page
+      // keeps no copy of the ladder.
+      #("held_days", json.int(held_days)),
       // This answer is the one that patched the mistake: it crossed the
       // rung where a mistake counts as stopped. The rule is the deck's
       // (`deck.patched_level`) and is decided here so the page keeps no
@@ -1058,6 +1085,8 @@ pub fn outcome_json(
       )
       Ok(envelope.ok([#("schedule", kept(attempt))]))
     }
+    GotIt if attempt.verdict == "fail" ->
+      Error(error.validation_failed(got_it_after_miss_message))
     _ -> {
       let chosen = chosen_outcome(wanted, attempt.verdict)
       use graded <- result.try(case attempt.review_id {
@@ -1083,6 +1112,7 @@ pub fn outcome_json(
           graded.due_ms,
           True,
           False,
+          held(ctx, graded.level_after),
         )
       ctx.puzzles.settle_attempt(
         attempt.id,
@@ -1144,7 +1174,9 @@ fn named(outcome: String) -> Result(Override, Nil) {
 /// GOT IT means "as graded". Where the engine graded the play, that is its
 /// own verdict. Where it could not, the player is claiming they got it --
 /// which holds the card's level rather than moving it up, because nothing
-/// checked the claim.
+/// checked the claim. After a miss it is not one of the choices at all
+/// (`outcome_json` refuses it), so a miss is never answered as anything
+/// but a miss by pressing the button that looks like agreeing.
 fn chosen_outcome(wanted: Override, verdict: String) -> Outcome {
   case wanted {
     Sooner -> Again
@@ -1153,12 +1185,13 @@ fn chosen_outcome(wanted: Override, verdict: String) -> Outcome {
     GotIt ->
       case verdict {
         "pass" -> PassOutcome
-        "hold" -> Partial
-        "fail" -> Again
         _ -> Partial
       }
   }
 }
+
+/// GOT IT pressed on an answer the engine graded a miss.
+pub const got_it_after_miss_message = "That one was a miss, so GOT IT is not one of its choices."
 
 // ---------- GET /papi/puzzles/:id/mine ----------
 

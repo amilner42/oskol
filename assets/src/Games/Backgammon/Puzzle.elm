@@ -496,10 +496,15 @@ pipsAgainst side =
 {-| What an attempt is answered with. `yours` is the play as the answer
 describes it, or nothing where the stored answer holds no result for it
 (`Unknown`); `best` and `top` are the engine's; `cube` is there for a cube
-question and `schedule` for an account whose deck holds the card.
+question and `schedule` for an account whose deck holds the card. `band`
+is the replay's name for what the answer gave up ("best", "ok", "doubtful",
+"bad", "very_bad", or "unknown") and `cost` the equity itself, nothing
+where nobody knows it.
 -}
 type alias Reveal =
     { verdict : Verdict
+    , band : String
+    , cost : Maybe Float
     , yours : Maybe Candidate
     , best : Maybe Candidate
     , top : List Candidate
@@ -510,7 +515,9 @@ type alias Reveal =
 
 
 {-| How the answer went. `Unknown` is not a miss: the engine did not rank
-that play, so nobody is told they were wrong.
+that play, so nobody is told they were wrong. `Hold` is legacy: the server
+grades nothing "close" any more (0.02 lost is a miss), but an attempt
+stored before that still reports it when its key is retried.
 -}
 type Verdict
     = Pass
@@ -582,6 +589,11 @@ type alias Schedule =
     -- rung where a mistake counts as stopped. The server decides it
     -- (`deck.patched_level`), so the page keeps no copy of the number.
     , patched : Bool
+
+    -- How many days a card waits at `levelAfter` when an answer holds it
+    -- there: the ladder as the server is configured, so the page keeps no
+    -- copy of it. Nothing on a schedule written before it was sent.
+    , heldDays : Maybe Int
     }
 
 
@@ -604,14 +616,21 @@ type alias Memory =
 
 revealDecoder : D.Decoder Reveal
 revealDecoder =
-    D.map7 Reveal
-        (D.field "verdict" verdictDecoder)
-        (D.field "yours" (D.nullable candidateDecoder))
-        (D.field "best" (D.nullable candidateDecoder))
-        (D.field "top" (D.list candidateDecoder))
-        (D.field "cube" (D.nullable cubeRevealDecoder))
-        (D.field "schedule" (D.nullable scheduleDecoder))
-        (D.field "story" (D.nullable storyDecoder))
+    D.succeed Reveal
+        |> andMap (D.field "verdict" verdictDecoder)
+        |> andMap (D.field "band" D.string)
+        |> andMap (D.field "cost" (D.nullable D.float))
+        |> andMap (D.field "yours" (D.nullable candidateDecoder))
+        |> andMap (D.field "best" (D.nullable candidateDecoder))
+        |> andMap (D.field "top" (D.list candidateDecoder))
+        |> andMap (D.field "cube" (D.nullable cubeRevealDecoder))
+        |> andMap (D.field "schedule" (D.nullable scheduleDecoder))
+        |> andMap (D.field "story" (D.nullable storyDecoder))
+
+
+andMap : D.Decoder a -> D.Decoder (a -> b) -> D.Decoder b
+andMap =
+    D.map2 (|>)
 
 
 {-| The story a share-with-my-story link tells, once the reader has tried:
@@ -716,7 +735,7 @@ cubeRevealDecoder =
 
 scheduleDecoder : D.Decoder Schedule
 scheduleDecoder =
-    D.map6 Schedule
+    D.map7 Schedule
         (D.field "level_before" D.int)
         (D.field "level_after" D.int)
         (D.field "due" D.int)
@@ -725,6 +744,9 @@ scheduleDecoder =
         -- Absent on a schedule written before the milestone existed: an
         -- answer that says nothing about patching did not patch anything.
         (D.map (Maybe.withDefault False) (D.maybe (D.field "patched" D.bool)))
+        -- Absent on a schedule stored before the server sent it (a retried
+        -- answer replays its own row): nothing is guessed in its place.
+        (D.maybe (D.field "held_days" D.int))
 
 
 {-| Why this position is in front of you, for a player who was in the

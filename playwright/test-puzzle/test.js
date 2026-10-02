@@ -16,7 +16,8 @@
  *     /dev/last-login), which brings the game and its mistakes into the
  *     account's deck; on the puzzle the reveal ends with the level line and
  *     the four buttons, one preselected, and the memory line "You played
- *     ..."; SOONER puts it back to the start: "back tomorrow".
+ *     ..."; each of the four, tapped, sends nothing and keeps the reveal's
+ *     height; SOONER, explained and APPLIED, puts it back to the start.
  *  4. Share with my mistake: only that player's page offers it (not the
  *     stranger's, not the opponent's, and the opponent's POST is a 403).
  *     Pressed, it copies a `?s=` link whose head says "Alice got this
@@ -159,7 +160,10 @@ async function run(browser, setup, errors) {
     await stranger.click('#bg-action-play');
     await stranger.waitForSelector('#pz-reveal');
     const verdict = await stranger.getAttribute('#pz-verdict', 'data-verdict');
-    must(['pass', 'hold', 'fail'].includes(verdict), `the verdict is in: ${verdict}`);
+    // Right or a miss: 0.02 given up is a mistake, so nothing is graded close.
+    must(['pass', 'fail'].includes(verdict), `the verdict is in: ${verdict}`);
+    const word = (await stranger.textContent('#pz-verdict .pz-verdict-word')).trim();
+    must(verdict === 'pass' ? word === 'RIGHT' : /^(\?! DUBIOUS|\? BAD|\?\? VERY BAD)$/.test(word), `a miss is named by its band: "${word}"`);
     must((await stranger.locator('#pz-candidates .rp-cand').count()) >= 2, 'the candidate table is there');
     must((await stranger.locator('#pz-candidates .rp-cand[data-yours="true"]').count()) === 1, 'your move is marked among the candidates');
     must(!(await stranger.locator('#bg-action-play').count()), 'the board is a picture once the answer is in');
@@ -271,8 +275,42 @@ async function run(browser, setup, errors) {
     // sent back to her), so the line names Bob.
     must(/^From your game vs Bob, \d+ \w{3}\. You played .+ \(a (dubious|bad|very bad) move\) and (won|lost) \d+ points?\./.test(aliceLine), `the player's memory line: "${aliceLine}"`);
 
-    await alice.click('#pz-outcome-sooner');
-    await alice.waitForFunction(() => document.querySelector('#pz-outcome-sooner').getAttribute('aria-pressed') === 'true', null, { timeout: 5000 });
+    // The four choices select, explain, then apply. A tap sends nothing and
+    // moves nothing: the reveal is the same height whichever is tapped.
+    const outcomePosts = [];
+    alice.on('request', (r) => { if (/\/attempts\/[^/]+\/outcome$/.test(r.url())) outcomePosts.push(r.url()); });
+    const revealHeight = async () => (await alice.locator('#pz-reveal').boundingBox()).height;
+    const restHeight = await revealHeight();
+    for (const o of ['sooner', 'got-it', 'knew-it', 'never']) {
+      // GOT IT after a miss is aria-disabled (it still hears the tap, to say
+      // why), which Playwright counts as not enabled: forced, like a thumb.
+      await alice.click(`#pz-outcome-${o}`, { force: true });
+      await alice.waitForTimeout(80);
+      const h = await revealHeight();
+      must(h === restHeight, `tapping ${o} keeps the reveal's height (${h} === ${restHeight})`);
+    }
+    must(outcomePosts.length === 0, 'a tap posts nothing');
+    must((await alice.textContent('#pz-level-line')).trim() === line, 'and the level line stands until APPLY');
+
+    const applyChoice = async (o, why) => {
+      await alice.click(`#pz-outcome-${o}`);
+      await alice.waitForTimeout(80);
+      const said = (await alice.textContent('#pz-outcome-why')).trim();
+      must(why.test(said), `${o} explains itself first: "${said}"`);
+      must(await alice.locator('#pz-apply').isVisible(), `${o}: APPLY is offered`);
+      await alice.click('#pz-apply');
+      await alice.waitForFunction((id) => document.querySelector(id).getAttribute('aria-pressed') === 'true', `#pz-outcome-${o}`, { timeout: 5000 });
+      must((await revealHeight()) === restHeight, `${o} applied, and the reveal is still the same height`);
+    };
+    // SOONER is what the grade already did to a miss, so to show the line
+    // move it is applied after KNEW IT there.
+    if ((await alice.getAttribute('#pz-outcome-sooner', 'aria-pressed')) === 'true') {
+      await applyChoice('knew-it', /^I already knew this: to the top, back in a year\.$/);
+      const knew = (await alice.textContent('#pz-level-line')).trim();
+      must(/back in a year$/.test(knew), `KNEW IT takes it to the top: "${knew}"`);
+    }
+    await applyChoice('sooner', /^Back to the start: it comes back tomorrow\.( Level \d+ → 0\.)?$/);
+    must(outcomePosts.length >= 1, 'APPLY posted the choice');
     const sooner = (await alice.textContent('#pz-level-line')).trim();
     must(/^Level \d+ → 0 · back tomorrow$/.test(sooner) || /^Level 0 · back tomorrow$/.test(sooner), `SOONER puts it back to the start: "${sooner}"`);
 

@@ -14,6 +14,8 @@ defmodule OskolWeb.Api.PracticeApiTest do
   # sandbox, not async.
   use OskolWeb.ConnCase, async: false
 
+  import Ecto.Query
+
   alias Oskol.Auth
   alias Oskol.Repo
 
@@ -44,6 +46,69 @@ defmodule OskolWeb.Api.PracticeApiTest do
     conn = conn |> as_guest(guest_id) |> get(~p"/")
     :ok = Auth.bind_guest(guest_id, user.id)
     {recycle(conn), user}
+  end
+
+  # One mistake of this grade, on a seat this account owns, written the way
+  # the review job writes it. Returns the puzzle id.
+  defp a_mistake(user_id, grade, n) do
+    game_id = "pa-" <> (:crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower))
+
+    Repo.insert!(%Oskol.Persistence.Game{
+      id: game_id,
+      slug: "backgammon",
+      config: %{"format" => "single"},
+      seed: 7,
+      players: [%{"id" => "p1", "name" => "p1", "guest_id" => "g1", "user_id" => user_id}],
+      status: "finished",
+      winners: [],
+      inserted_at: DateTime.utc_now(),
+      updated_at: DateTime.utc_now()
+    })
+
+    :ok = Oskol.Reviews.save(game_id, 1, "done", 1, %{"turns" => []}, nil, %{"turns" => []}, 3)
+    base = :crypto.hash(:sha256, game_id) |> Base.encode32(padding: false) |> binary_part(0, 7)
+
+    {:ok, _} =
+      Oskol.Puzzles.store(
+        game_id,
+        1,
+        [
+          %{
+            key: "k-#{game_id}",
+            ids: for(m <- 1..4, do: base <> Integer.to_string(m)),
+            kind: "move",
+            question: %{
+              "version" => 1,
+              "kind" => "move",
+              "board" => List.duplicate(0, 26) |> List.replace_at(n, 2),
+              "dice" => [6, 4],
+              "cube" => %{"value" => 1, "owner" => "center"},
+              "score" => nil,
+              "crawford" => false,
+              "jacoby" => false
+            },
+            answer: %{"kind" => "move", "complete" => true, "outcomes" => []},
+            evaluated_by: %{"levels" => %{}},
+            complete: true
+          }
+        ],
+        [
+          %{
+            key: "k-#{game_id}",
+            game_number: 1,
+            turn: 1,
+            kind: "move",
+            seat: 0,
+            player_id: "p1",
+            played: "13/8 13/11",
+            equity_lost: 0.1,
+            grade: grade,
+            skipped_reason: nil
+          }
+        ]
+      )
+
+    Repo.one!(from(s in Oskol.Puzzles.Source, where: s.game_id == ^game_id, select: s.puzzle_id))
   end
 
   describe "GET /papi/practice" do
@@ -118,6 +183,99 @@ defmodule OskolWeb.Api.PracticeApiTest do
         assert body["puzzles"] == []
         assert body["cursor"] == nil
       end
+    end
+  end
+
+  describe "the five decks" do
+    test "an account with nothing yet reads three empty tiers, and no set is offered unbuilt",
+         %{conn: conn} do
+      {conn, user} = signed_in(conn, "arie@oskol.test")
+
+      body = conn |> get(~p"/papi/practice/decks") |> json_response(200)
+      # No set has been built in this database, so none is offered.
+      assert Enum.map(body["decks"], & &1["id"]) == ["very_bad", "bad", "doubtful"]
+
+      assert Enum.all?(body["decks"], fn d ->
+               d["joined"] == false and d["size"] == 0 and d["cost"] == nil and
+                 d["standing"]["levels"] == [0, 0, 0, 0, 0, 0, 0, 0]
+             end)
+
+      # No graded game behind it: nothing to say what mistakes cost, read
+      # off the real rows (graded_for and mistake_costs both ran).
+      assert %{"lead" => nil, "today" => %{"done" => 0}, "streak" => 0, "cost_all" => nil} =
+               body
+
+      page = conn |> get(~p"/papi/practice/decks/dubious") |> json_response(200)
+      assert %{"deck" => %{"id" => "doubtful", "mark" => "?!"}, "cells" => []} = page
+      assert page["days"] == List.duplicate(false, 30)
+
+      # A set nobody built, and a slug that names nothing: the same 404.
+      assert %{"error" => %{"code" => "not_found"}} =
+               conn |> get(~p"/papi/practice/decks/openings") |> json_response(404)
+
+      assert conn |> get(~p"/papi/practice/decks/doubtful") |> json_response(404)
+
+      # Reading opened no deck.
+      assert Retain.fetch_user(user.id) == {:error, :not_found}
+    end
+
+    test "KEEP GOING takes a band, and refuses one that is not", %{conn: conn} do
+      {conn, user} = signed_in(conn, "arie@oskol.test")
+      {:ok, _} = Retain.put_user(user.id, tz: "Etc/UTC", new_per_day: 3)
+
+      bad = a_mistake(user.id, "bad", 1)
+      worse = a_mistake(user.id, "very_bad", 2)
+      assert {:ok, 2} = Oskol.Practice.sync(user.id)
+      # The day's budget is nothing, set after the sync (which opens the
+      # deck at the pace).
+      {:ok, _} = Retain.put_user(user.id, new_per_day: 0)
+      # The ordinary queue offers no new one.
+      assert conn |> get("/papi/practice?band=bad") |> json_response(200) |> Map.get("puzzles") ==
+               []
+
+      body =
+        conn
+        |> with_csrf()
+        |> post(~p"/papi/practice/more", %{"band" => "bad"})
+        |> json_response(200)
+
+      # The bad one was started, over the budget, and is the session now;
+      # the very bad one was left alone.
+      assert [%{"id" => ^bad, "due" => true}] = body["puzzles"]
+      {:ok, started} = Retain.fetch_item(user.id, bad)
+      assert started.started_at
+      {:ok, untouched} = Retain.fetch_item(user.id, worse)
+      assert untouched.started_at == nil
+
+      assert %{"error" => %{"code" => "validation_failed"}} =
+               conn
+               |> with_csrf()
+               |> post(~p"/papi/practice/more", %{"band" => "brilliant"})
+               |> json_response(422)
+    end
+
+    test "PRACTICE ANYWAY answers the rotation, soonest due first, once nothing is due",
+         %{conn: conn} do
+      {conn, user} = signed_in(conn, "arie@oskol.test")
+      {:ok, _} = Retain.put_user(user.id, tz: "Etc/UTC")
+
+      {:ok, _} =
+        Retain.put_items(user.id, Enum.map(["a", "b"], &%{key: &1, tags: %{}, content: %{}}))
+
+      {:ok, _} = Retain.start(user.id, ["a", "b"])
+      # Both back tomorrow; b was answered first, so b is due first.
+      {:ok, _} = Retain.review(user.id, "b", :again)
+      {:ok, _} = Retain.review(user.id, "a", :pass)
+
+      assert conn |> get(~p"/papi/practice") |> json_response(200) |> Map.get("puzzles") == []
+
+      anyway = conn |> get("/papi/practice?all=1") |> json_response(200)
+      assert Enum.map(anyway["puzzles"], & &1["id"]) == ["b", "a"]
+      assert Enum.all?(anyway["puzzles"], &(&1["due"] == false))
+
+      # Nothing moved by reading.
+      {:ok, a} = Retain.fetch_item(user.id, "a")
+      assert a.level == 1
     end
   end
 

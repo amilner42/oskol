@@ -137,17 +137,23 @@ path builds one and nothing re-asks the engine to recover one.
 - **One grading rule, one place** (`src/oskol/puzzles/grade.gleam`), shared by
   the guest on a shared link and the account whose ladder is watching. A
   checker play is graded by the board it leaves, never its notation: under
-  0.02 passes, under 0.08 holds, worse misses, and a board the stored answer
-  has no result for is `unknown` -- old five-candidate rows -- so nobody is
-  told they were wrong on evidence we do not have. A cube question is answered
-  with a side, as at the table (double or not, take or pass); the engine's
-  verdict is finer: the doubler's margin is `min(DT, DP) - ND`, the
+  0.02 passes and 0.02 or more misses (no "close": a `?!` answer is a
+  mistake, the thing the dubious tier is made of), and a board the stored
+  answer has no result for is `unknown` -- old five-candidate rows -- so
+  nobody is told they were wrong on evidence we do not have. A cube question
+  is answered with a side, as at the table (double or not, take or pass); the
+  engine's verdict is finer: the doubler's margin is `min(DT, DP) - ND`, the
   responder's is `DP - DT` (positive means take, because the responder picks
   whatever pays the doubler less), bands at 0.08 and 0.02 either side of
   zero. The right side passes, the wrong side misses, and when the engine's
-  band is zero (too close to call) either side holds: nobody fails a coin
-  flip. The reveal shows the engine's pick among the three equities and the
-  chances, nothing more.
+  band is zero (too close to call) either side passes: the wrong side gives
+  up under 0.02, which is not a mistake. What the wrong side gave up is the
+  margin itself (`grade.cube_cost`). The reveal carries `band`
+  (`grade.band_name`: best, ok, doubtful, bad, very_bad, unknown) and `cost`
+  beside the verdict, and shows the engine's pick among the three equities
+  and the chances, nothing more. `hold` is legacy: grading no longer produces
+  it, cards keep their levels and the stored partial reviews stand, and a
+  stored `hold` attempt still answers `hold` when its key is retried.
 - **Every finished game is the moment** (Aveline `decisions`, 2026-09-22). Both result cards at the table --
   the game-over card and the between-games card of a match or of
   unlimited play -- offer PRACTICE THIS GAME'S N MISTAKES
@@ -188,7 +194,12 @@ path builds one and nothing re-asks the engine to recover one.
   answer actually offered that (`self_grade`) -- never merely because none
   was written, or an answer that never had an opportunity would invent one.
   GOT IT on an answer nothing checked holds the level rather than raising
-  it. NEVER suspends the card without touching the attempt's own schedule,
+  it; GOT IT on an answer graded a miss is a 422 ("That one was a miss, so
+  GOT IT is not one of its choices."). An answer at a card that is not due
+  yet is a reveal and nothing else: it writes the attempt and moves nothing.
+  Every schedule carries `held_days`, how long a card waits at
+  `level_after` (`deck.held_days` over the `practice.intervals` cap), so the
+  page says what a choice would do without a copy of the ladder. NEVER suspends the card without touching the attempt's own schedule,
   so a retry of that answer is still the same reply, and nothing can be
   overridden after it (409).
 - **Share with my mistake** (`src/oskol/handlers/shares.gleam`). After the
@@ -307,6 +318,15 @@ old game at the front; within one game, turn order. A card's position is
 seconds *back* from 2020, not negated Unix time: retain's `position` is a
 32-bit column.
 
+**A card is banded by the account's own sources.** A card's tier is the
+worst grade among the `puzzle_sources` rows **this account** owns for its
+puzzle (`owner_user_id`, in the mistakes scope only), never every account's:
+a position is shared, and somebody else's very bad move must not put this
+player's dubious one in their `??` tier. In a set's scope no row matches and
+every card bands `""`. `severity`, `band_queue` (through `in_band`), `cells`
+and `answered_today_by_band` in `lib/oskol/gleam/caps/practice.ex` all join
+through the one `owner/2`, so the four cannot band one card two ways.
+
 **A mistake you make again comes back.** When a sync finds a puzzle the
 deck already holds, that is the player making it again in a real game, so
 the card takes an `:again` (back to level 0) with a note saying which game
@@ -321,35 +341,114 @@ they happened to play must not undo.
 before anything new (`new: :after_reviews`), twenty at a time,
 `counts: {due, new_today, deck}`, `today: {done}` -- a plain count of the
 day's answers, on the `practice.day` cap, counted in the deck's own
-timezone by exactly what the 30-day strip counts as practice, with **no
-target** -- `severity`, the
-mistakes by band in their three states (untouched, in progress, patched)
-with what each still has to do today (`due` now, `new_left` capped at the
-day's budget of new mistakes), and `lead`, the worst band with work
-(`practice.severity`, which takes `deck.patched_level` and never decides
-it; `deck.tiers` folds in the budget and `deck.lead` chooses). `?band=`
-narrows the puzzles to one tier (`practice.band_queue`, the same
+timezone by exactly what the 30-day strip counts as practice -- `severity`,
+the mistakes by band in their three states (untouched, in progress,
+patched) with what each still has to do today (`due` now, `new_left`
+capped at the day's budget of new mistakes), and `lead`, the worst band
+with work (`practice.severity`, which takes `deck.patched_level` and never
+decides it; `deck.tiers` folds in the budget and `deck.lead` chooses).
+`?band=` narrows the puzzles to one tier (`practice.band_queue`, the same
 orderings `Retain.due` and its new-card query use, with the
 `puzzle_sources` join in front): due first, then ones never seen, worst
 first inside the band, and never the whole deck for a band that is not
-one of the three. A guest: the mistakes on the seats their
-cookie holds and no account owns, newest game first, unscheduled,
-`counts: null`, and **nothing written** -- only an account has a deck.
-Nobody: an empty list, not an error. Reading never starts a card or spends a
-day's budget. `POST /papi/practice/more` puts ten more into rotation over
-the day's budget and answers the same session; nothing in the client
-presses it.
+one of the three. A guest: the mistakes on the seats their cookie holds
+and no account owns, newest game first, unscheduled, `counts: null`, and
+**nothing written** -- only an account has a deck; their `?band=` narrows
+those mistakes to that tier (each banded by the worst grade any of their
+games reached it at). Nobody: an empty list, not an error. Reading never
+starts a card or spends a day's budget.
+
+**KEEP GOING and PRACTICE ANYWAY.** Once today's set is done there is
+always a way on. `POST /papi/practice/more {band}` (`deck.keep_going`)
+starts the deck's pace again (`deck.keep_going_new`, which is
+`new_per_day`: three) of mistakes never shown, of that band
+(`practice.start_new_in_band`) or of the whole deck (`""`), over the day's
+budget -- the budget is the pace for the player who did not ask -- and
+answers that tier's session; for a guest it is the session and nothing
+else. `?all=1` is PRACTICE ANYWAY: only when the ordinary queue is empty,
+the cards in rotation soonest due first (`deck.anyway`, off the `cells`
+cap), each `due: false`; an answer at one is early and moves nothing
+(`?all` is ignored while the queue has anything in it). `&from=<n>` skips
+the first `n` of that rotation, so a run goes on past its first twenty. A
+set has the same two through `POST /papi/decks/:id/more` (the set's own
+pace; an account that added it, 409 `sign_in` / `not_joined` otherwise)
+and `GET /papi/decks/:id?all=1&from=`.
 
 **A session is never paged.** Every fetch is the front of the queue and
 `cursor` is always null. The due set is live -- answering a card takes it
 out -- so a second page at an offset would skip exactly as many cards as the
 player had just answered: 21 due would end after 20 with one unseen and the
-day's new cards never offered at all. "Done for today" is a fetch that comes
-back empty, and nothing else.
+day's new cards never offered at all. A run whose ids run out asks the
+front again (see below); "done for today" is a fetch that comes back with
+nothing the run has not already put in front of the player.
+
+## The five decks
+
+What a player practices is five decks, in one shape
+(`src/oskol/practice/catalog.gleam`): the three tiers of their own
+mistakes, worst first (`very_bad` / `very-bad` ??, `bad` / `bad` ?,
+`doubtful` / `dubious` ?!), and the universal sets from the registry
+(`openings`, `opening_replies` / `opening-replies`). Each has an `id` the
+wire speaks and a `slug` its page lives at (`/practice/<slug>`). A tier is a
+band of the one mistakes learner, never a scope of its own: the three share
+a ladder, a day and a budget.
+
+- **`GET /papi/practice/decks`** (`practice.decks_json`) is the hub's one
+  answer: `{decks, lead, today, streak, patched_level, cost_all,
+  mistakes}`. Each deck is `{id, slug, kind (mistakes|set), name, mark,
+  blurb, size, pace, joined, standing, cost}`. `standing` (an account's;
+  null otherwise) is counted from the deck's cells by `deck.standing`:
+  `{total, untouched, in_progress, patched, due, new_left, done_today,
+  target_today, levels}`, where `target_today` is done + due + the new ones
+  the day still allows -- the ring is `done_today / target_today`, which
+  grows when KEEP GOING adds and is full when the deck asks nothing more
+  today. `pace` is what KEEP GOING adds (the mistakes' three, a set's own
+  `new_per_day`). `lead` is the worst tier with work, else a set the
+  account added with work, else the worst tier with anything in it, else
+  null; a guest's is their worst tier. `today: {done}` is every deck's
+  answers today (the mistakes' day once, plus each set's); `streak` is the
+  home's (`home.days_running`). `mistakes: {puzzles, games}` is a guest's
+  ("23 mistakes from your 4 games"), null for anybody else. A set with
+  nothing built is not listed. Reading writes nothing.
+- **`GET /papi/practice/decks/:slug`** (`practice.deck_page_json`) is one
+  deck's page: `{deck, cells, days, patched_level}`, `cells` the account's
+  cards in the order the deck introduces them (`{id, level, due, status,
+  position, band}`, the `practice.cells` cap), `days` the last thirty
+  (`practice.days`; a tier's month is the mistakes' month). An unknown slug,
+  and a set nobody has built, is a 404.
+- **The cells.** Four caps added for this (`src/oskol/caps/practice.gleam`,
+  the tuple order in `lib/oskol/gleam/caps/practice.ex`): `cells` (every
+  card, banded by the account's own sources), `answered_today_by_band`
+  (today's answers by the band of the card, adding up to `day.answered`),
+  `start_new_in_band` (KEEP GOING for one tier) and `intervals` (the
+  ladder, `config :retain, intervals`).
+- **What the mistakes cost** (`src/oskol/practice/cost.gleam`). Each tier
+  carries `cost: {games, lost, lost_patched, pr, pr_without, pr_patched}`
+  and the answer `cost_all: {pr, pr_without, pr_patched}`: the rating as
+  it is, as it would be without that band's mistakes, and without the
+  patched ones. Decision-weighted like the home's PR, over the same window
+  (`home.counted` over `analysis.graded_for`, so `pr` is the career number
+  beside a name), minus the equity of `puzzle_sources` rows read by the
+  analysis cap `mistake_costs` (`Oskol.Reviews.mistake_costs/1`). Those
+  rows are reached **through the account's seats** (the `graded_for`
+  containment), not `owner_user_id`, so both sides of the subtraction are
+  the same games; the holder rule in Gleam confirms each seat. A row counts
+  in the band it was graded in, not its puzzle's worst; a mistake in a game
+  outside the window is dropped. Patched is the rung on a card still in
+  rotation (NEVER is not fixed). Null for a guest, a stranger, a set and an
+  account under three graded games (`home.min_games`). Rows only: no
+  engine time, no log, no write.
+- **The heads** (`practice.deck_head`, served by `SpaController.practice`).
+  A set is the same page for everyone: "Openings · Practice", its blurb,
+  a canonical, and in the sitemap (`practice.indexed_slugs`). A tier is
+  somebody's own mistakes: "Very bad moves · Practice", `noindex`, never in
+  the sitemap. `practice` is a reserved word before `/:slug`; a bare
+  `/practice` is a 404.
+
 ## The pages (client wiring)
 
 What a player sees on these pages, and in which words, is the Aveline doc
-`pages` (the one-tier card, the run, its end). The wiring:
+`pages`. The wiring:
 
 **The puzzle page** (`/puzzles/:id`, `assets/src/Page/Puzzle.elm`) fetches the
 question and nothing else until PLAY: the answer is not in that response,
@@ -358,58 +457,141 @@ link can put nothing within reach. The board is the table's own
 (`Games/Backgammon/Puzzle.elm` on `View.viewPlay`; a lazy tree's levels
 are fetched as the path reaches them), UNDO and PLAY are its own band; a
 cube question is two buttons, as at the table (DOUBLE / NO DOUBLE, TAKE /
-PASS). The reveal is the replay's words and table (`Words`, with
+PASS). The reveal opens on the verdict line (`#pz-verdict`): RIGHT ("That
+is the play." / "Within 0.02 of the best. Not a mistake."), or a miss by its
+band in the replay's mark and colour (?! DUBIOUS, ? BAD, ?? VERY BAD) with
+"Gives up 0.04 — a mistake, so it comes back." (no "so it comes back"
+without a schedule). Then the replay's words and table (`Words`, with
 `doubleWhy`/`noDoubleWhy`/`answerWhy` for a position nobody has acted on
 yet) with "you" marked and a candidate tappable onto the board; the cube's
 scale marks the engine's band over `cubeLine`. The attempt's key is minted
 once per page load (`elm/random`) and a PLAY that lands before it waits for
 it, so a retry is the same answer. Signed in with a `schedule`, the level
-line ("Level 2 → 3 · back in 7 days"; "back tomorrow") and SOONER / GOT IT /
-KNEW IT / NEVER, the graded one preselected when `amendable` (SOONER after a
-miss, GOT IT otherwise), none when `self_grade`, absent when neither; NEVER
-says the card is out of the deck. A schedule carries `patched`, true when
-that answer took the mistake to `deck.patched_level` from below (the level
-line then reads "Patched. Four right in a row — back in 21 days",
+line ("Level 2 → 3 · back in 7 days"; "back tomorrow"; an early answer
+"Not due until 9 Oct — practice only, nothing moves."; KNEW IT "Marked as
+known — back in a year") and SOONER / GOT IT / KNEW IT / NEVER. A choice
+**selects, explains, then applies**: the graded one is filled when
+`amendable`; a tap only selects (outlined) and `#pz-outcome-why` says what it
+would do, in one fixed line; `#pz-apply` sends it (YES, NEVER for NEVER).
+GOT IT after a miss is `aria-disabled` in its column ("You missed this
+one."). Once NEVER is applied the four stay, disabled, under "Set aside".
+The reveal's height is fixed across taps. A schedule carries `patched`, true
+when that answer took the mistake to `deck.patched_level` from below (the
+level line then reads "Mastered. Four right in a row — back in 21 days",
 `.pz-level.is-patched`). SHARE is the table's `shareInvite` port on the
 clean URL.
 
-**A run is the shell's.** `Main.Run` is `{ids, at, answers, next, tier,
-deck}`, kept across `pushUrl`s because every page is rebuilt on one. A page
-that starts a run answers `Out = StartRun (List String) (Maybe Today)
-(Maybe String)`: Main sets the run, takes the day's count from the answer
-that page already had, and pushes the first id; `next` is the page the run
-was started from (the practice home, the table, the replay), and is where a
-guest who signs in at the run's end goes on to. FIX ONE fetches its tier's
-queue (`GET /papi/practice?band=<grade>`) and starts a run of it. The page
-is told `hasNext` and `progress` (`{at, marks}`), draws the strip over the
-board (`#pz-progress`: the tier's mark and the day's count, a mark per
-mistake answered, and the `/why` line, asked only in a session), offers
-ANOTHER (`#pz-next`, `WantsNext`, only where there is another) and I'M DONE
-(`#pz-done`, `WantsEnd`) after every reveal, and reports every reveal and
-every override as `Out = Answered {verdict, schedule, grade}`; Main keeps it
-by puzzle id (an answer given again replaces). `WantsEnd` is answered with
-`Page.Puzzle.endRun {right, close, total} [answers]` -- a pass is right, a
-hold close, a miss or an unknown neither, and `total` is **how many were
-answered**, never the length of the list the run was given. Ending a run
-fetches nothing. The page's other `Out`s: `SignedIn (Maybe User)`, `Go
-path`.
+**A run is the shell's** (`assets/src/Run.elm`, pure, kept by `Main` across
+`pushUrl`s because every page is rebuilt on one). `Run.Run` is `{ids, at,
+answers, next, source, anyway, served, deckToday, slug, celebrated, gen}`: `source` is
+`Band` (a tier: `/papi/practice?band=`), `InSet` (a set: `/papi/decks/:id`)
+or `Fixed` (one game's mistakes, which ends at its last); `next` is the page
+the run was started from (the hub, a deck's page, the table, the replay) and
+where a guest who signs in at the end goes on to; `deckToday` is the deck's
+ring and `slug` its page (where its cells are read). The hub and a deck's
+page start one with `StartRun ids today tier Begun` or `StartDeckRun ids
+today named Begun` (`Begun` is `{deckToday, anyway, slug}`, `Ui.Deck.begun`); a result card and the home with `StartRun`.
+**A run never runs out**: the ids are the front of a queue, so past the last
+one the shell asks the same queue again (`Run.refetch`, through PRACTICE
+ANYWAY `?all=1&from=<served>`) and goes on with what it has not shown; only
+an answer with nothing new in it ends today's set. The page is told
+`hasNext` (`Run.goesOn`: always, in a run through a deck) and `progress =
+{at, marks, ring, anyway}`, and draws the strip over the board
+(`#pz-progress`): the tier's mark or the set's name, the deck's ring with
+"3/5" beside it, an 18px tile per answer in one row that scrolls sideways
+(opening at its newest end), and one reserved line under it -- the day's
+count ("3 practiced today"), or "Practice only" in a run of early answers --
+with, for a mistake, the `/why` line. It offers ANOTHER (`#pz-next`,
+`WantsNext`) and I'M DONE (`#pz-done`, `WantsEnd`) after every reveal --
+except the one that finishes today's set (below) -- and
+reports every reveal and override as `Out = Answered {verdict, schedule,
+grade}`, or, where ANOTHER / I'M DONE applied a pending choice on the way
+out, `Out = AnsweredThen answer (WantsNext | WantsEnd)`: Main keeps the
+answer, then goes on (`Main.puzzleOut`). An answer counts toward the day
+and the ring only the first time, only when it moved something
+(`Page.Puzzle.countsToday`), never in PRACTICE ANYWAY. `WantsEnd` is
+answered with `Page.Puzzle.endRun {right, total} answers next`: a pass is
+right, anything else is not, and `total` is **how many were answered**. The
+end card (`#pz-end`) then asks where the deck stands (`/papi/practice/decks`)
+for the way on (`Run.way`): `Continue` (work left today) and `MoreNew n`
+(today's set done, some never shown) are KEEP GOING, `Anyway` (everything
+started, nothing due) is PRACTICE ANYWAY, `NoWay` nothing; pressed, it is
+`Out = GoOn way` and the shell runs on (`Run.keepGoing` grows the ring's
+target by what it started). Under it the way back to `next` in its own
+words ("Back to puzzles →", "Back to very bad moves →", "Back to the
+game →"). The page's other `Out`s: `SignedIn (Maybe User)`, `Go path`.
 
-**The practice home** (`/puzzles`, `assets/src/Page/Puzzles.elm`) is one
-page on `GET /papi/practice`'s one answer; the one-tier card is
-`assets/src/Ui/Tiers.elm`, the same on the hub and the home. Signed in, it
-POSTs the browser's zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`,
-boot flag `tz`) to `/papi/practice/tz` once per visit, never for a guest.
-`new_per_day` (three) is the only cap: there is no day's target. Decisions
-on the server: `handlers/practice` (counts, the tiers, a guest's
-`mistakes`) and `handlers/puzzles_hub` (TRY ONE's clear-answer rule, on the
-`puzzles.sample` cap: up to 40 complete puzzles in the database's random
-order, the first that qualifies).
+**Today's set done.** When a counted answer brings the deck's ring to its
+target (`done == target > 0`), `Run.celebrate` says so once a run
+(`celebrated`); never for a guest (no day), PRACTICE ANYWAY or one game's
+mistakes. Main calls `Page.Puzzle.celebrate`, reads the deck once by the
+run's `slug` (`GET /papi/practice/decks/:slug`) and hands the page the
+cells and the way on (`Run.way`). The card (`#pz-today-done`) sits **under
+the reveal**, laid out hidden from its first frame: the ring at 64px
+filling to a check, "Today's 5 done.", what this run moved (from its own
+schedules), the deck's grid with the squares this run stepped up
+(`Ui.Charts.gridStepping`), for a tier what mastering won back ("Mastered
+so far: 0.6 PR won back."), and KEEP
+GOING (or PRACTICE ANYWAY) beside I'M DONE in one fixed band; ANOTHER is
+not drawn on that reveal and the band under the board keeps SHARE. The
+`celebrateCard` port scrolls it into view and `celebrationInView` starts
+the motion once it is on screen; `data-settled="true"` marks the last
+keyframe. Motion is CSS only, under `prefers-reduced-motion:
+no-preference`; with reduced motion the final state is drawn and settled
+at once. On desktop (1024px and up) the column beside the board is
+size-contained (`.pz-page .rp-side { contain: size }`): always the board's
+height, scrolling inside, so a tall reveal never stretches the board's
+box.
+
+**The practice home** (`/puzzles`, `assets/src/Page/Puzzles.elm`) is the
+five decks on `GET /papi/practice/decks`'s one answer, as drawers in their
+own fixed order (very bad, bad, dubious, Openings, Opening replies). One
+is open, drawn as its card (`Ui.Deck.card`, `OnHub`) in its own slot: the
+server's `lead`, the one tapped, or for an account with nothing of its own
+the first set; a stranger has none open until they tap one. The others are
+rows (`Ui.Deck.row`, buttons with `aria-expanded`); tapping one opens it in
+place and closes the open one. **Nothing ever changes order.** Every row
+and card starts with the deck's icon: a tier's mark in the replay's colour
+for its grade (`Mistakes.markClass`, the `--g-*` tokens behind `.g-*`; the
+same on a deck's page and a run's strip), a set's dice on paper. The card
+is the icon and name, OPEN (to the deck's page), today's ring (`Ui.Charts.ring`), the mastery grid
+(`Ui.Charts.grid`, a square per position coloured by rung), the state line,
+for a tier the cost lines, and one button that never disappears where
+there is anything to practice (`Ui.Deck.action`: TRAIN, KEEP GOING,
+PRACTICE ANYWAY, START, TRY). TRAIN is the one word for running a deck,
+a tier's, a set's and a guest's pile alike. A row has `Ui.Charts.miniRing`.
+Signed in, the page POSTs the browser's zone
+(`Intl.DateTimeFormat().resolvedOptions().timeZone`, boot flag `tz`) to
+`/papi/practice/tz` once per visit, never for a guest. Decisions on the
+server: `handlers/practice` and `handlers/puzzles_hub` (TRY ONE's
+clear-answer rule, on the `puzzles.sample` cap: up to 40 complete puzzles in
+the database's random order, the first that qualifies).
+
+**A deck's page** (`/practice/<slug>`, `assets/src/Page/Practice.elm`) is
+`GET /papi/practice/decks/:slug`: the same card at page size
+(`Ui.Deck.Size` `OnPage`, the grid as wide as the page with its legend),
+the ladder in words, what is due, the last thirty days, and for a tier what
+it cost and what mastering won back. A run started here comes back here.
+
+The signed-in home's practice section is still the one-tier card
+(`assets/src/Ui/Tiers.elm`, on `/papi/me/home`'s `practice`); the
+good-shape and all-clear lines and "WORK ON ? BAD MOVES" live there only.
 
 **The words are one module.** Every sentence practice is said in lives in
 `assets/src/Ui/Mistakes.elm` (sets: `assets/src/Ui/Decks.elm`) and is pinned
 in `MistakesTest`: the unit a player reads about is **a mistake they made**,
-what they do with it is **fix** it, and one they have stopped making is
-**patched**. Nothing a player reads says card, deck or flashcard.
+and what they do with it is **train** it (the button is TRAIN). The same
+three states for all five decks, mistakes and sets alike: **to learn**
+(never started), **learning** (started, below `deck.patched_level`) and
+**mastered** (at or above it) -- "6 mastered · 18 learning · 20 to learn ·
+of 44", "31 left to master", the legend "to learn · level 1 · 2 · 3 ·
+mastered", and on the reveal "Mastered. Four right in a row — back in 21
+days". The end of a run says "You mastered 2 very bad moves." (a set: "You
+mastered 2 of them."). The day is "practiced", never "mastered": "3
+practiced today". Nothing a player reads says card, deck or flashcard, nor
+"fix", "patched" or "learned" (`MistakesTest` and `DecksTest` hold it);
+`patched` lives on only as the wire's and the code's name for the top
+rungs.
 
 ## Universal sets
 
@@ -436,17 +618,20 @@ also somebody's mistake is one puzzle in two places).
 - **An answer names its set**: the attempt and the override carry `deck`
   (`handlers/puzzles.attempt_in_json` / `outcome_in_json`); none is the
   player's mistakes, a name that is no set is a 422. The run carries it
-  (`Main.Run.deck`), the strip names the set ("Openings · 3 practised
-  today"), and the page asks no `/why` (a set's position came from no
-  game). A set is "learned", never fixed or patched (`Ui.Decks`).
+  (`Run.deck`), the strip names the set and draws its own ring, and the
+  page asks no `/why` (a set's position came from no
+  game). A set's position is "mastered", the mistakes' own word
+  (`Ui.Decks`).
 - **Adding is an account's; playing is anybody's.** `POST /papi/decks/:id/join`
   enrols every member in the set's scope at its position, with the
   browser's zone; a guest, a stranger and an account that has not added
   it walk the set in order with nothing written. `POST /papi/practice/tz`
   reaches every set the account has added and creates none. The streak
-  counts practice in every scope (`activity.practised`).
-- **Budgets**: Openings five new a day, replies ten. Patched is the same
-  rung (`deck.patched_level`), read off the set's own ladder.
+  counts practice in every scope (`activity.practiced`).
+- **Budgets**: Openings five new a day, replies ten, and KEEP GOING
+  through a set (`POST /papi/decks/:id/more`) starts that many again.
+  Patched is the same rung (`deck.patched_level`), read off the set's own
+  ladder.
 - **Built by the operator, from the engine, never by a migration.**
   `mix oskol.decks.build` (dry run unless `--write`;
   `Oskol.Release.build_decks(dry_run: false)` in a release) builds the
@@ -455,15 +640,15 @@ also somebody's mistake is one puzzle in two places).
   in its set (by question key) is never asked again, a dry run asks
   nobody, an answer short of every legal play (`openings.answer`) is a
   failure and not a puzzle, and each batch is written as it lands. Money
-  play, Jacoby, cube centred: unlimited play's own opening. A set with no
+  play, Jacoby, cube centered: unlimited play's own opening. A set with no
   positions built is not offered, so the page shows nothing until the
   build has run. Tests build both against `Oskol.CompleteEngine`
   (test_support), a stub that answers every legal play.
-- **The page**: `/puzzles` draws a second card, LEARN, under the
-  mistakes: a row per set with its line, the account's standing ("11
-  left to learn · 4 learned") and one button -- START (adds it), PRACTICE
-  (its queue), TRY (a walk, for anybody without an account) -- or "Nothing
-  due. More of them tomorrow." A new set is a registry entry, a build for
+- **The pages**: a set is one of the five decks (above): a row or the card
+  on `/puzzles`, and its own page at `/practice/<slug>`, with START (adds
+  it), TRAIN (its queue), TRY (a walk, for anybody without an account).
+  `/papi/decks` and `/papi/decks/:id` stay its session's endpoints. A new
+  set is a registry entry (its slug is its id with `-` for `_`), a build for
   its positions, and nothing else.
 
 `POST /papi/practice/tz {tz}` writes the browser's zone onto the deck itself

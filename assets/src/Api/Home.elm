@@ -96,7 +96,7 @@ type alias Point =
 
 
 {-| The deck: what is due, how big it is, the cards at each of the eight
-levels, whether each of the last thirty days was practised (oldest
+levels, whether each of the last thirty days was practiced (oldest
 first), how many answers today has had, the mistakes counted by how bad
 they were with how many of each are patched and what each still has to
 do, and the one tier to lead with.

@@ -9,12 +9,7 @@ in, which are its own and never a mistake's.
 import Api
 import Api.Decks as Decks
 import Expect
-import Page.Puzzles as Hub exposing (Msg(..), Out(..))
-import Session
 import Test exposing (Test, describe, test)
-import Test.Html.Event as Event
-import Test.Html.Query as Query
-import Test.Html.Selector exposing (id, text)
 import Ui.Decks
 
 
@@ -22,7 +17,6 @@ suite : Test
 suite =
     describe "the sets on offer"
         [ decoding
-        , onTheHub
         , words
         ]
 
@@ -71,44 +65,6 @@ session =
     Api.parseBody Decks.sessionDecoder
 
 
-arie : Session.Session
-arie =
-    Session.withUser (Just { email = "arie@example.com", name = Just "arie" }) Session.empty
-
-
-hub : Session.Session -> String -> Hub.Model
-hub who json =
-    Hub.init who { tz = "Europe/Paris" }
-        |> Tuple.first
-        |> send (GotDecks (list json))
-
-
-send : Msg -> Hub.Model -> Hub.Model
-send msg model =
-    Hub.update msg model |> (\( next, _, _ ) -> next)
-
-
-out : Msg -> Hub.Model -> Out
-out msg model =
-    Hub.update msg model |> (\( _, _, o ) -> o)
-
-
-rendered : Hub.Model -> Query.Single Msg
-rendered model =
-    Hub.view model |> Query.fromHtml
-
-
-openings : String -> Decks.Deck
-openings json =
-    case list json of
-        Ok (first :: _) ->
-            first
-
-        _ ->
-            Debug.todo "the fixture has a first set"
-
-
-
 -- DECODING
 
 
@@ -148,137 +104,86 @@ decoding =
 
 
 
--- THE HUB
-
-
-onTheHub : Test
-onTheHub =
-    describe "on the practice home"
-        [ test "nothing is drawn until the sets land, and nothing while there are none" <|
-            \_ ->
-                Expect.all
-                    [ \_ ->
-                        Hub.init arie { tz = "" }
-                            |> Tuple.first
-                            |> rendered
-                            |> Query.findAll [ id "decks" ]
-                            |> Query.count (Expect.equal 0)
-                    , \_ ->
-                        hub arie """{"ok":true,"decks":[],"patched_level":4}"""
-                            |> rendered
-                            |> Query.findAll [ id "decks" ]
-                            |> Query.count (Expect.equal 0)
-                    ]
-                    ()
-        , test "an account practises a set it added and starts one it has not" <|
-            \_ ->
-                let
-                    rows =
-                        hub arie accountListJson |> rendered
-                in
-                Expect.all
-                    [ \_ -> rows |> Query.find [ id "deck-openings-standing" ] |> Query.has [ text "11 left to learn · 4 learned" ]
-                    , \_ -> rows |> Query.find [ id "deck-openings-go" ] |> Query.has [ text "PRACTICE" ]
-                    , \_ -> rows |> Query.find [ id "deck-opening_replies-go" ] |> Query.has [ text "START" ]
-                    , \_ -> rows |> Query.findAll [ id "deck-opening_replies-standing" ] |> Query.count (Expect.equal 0)
-                    ]
-                    ()
-        , test "a set with nothing to do today says so and has nothing to press" <|
-            \_ ->
-                let
-                    rows =
-                        hub arie restingListJson |> rendered
-                in
-                Expect.all
-                    [ \_ -> rows |> Query.find [ id "deck-openings-resting" ] |> Query.has [ text Ui.Decks.restingLine ]
-                    , \_ -> rows |> Query.findAll [ id "deck-openings-go" ] |> Query.count (Expect.equal 0)
-                    ]
-                    ()
-        , test "a guest tries a set" <|
-            \_ ->
-                hub Session.empty guestListJson
-                    |> rendered
-                    |> Query.find [ id "deck-openings-go" ]
-                    |> Query.has [ text "TRY" ]
-        , test "pressing a set hands the shell a run of it, named" <|
-            \_ ->
-                let
-                    model =
-                        hub arie accountListJson
-                in
-                Expect.all
-                    [ \_ ->
-                        rendered model
-                            |> Query.find [ id "deck-openings-go" ]
-                            |> Event.simulate Event.click
-                            |> Event.expect (PressedDeck (openings accountListJson))
-                    , \_ ->
-                        model
-                            |> send (PressedDeck (openings accountListJson))
-                            |> out (GotDeckSession { id = "openings", name = "Openings" } (session sessionJson))
-                            |> Expect.equal (StartDeckRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 1 }) { id = "openings", name = "Openings" })
-                    ]
-                    ()
-        , test "a session that came back empty says so rather than starting nothing" <|
-            \_ ->
-                let
-                    after =
-                        hub arie accountListJson
-                            |> send (PressedDeck (openings accountListJson))
-                            |> send (GotDeckSession { id = "openings", name = "Openings" } (session emptySessionJson))
-                in
-                Expect.all
-                    [ \_ -> rendered after |> Query.find [ id "deck-openings-resting" ] |> Query.has [ text Ui.Decks.restingLine ]
-
-                    -- The row says it, so nothing says it twice.
-                    , \_ -> rendered after |> Query.findAll [ id "decks-note" ] |> Query.count (Expect.equal 0)
-                    ]
-                    ()
-        , test "a press that fails says why, in the sets' own card" <|
-            \_ ->
-                hub arie accountListJson
-                    |> send (PressedDeck (openings accountListJson))
-                    |> send (GotDeckSession { id = "openings", name = "Openings" } (Api.parseBody Decks.sessionDecoder """{"ok":false,"error":{"code":"not_found","message":"There is no such set of puzzles."}}"""))
-                    |> rendered
-                    |> Query.find [ id "decks-note" ]
-                    |> Query.has [ text "There is no such set of puzzles." ]
-        ]
-
-
-
 -- THE WORDS
 
 
 words : Test
 words =
     describe "the words"
-        [ test "left first, learned beside it once there is some, all of them at the end" <|
+        [ test "the celebration says how much of a set is learned, and what a run moved in its word" <|
             \_ ->
                 Expect.all
-                    [ \_ -> Ui.Decks.standingLine (standing 15 0) |> Expect.equal "15 left to learn"
-                    , \_ -> Ui.Decks.standingLine (standing 11 4) |> Expect.equal "11 left to learn · 4 learned"
-                    , \_ -> Ui.Decks.standingLine (standing 0 15) |> Expect.equal "All 15 learned"
+                    [ \_ -> Ui.Decks.masteredOf { mastered = 4, total = 15 } |> Expect.equal "4 of 15 mastered."
+                    , \_ -> Ui.Decks.stepsLine { stepped = 2, mastered = 1 } |> Expect.equal "2 stepped up a level · 1 mastered"
+                    , \_ -> Ui.Decks.stepsLine { stepped = 0, mastered = 0 } |> Expect.equal "Every one of these is back on its way"
+                    ]
+                    ()
+        , test "left first, learned beside it once there is some, all of them at the end" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Ui.Decks.standingLine (standing 15 0) |> Expect.equal "15 left to master"
+                    , \_ -> Ui.Decks.standingLine (standing 11 4) |> Expect.equal "11 left to master · 4 mastered"
+                    , \_ -> Ui.Decks.standingLine (standing 0 15) |> Expect.equal "All 15 mastered"
                     ]
                     ()
         , test "a run of one is a whole session, in a set's words" <|
             \_ ->
                 Expect.all
-                    [ \_ -> Ui.Decks.runSummary { right = 1, close = 0, total = 1 } |> Expect.equal "One right. That is how it is done."
-                    , \_ -> Ui.Decks.runSummary { right = 3, close = 1, total = 5 } |> Expect.equal "3 of 5 right"
-                    , \_ -> Ui.Decks.learnedRun 0 |> Expect.equal Nothing
-                    , \_ -> Ui.Decks.learnedRun 2 |> Expect.equal (Just "You learned 2 of them.")
-                    , \_ -> Ui.Decks.doneToday 3 |> Expect.equal "3 practised today"
+                    [ \_ -> Ui.Decks.runSummary { right = 1, total = 1 } |> Expect.equal "One right. That is how it is done."
+                    , \_ -> Ui.Decks.runSummary { right = 3, total = 5 } |> Expect.equal "3 of 5 right"
+                    , \_ -> Ui.Decks.runSummary { right = 0, total = 1 } |> Expect.equal "One played. It comes back tomorrow."
+                    , \_ -> Ui.Decks.masteredRun 0 |> Expect.equal Nothing
+                    , \_ -> Ui.Decks.masteredRun 2 |> Expect.equal (Just "You mastered 2 of them.")
+                    , \_ -> Ui.Decks.doneToday 3 |> Expect.equal "3 practiced today"
+                    ]
+                    ()
+        , test "a set's page: learned at the top of its legend and its ladder, and the sign-in" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Ui.Decks.legendTop |> Expect.equal "mastered"
+                    , \_ -> Ui.Decks.ladderLine { patchedLevel = 4, started = [ 3, 7, 0, 0, 2, 2, 0, 0 ] } |> Expect.equal "3 back at the start, 7 at level 1, 4 mastered."
+                    , \_ -> Ui.Decks.signInLine |> Expect.equal "Sign in to keep your place in these."
+                    ]
+                    ()
+        , test "a set in its three states, which is its grid's legend" <|
+            \_ ->
+                Ui.Decks.stateLine { total = 15, untouched = 5, inProgress = 6, patched = 4 }
+                    |> Expect.equal "4 mastered · 6 learning · 5 to learn · of 15"
+        , test "its size, what START means at its pace, and what TRY is" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Ui.Decks.sizeEyebrow 315 |> Expect.equal "315 POSITIONS"
+                    , \_ -> Ui.Decks.sizeLine 15 |> Expect.equal "15 positions to learn"
+                    , \_ -> Ui.Decks.startLine 5 |> Expect.equal "Five new a day, and each comes back until you know it."
+                    , \_ -> Ui.Decks.startLine 10 |> Expect.equal "Ten new a day, and each comes back until you know it."
+                    , \_ -> Ui.Decks.tryLine |> Expect.equal "Played in order, nothing kept. Sign in to keep your place."
+                    , \_ -> Ui.Decks.rowLeft 11 |> Expect.equal "11 left"
+                    , \_ -> Ui.Decks.rowLeft 0 |> Expect.equal "All mastered"
                     ]
                     ()
         , test "nothing a set says calls it a mistake, a card or a deck" <|
             \_ ->
                 [ Ui.Decks.standingLine (standing 11 4)
+                , Ui.Decks.stateLine { total = 15, untouched = 5, inProgress = 6, patched = 4 }
+                , Ui.Decks.sizeEyebrow 15
+                , Ui.Decks.sizeLine 15
+                , Ui.Decks.startLine 5
+                , Ui.Decks.tryLine
+                , Ui.Decks.rowLeft 3
                 , Ui.Decks.restingLine
                 , Ui.Decks.endSignIn
-                , Ui.Decks.runSummary { right = 0, close = 0, total = 1 }
+                , Ui.Decks.runSummary { right = 0, total = 1 }
                 , Ui.Decks.doneToday 2
+                , Ui.Decks.startLabel { signedIn = True, joined = True }
+                , Ui.Decks.standingLine (standing 0 15)
+                , Ui.Decks.masteredOf { mastered = 4, total = 15 }
+                , Ui.Decks.stepsLine { stepped = 2, mastered = 1 }
+                , Ui.Decks.ladderLine { patchedLevel = 4, started = [ 3, 7, 0, 0, 2, 2, 0, 0 ] }
+                , Ui.Decks.legendTop
+                , Ui.Decks.rowLeft 0
                 ]
-                    |> List.filter (\line -> List.any (\word -> String.contains word (String.toLower line)) [ "mistake", "card", "deck", "fix" ])
+                    ++ List.filterMap identity [ Ui.Decks.masteredRun 1, Ui.Decks.masteredRun 2 ]
+                    |> List.filter (\line -> List.any (\word -> String.contains word (String.toLower line)) [ "mistake", "card", "deck", "fix", "patched", "learned", "in progress", "to start" ])
                     |> Expect.equal []
         ]
 

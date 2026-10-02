@@ -187,7 +187,7 @@ src/oskol/            platform decisions: core (ctx, session, error), caps, hand
 lib/oskol/            Elixir: game_kit.ex (the bridge), game/ (GameServer, Persister, Rehydrator, Bot),
                       reviews/ (Queue, Grader), puzzles/, auth, mail, gleam/ (CtxBuilder, caps/*.ex)
 lib/oskol_web/        router, plugs (GuestId, PuzzlePicture), controllers (SPA shell, /papi), game channel
-assets/src/           Elm: Main.elm (routes, shell, runs), Page/*, Api/*, Ui/*, Games/Backgammon/*, Protocol.elm
+assets/src/           Elm: Main.elm (routes, shell), Run.elm (a practice run), Page/*, Api/*, Ui/*, Games/Backgammon/*, Protocol.elm
 assets/css/app.css    the design system and the twelve board themes (.bg-theme-*)
 test/                 Gleam tests (test/gamekit, test/backgammon, test/oskol) and Elixir *_test.exs
 test_support/         Elixir test helpers; playwright/ browser smokes and screenshot tours
@@ -206,7 +206,7 @@ PR as the code it describes (update it when you change what it says):
 | `docs/rooms.md` | the bot (Sage), persistence and rehydrate, ending a room, `games.state`, patching old logs |
 | `docs/home.md` | the signed-in home's data: `/papi/me/home`, ratings, streak, recent rooms |
 | `docs/reviews.md` | post-game reviews, the per-turn grader, records, match and career PR |
-| `docs/puzzles.md` | puzzles, grading, the deck and its sync, practice sessions, sharing, pictures, universal sets |
+| `docs/puzzles.md` | puzzles, grading, the deck and its sync, practice sessions, the five decks and their pages, a run, sharing, pictures, universal sets |
 | `docs/testing.md` | what each suite covers, fixtures, every Playwright script, CI, build notes |
 | `docs/file-map.md` | the file-by-file map |
 

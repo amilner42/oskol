@@ -6,16 +6,22 @@
 //// are read off the same three equities and a sign the wrong way round
 //// would tell half the players the opposite of the truth.
 
+import gleam/bit_array
+import gleam/dynamic.{type Dynamic}
+import gleam/dynamic/decode
 import gleam/float
 import gleam/int
+import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
+import oskol/core/raw
 import oskol/puzzles.{
   Candidate, CubeAnswer, Double, DoublePass, DoubleTake, Move, MoveAnswer,
   NoDouble, Outcome, Probs, Take,
 }
 import oskol/puzzles/fixture
-import oskol/puzzles/grade.{Fail, Hold, Pass, Unknown}
+import oskol/puzzles/grade.{Fail, Pass, Unknown}
+import oskol/reviews/report
 
 fn probs() -> puzzles.Probs {
   Probs(0.5, 0.1, 0.01, 0.1, 0.01)
@@ -48,14 +54,85 @@ pub fn a_play_within_a_fiftieth_passes_test() {
   assert grade.move_verdict(grade.move_cost(answer, [2])) == Pass
   // The band is "under 0.02", and 0.02 itself is the next one: a mistake by
   // the site's own definition cannot be a pass.
-  assert grade.move_verdict(grade.move_cost(answer, [3])) == Hold
-}
-
-pub fn a_play_under_two_twenty_fifths_holds_test() {
-  let answer = complete([#([1], 0.0), #([2], 0.07), #([3], 0.08)])
-  assert grade.move_verdict(grade.move_cost(answer, [2])) == Hold
   assert grade.move_verdict(grade.move_cost(answer, [3])) == Fail
 }
+
+/// There is no "close": a play the replay would mark `?!` is a miss, the
+/// very thing the dubious tier is made of.
+pub fn a_dubious_play_is_a_miss_test() {
+  let answer =
+    complete([#([1], 0.0), #([2], 0.05), #([3], 0.079), #([4], 0.08)])
+  assert grade.move_verdict(grade.move_cost(answer, [2])) == Fail
+  assert grade.move_verdict(grade.move_cost(answer, [3])) == Fail
+  assert grade.move_verdict(grade.move_cost(answer, [4])) == Fail
+}
+
+/// The band an answer fell in, at every edge, by the names the replay
+/// grades a move with.
+pub fn the_band_of_a_cost_test() {
+  assert grade.band_name(None) == "unknown"
+  assert grade.band_name(Some(0.0)) == "best"
+  assert grade.band_name(Some(0.001)) == "ok"
+  assert grade.band_name(Some(0.019)) == "ok"
+  assert grade.band_name(Some(0.02)) == "doubtful"
+  assert grade.band_name(Some(0.079)) == "doubtful"
+  assert grade.band_name(Some(0.08)) == "bad"
+  assert grade.band_name(Some(0.159)) == "bad"
+  assert grade.band_name(Some(0.16)) == "very_bad"
+  assert grade.band_name(Some(1.2)) == "very_bad"
+  // Every name a cost can have is one the replay grades with.
+  list.each([0.0, 0.01, 0.05, 0.1, 0.5], fn(cost) {
+    assert list.contains(report.grade_names, grade.band_name(Some(cost)))
+  })
+}
+
+/// The verdict and the band say the same thing: a pass is best or ok, a
+/// miss is doubtful or worse.
+pub fn the_verdict_and_the_band_agree_test() {
+  list.each([0.0, 0.019, 0.02, 0.079, 0.08, 0.159, 0.16, 0.9], fn(cost) {
+    let band = grade.band_name(Some(cost))
+    assert case grade.move_verdict(Some(cost)) {
+      Pass -> band == "best" || band == "ok"
+      _ -> band != "best" && band != "ok"
+    }
+  })
+}
+
+/// The bands are the engine's own: every graded play in the seeded match
+/// (twelve games the real engine graded) falls in the band it was named.
+pub fn the_band_agrees_with_the_engine_test() {
+  let assert Ok(bytes) = read_file("priv/dev/rooms/821900.json")
+  let assert Ok(text) = bit_array.to_string(bytes)
+  let assert Ok(answers) =
+    json.parse(
+      text,
+      decode.at(
+        ["reviews"],
+        decode.list({
+          use response <- decode.field("response", decode.dynamic)
+          decode.success(response)
+        }),
+      ),
+    )
+  let graded =
+    list.flat_map(answers, fn(answer) {
+      let assert Ok(review) = report.parse(raw.text(answer))
+      list.filter_map(review.turns, fn(turn) {
+        case turn.move {
+          Some(report.Moved(forced: False, error: error, grade: name, ..)) ->
+            Ok(#(error, name))
+          _ -> Error(Nil)
+        }
+      })
+    })
+  assert list.length(graded) > 100
+  list.each(graded, fn(pair) {
+    assert grade.band_name(Some(pair.0)) == pair.1
+  })
+}
+
+@external(erlang, "oskol_test_files", "read")
+fn read_file(path: String) -> Result(BitArray, Dynamic)
 
 pub fn a_play_the_answer_never_heard_of_is_unknown_test() {
   let answer = complete([#([1], 0.0), #([2], 0.05)])
@@ -205,13 +282,14 @@ pub fn taking_that_pays_the_doubler_more_is_a_pass_test() {
 }
 
 /// Both sides against every band, for the doubler and the responder: the
-/// right side passes, the wrong side misses, and a coin flip holds either
-/// way.
+/// right side passes, the wrong side misses, and a coin flip passes either
+/// way. What the side gave up agrees: nothing on the right side, the
+/// margin on the wrong one, and its band says the verdict again.
 pub fn the_whole_cube_matrix_test() {
   list.each([-1, 1], fn(answered) {
     list.each(grade.bands, fn(engine) {
       let wanted = case engine == 0, { answered > 0 } == { engine > 0 } {
-        True, _ -> Hold
+        True, _ -> Pass
         False, True -> Pass
         False, False -> Fail
       }
@@ -219,15 +297,50 @@ pub fn the_whole_cube_matrix_test() {
       let assert Some(responder) = grade.engine_band(Take, responder_at(engine))
       assert grade.cube_verdict(answered, doubler) == wanted
       assert grade.cube_verdict(answered, responder) == wanted
+      list.each(
+        [#(Double, doubler_at(engine)), #(Take, responder_at(engine))],
+        fn(asked) {
+          let assert Some(cost) = grade.cube_cost(asked.0, asked.1, answered)
+          let band = grade.band_name(Some(cost))
+          assert case wanted {
+            Pass -> band == "best" || band == "ok"
+            _ -> band != "best" && band != "ok"
+          }
+        },
+      )
     })
   })
+}
+
+/// What a cube answer gave up, in numbers: at band +1 (a margin of 0.05
+/// for the doubler) doubling costs nothing and not doubling 0.05; at band
+/// 0 the wrong side costs its margin, which is under 0.02.
+pub fn what_a_cube_answer_gave_up_test() {
+  let assert Some(cost) = grade.cube_cost(Double, doubler_at(1), 1)
+  assert cost == 0.0
+  assert grade.band_name(Some(cost)) == "best"
+  let assert Some(cost) = grade.cube_cost(Double, doubler_at(1), -1)
+  assert float.loosely_equals(cost, 0.05, 0.000001)
+  assert grade.band_name(Some(cost)) == "doubtful"
+  let assert Some(cost) = grade.cube_cost(Double, doubler_at(0), -1)
+  assert grade.band_name(Some(cost)) == "ok"
+  let assert Some(cost) = grade.cube_cost(Take, responder_at(-2), 1)
+  assert grade.band_name(Some(cost)) == "very_bad"
+  assert grade.cube_cost(Move, doubler_at(1), 1) == None
 }
 
 /// The rule in the player's words: nobody fails a coin flip, and a plain
 /// or a big double are one answer at the table.
 pub fn the_briefs_examples_test() {
-  // Double when the engine said too close to call holds...
-  assert grade.cube_verdict(1, 0) == Hold
+  // Either side when the engine said too close to call passes: the wrong
+  // one gives up under 0.02, which is not a mistake...
+  assert grade.cube_verdict(1, 0) == Pass
+  assert grade.cube_verdict(-1, 0) == Pass
+  // ...band +1 passes a double and fails no double, band -2 the reverse...
+  assert grade.cube_verdict(1, 1) == Pass
+  assert grade.cube_verdict(-1, 1) == Fail
+  assert grade.cube_verdict(-1, -2) == Pass
+  assert grade.cube_verdict(1, -2) == Fail
   // ...Double when it said No double misses.
   assert grade.cube_verdict(1, -1) == Fail
   // Double against a big double passes: the size is the reveal's to show.

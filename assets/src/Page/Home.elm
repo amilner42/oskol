@@ -282,7 +282,7 @@ update msg model =
             , NoOut
             )
 
-        -- FIX ONE starts a run the way the practice home does: that one
+        -- TRAIN starts a run the way the practice home does: that one
         -- tier's queue, and the run outlives this page, so the shell
         -- keeps it -- with the tier, so ANOTHER stays in it.
         PressedFixOne grade ->
@@ -376,7 +376,7 @@ update msg model =
 
 nothingDueLine : String
 nothingDueLine =
-    "Nothing to practise right now. The ones you get wrong come back on their day."
+    "Nothing to practice right now. The ones you get wrong come back on their day."
 
 
 
@@ -579,7 +579,7 @@ it, and the day's count. The same card the practice home shows
 This used to be "N due" and a ladder of eight bars, then a sentence and
 three bars and a ring, and for a day it also carried a rung chart, a
 thirty-day strip and two lines of explanation under them. The question
-is "what should I fix next?", and the answer is a mark, a number and a
+is "what should I train next?", and the answer is a mark, a number and a
 button; everything under that answered a question nobody had asked.
 
 -}

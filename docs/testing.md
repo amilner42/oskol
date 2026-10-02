@@ -41,7 +41,9 @@ for the first steps of a playout) are derived, gitignored, and embedded in
 `assets/tests/Fixtures.elm` for elm-test. `oskol/puzzles/fixture` does the
 same for the puzzle wire: `PuzzleApiFixtures.elm` (the question, per kind)
 and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
-`handlers/puzzles.attempt_body`, and the three schedule shapes).
+`handlers/puzzles.attempt_body`: `move_pass`, `move_dubious`, `move_fail`,
+`move_unknown`, `double_pass`, `double_fail`, `take_pass`, `take_close`, and
+the three schedule shapes).
 
 **Elm (`elm-test`)**
 - `ProtocolTest`: every fixture payload decodes; cross-checks that hold for
@@ -70,32 +72,56 @@ and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
   games, MORE appending the next page of rooms and then going, the grade
   band a rating is coloured by, a guest's answer handing the shell
   `SignedOut` rather than drawing an empty home, and the practice section
-  as the one-tier card (its mark, what is left to fix, FIX ONE with its
-  tier, the quiet rows and tapping one, "4 fixed today" with no
-  denominator).
+  as the one-tier card (its mark, what is left to master, TRAIN with its
+  tier, the quiet rows and tapping one).
 - `MistakesTest`: every word practice is said in, pinned -- the tiers by
-  mark and name, "31 left to fix" and "23 patched", what a tier in good
+  mark and name, "31 left to master" and "23 mastered", what a tier in good
   shape says and why, the all-clear line, the next tier's button, "3
-  fixed today", and a run of one reading as a finished thing.
+  practiced today", a run of one reading as a finished thing and no run
+  calling an answer close, what each of the four choices would do, the
+  early and KNEW IT lines, the cost lines, and the hub's and a deck page's
+  words, and that none of them says "fix", "patched" or "learned".
 - `PuzzlePageTest`: the page on the generated fixtures: the reveal decodes
   (a fifth verdict word fails it), a tap walks and UNDO walks back, a lazy
   node is fetched and merged, PLAY posts exactly the path with the key (and
   waits for the key), the verdict and "you" in the table, the cube scale
-  with the engine's band, the level line in its three states and after an
-  override, ANOTHER and I'M DONE only from the shell (ANOTHER only where
-  there is another), the memory line on 200 and not on 404; the session
-  strip (the tier's mark and the day's count, no total, a mark only for
-  what has been reached); the end of a run: every verdict reported, a run
-  of one reading as a whole session, the card for a guest (the sign-in,
-  going on to `/puzzles`) and for an account (the summary and the way
-  back, and nothing to keep going with).
-- `PuzzlesHubTest`: the practice home on the wire's answers -- the
-  one-tier card in each of its states (a tier with work, a tier in good
-  shape offering the next down, everything in good shape with nothing to
-  press, an empty deck), the quiet rows and tapping one, FIX ONE as
-  `StartRun` with its tier, a guest's mistakes line, a stranger's TRY ONE
-  and the empty pool's sentence, and a decoder that refuses a malformed
-  count rather than defaulting it.
+  with the engine's band, a dubious play a miss named by its band, the
+  level line in its three states and after an override (an early answer,
+  KNEW IT), a tap selects and posts nothing, APPLY posts, ANOTHER / I'M
+  DONE apply a pending choice first, GOT IT barred after a miss, YES,
+  NEVER; ANOTHER and I'M DONE only from the shell, the memory line on 200
+  and not on 404; the session strip (the deck's mark or name, its ring
+  with the count, one row of tiles, the day's line, no total, practice
+  only through PRACTICE ANYWAY); the end of a run: every verdict reported,
+  a run of one reading as a whole session, the card for a guest (the
+  sign-in, going on to where the run began) and for an account (the score,
+  the way on -- KEEP GOING or PRACTICE ANYWAY, held in a fixed band -- and
+  the way back), and what the run mastered.
+- `PuzzlesHubTest`: the practice home on `/papi/practice/decks` -- five
+  decks, one in front and four rows, for an account, a guest and a
+  stranger: the lead or the one tapped, the grid and the ring, the one
+  button in each state (TRAIN, KEEP GOING, PRACTICE ANYWAY, START,
+  TRY) and what each press asks and hands the shell, the cost
+  lines there and not there, a fresh account with the openings in front, a
+  stranger's TRY ONE and the empty pool's sentence, and decoders that
+  refuse a malformed count rather than defaulting it.
+- `PracticePageTest`: a deck's page on `/papi/practice/decks/:slug` -- the
+  card at page size for each of the five, the button in each state, where
+  the positions stand, the month and the cost, a guest's tier, a
+  stranger's, a set nobody has added.
+- `RunTest`: a run as the shell drives it (`Run`): starting, answering,
+  asking the queue again past its ids, KEEP GOING, PRACTICE ANYWAY, the
+  way on from the end card, and celebrating exactly the counted answer
+  that reaches today's target, once a run.
+- `PuzzleCelebrationTest`: the today's-set-done card -- under the reveal
+  and never before it, never for a guest, once a page; hidden until the
+  deck is read; the ring and check, the steps line, the won-back line, a
+  set's words, the grid's stepping squares, KEEP GOING / PRACTICE ANYWAY /
+  I'M DONE, paused until on screen, settled on the last keyframe, reduced
+  motion settled at once.
+- `DecksTest`, `ChartsTest`: the sets' words and decoders; the home's and
+  the practice pages' pictures (the PR line, ladder, strip, band bar,
+  mastery grid and ring).
 - `ReplayTest`: the replay on the real record and analysis of seed 000011
   (`ReplayFixtures`): decoders, the board at every step, stepping, keys,
   swipes, game switching, and the analysis filling in without moving the
@@ -114,7 +140,9 @@ and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
   reconnects; `spa_controller_test.exs` covers what is still the server's on
   the two landing routes — the shell, the head a crawler reads, the 404 for a
   slug that names no game, the removed games' redirects, and the guest
-  cookie and the name it remembers.
+  cookie and the name it remembers; `practice_page_test.exs` the same for
+  `/practice/<slug>` (a set indexable and in the sitemap, a tier `noindex`,
+  an unknown or unbuilt one a 404).
 
 **Browser (`bin/check --browser`)**: Playwright smokes create real games and
 play them; review scripts take screenshots for eyeballing. The ways into a
@@ -176,23 +204,41 @@ node playwright/test-puzzle/test.js             # a puzzle from a link: setup.ex
                                                # (real legal plays, the played one a mistake) and
                                                # extracts; a stranger, the opponent (memory line)
                                                # and the mistake's own player signed in (level
-                                               # line, SOONER) play it; phones; the board is the
-                                               # table's size
+                                               # line; the four tapped without a post or a height
+                                               # change; SOONER explained and APPLIED) play it;
+                                               # phones; the board is the table's size
 node playwright/review-puzzle/test.js           # screenshots of the puzzle page: question, staged,
                                                # reveal, a candidate, the cube scale (phone, small,
                                                # landscape, desktop)
 node playwright/test-puzzles-hub/test.js        # the practice home and a run: setup.exs's game, the
                                                # first seat trimmed to 12 mistakes; a stranger's TRY
-                                               # ONE, a guest's run of 12 to the score and the sign-in
-                                               # ask, sign in there, the one-tier card and its
-                                               # timezone sent once, FIX ONE's run of the day's 3
-                                               # watching the strip, the summary and the way back,
-                                               # then one mistake and I'M DONE; phones
-node playwright/review-puzzles-hub/test.js      # screenshots: the hub leading with ??, ?? in good
-                                               # shape with ? offered, everything in good shape, a
-                                               # session mid-run, the summary after one mistake
-                                               # (shape.exs's SHAPE_STATE arranges each), plus the
-                                               # stranger's and guest's hub and the home's section
+                                               # ONE, a guest's run to the score and the sign-in ask,
+                                               # sign in there (timezone sent once), the five decks
+                                               # with the worst tier in front, TRAIN's run watching
+                                               # the strip, I'M DONE after one, the run asking its
+                                               # queue again, TRAIN's run ending on the today's-set
+                                               # card (no shift at four sizes) and KEEP GOING (3/6);
+                                               # phones;
+                                               # past the twentieth with many_due.exs (DUE_COUNT;
+                                               # DUE_MODE=start_all leaves nothing new, for PRACTICE
+                                               # ANYWAY). review-practice/serve.sh runs it on its own
+                                               # port and database
+playwright/review-practice/run.sh               # screenshots of /puzzles for every visitor and every
+                                               # state of the deck in front, and each deck's own page
+                                               # (/practice/<slug>), measuring that nothing moves (four
+                                               # sizes); setup.exs and shape.exs (SHAPE_STATE ladder,
+                                               # keep_going, scheduled, today_three) arrange them;
+                                               # serves its own port and database
+playwright/review-celebration/run.sh            # screenshots of the today's-set-done card at four sizes
+                                               # with no-shift checks, reduced motion, KEEP GOING then
+                                               # ANOTHER, a set, an all-miss run; frames and a video;
+                                               # its own port and database
+playwright/review-run/run.sh                    # screenshots of a run: the strip, the refetch, the end
+                                               # card's way on, an early answer, a set's run, past the
+                                               # twentieth (four sizes); its own port and database
+playwright/review-verdict/run.sh                # screenshots of the reveal's verdict in each shape, then
+                                               # the four choices under the level line (four sizes);
+                                               # serves its own port and database
 playwright/review-decks/run.sh                  # screenshots of the sets on /puzzles, a run
                                                # through the openings, the reveal and the end
                                                # card (four sizes); serves its own port and

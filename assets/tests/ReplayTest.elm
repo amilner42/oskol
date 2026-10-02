@@ -774,7 +774,7 @@ rendered =
                     |> Page.view
                     |> Query.fromHtml
                     |> Query.find [ Selector.id "rp-analysis-state" ]
-                    |> Query.has [ Selector.containing [ Selector.text "Analysing game 3 at 4-ply… this can take a few minutes" ] ]
+                    |> Query.has [ Selector.containing [ Selector.text "Analyzing game 3 at 4-ply… this can take a few minutes" ] ]
         , test "a graded turn shows its grade and the best move with what was lost" <|
             \_ ->
                 loaded (Just 3)
@@ -818,7 +818,7 @@ rendered =
                     |> Tuple.first
                     |> run [ GotRecord (Ok shared), GotIndex (Ok (index ReplayFixtures.indexPending)) ]
                     |> Expect.all
-                        [ \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-analysis-state" ] |> Query.has [ Selector.text "has not been analysed yet" ]
+                        [ \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-analysis-state" ] |> Query.has [ Selector.text "has not been analyzed yet" ]
 
                         -- and does not sit there asking again for work that
                         -- was never queued
@@ -988,7 +988,7 @@ phone =
                     |> Page.view
                     |> Query.fromHtml
                     |> Query.find [ Selector.id "rp-overview" ]
-                    |> Query.has [ Selector.id "rp-analysis-state", Selector.text "Analysing game 3 at 4-ply… this can take a few minutes" ]
+                    |> Query.has [ Selector.id "rp-analysis-state", Selector.text "Analyzing game 3 at 4-ply… this can take a few minutes" ]
         , onEveryScreen "a step opens MOVE, that move's verdict; CUBE is its other side; each alone" <|
             run [ Next ]
                 >> Expect.all

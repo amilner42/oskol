@@ -2,20 +2,24 @@ module MistakesTest exposing (suite)
 
 {-| The words practice is said in, pinned.
 
-They are pinned because they are the product: "we are helping you fix the
-worst parts of your game" is a promise made in sentences, and a sentence
+They are pinned because they are the product: "we are helping you train
+the worst parts of your game" is a promise made in sentences, and a sentence
 that drifts between the three places it is printed reads like two
 different products. A phrase changed on purpose changes here too, in one
 place, on purpose.
 
 The one rule under all of them: the unit is **a mistake you made**, and
-what you do with it is **fix** it. Nothing a player reads says "card",
-"deck" or "flashcard".
+what you do with it is **train** it: one started is **learning**, one not
+yet is **to learn**, one you have stopped making is **mastered**. Nothing
+a player reads says "card", "deck" or "flashcard", nor "fix", "patched"
+or "learned".
 
 -}
 
 import Expect
 import Test exposing (Test, describe, test)
+import Ui.Charts as Charts
+import Ui.Decks as Decks
 import Ui.Mistakes as Mistakes
 
 
@@ -28,7 +32,94 @@ suite =
         , runEnd
         , patched
         , why
+        , choices
+        , theHome
+        , aRun
+        , celebration
+        , aDecksPage
         , noJargon
+        ]
+
+
+{-| The card when today's set is done: its head, what moved, and what the
+way on does.
+-}
+celebration : Test
+celebration =
+    describe "today's set, done"
+        [ test "the head says the number the ring was counting to" <|
+            \_ ->
+                [ Mistakes.todayDone 5, Mistakes.todayDone 1, Mistakes.todayDone 12 ]
+                    |> Expect.equal [ "Today's 5 done.", "Today's 1 done.", "Today's 12 done." ]
+        , test "what moved: the steps up, and the ones patched among them" <|
+            \_ ->
+                [ Mistakes.stepsLine { stepped = 2, patched = 1 }
+                , Mistakes.stepsLine { stepped = 1, patched = 0 }
+                , Mistakes.stepsLine { stepped = 3, patched = 0 }
+                ]
+                    |> Expect.equal [ "2 stepped up a level · 1 mastered", "1 stepped up a level", "3 stepped up a level" ]
+        , test "a run of misses is never 'nothing moved': every one is coming back" <|
+            \_ ->
+                Mistakes.stepsLine { stepped = 0, patched = 0 }
+                    |> Expect.equal "Every one of these is back on its way"
+        , test "under KEEP GOING, only what it adds" <|
+            \_ ->
+                Mistakes.addsLine 3 |> Expect.equal "Keep going adds 3 more."
+        ]
+
+
+{-| A run, as it goes on and as it ends: what KNEW IT says, what an early
+answer says, and the words a run of early answers wears.
+-}
+aRun : Test
+aRun =
+    describe "a run"
+        [ -- KNEW IT puts a mistake at the top in one step. Nobody answered
+          -- it seven times, so the line never says they did.
+          test "KNEW IT: marked known, and when it comes back" <|
+            \_ ->
+                Mistakes.knownLine "back in a year"
+                    |> Expect.equal "Marked as known — back in a year"
+        , test "the real milestone still reads as the real milestone" <|
+            \_ ->
+                Mistakes.milestone 4 |> Expect.equal "Mastered. Four right in a row"
+        , test "an answer before it was due: practice only, nothing moves, and when it is due" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.earlyLine "9 Oct" |> Expect.equal "Not due until 9 Oct — practice only, nothing moves."
+                    , \_ -> Mistakes.earlyLineUndated |> Expect.equal "Not due yet — practice only, nothing moves."
+                    ]
+                    ()
+        , test "a run of early answers, over the board and at its end" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.practiceOnlyTag |> Expect.equal "Practice only"
+                    , \_ -> Mistakes.practiceOnlyRun |> Expect.equal "Practice only: none of these were due, so nothing moved."
+                    ]
+                    ()
+        , test "the way back names the page the run was started from" <|
+            \_ ->
+                [ Mistakes.backLine { next = "/puzzles", name = Just "Very bad moves" }
+                , Mistakes.backLine { next = "/practice/very-bad", name = Just "Very bad moves" }
+                , Mistakes.backLine { next = "/practice/openings", name = Just "Openings" }
+                , Mistakes.backLine { next = "/practice/openings", name = Nothing }
+                , Mistakes.backLine { next = "/", name = Nothing }
+                , Mistakes.backLine { next = "/backgammon/abc123", name = Nothing }
+                , Mistakes.backLine { next = "/backgammon/abc123/replay?game=2", name = Nothing }
+                ]
+                    |> Expect.equal
+                        [ "Back to puzzles →"
+                        , "Back to very bad moves →"
+                        , "Back to openings →"
+                        , "Back to puzzles →"
+                        , "Back home →"
+                        , "Back to the game →"
+                        , "Back to the replay →"
+                        ]
+        , test "a way on that found nothing more" <|
+            \_ ->
+                Mistakes.everyOnePracticed
+                    |> Expect.equal "That's every one of these for now. The ones you get wrong come back on their day."
         ]
 
 
@@ -68,19 +159,19 @@ bands =
         , test "one band's own line: what is being fixed, what is patched, of how many" <|
             \_ ->
                 Mistakes.line (band "very_bad" 61 30 23)
-                    |> Expect.equal "Very bad · 30 in progress · 23 patched · of 61"
+                    |> Expect.equal "Very bad · 30 learning · 23 mastered · of 61"
         , test "a band nobody has touched yet says so without hiding the total" <|
             \_ ->
                 Mistakes.line (band "bad" 61 0 0)
-                    |> Expect.equal "Bad · 0 in progress · 0 patched · of 61"
+                    |> Expect.equal "Bad · 0 learning · 0 mastered · of 61"
         , test "a band entirely patched has nothing left in progress" <|
             \_ ->
                 Mistakes.line (band "bad" 12 0 12)
-                    |> Expect.equal "Bad · 0 in progress · 12 patched · of 12"
+                    |> Expect.equal "Bad · 0 learning · 12 mastered · of 12"
         , test "a band with nothing in it still reads as a line" <|
             \_ ->
                 Mistakes.line (band "doubtful" 0 0 0)
-                    |> Expect.equal "Dubious · 0 in progress · 0 patched · of 0"
+                    |> Expect.equal "Dubious · 0 learning · 0 mastered · of 0"
         ]
 
 
@@ -97,19 +188,19 @@ tiers =
                     |> Expect.equal [ "Very bad moves", "Bad moves", "Dubious moves" ]
         , test "the one number: everything not patched, not what is due" <|
             \_ ->
-                Mistakes.leftToFix (working "very_bad" 61 30 23 5 3)
-                    |> Expect.equal "38 left to fix"
-        , test "a tier with everything patched is nothing left to fix" <|
+                Mistakes.leftToMaster (working "very_bad" 61 30 23 5 3)
+                    |> Expect.equal "38 left to master"
+        , test "a tier with everything patched is nothing left to master" <|
             \_ ->
-                Mistakes.leftToFix (band "bad" 12 0 12)
-                    |> Expect.equal "0 left to fix"
+                Mistakes.leftToMaster (band "bad" 12 0 12)
+                    |> Expect.equal "0 left to master"
         , test "what is patched, quieter beside it" <|
             \_ ->
-                Mistakes.patchedAside (band "very_bad" 61 30 23)
-                    |> Expect.equal (Just "23 patched")
+                Mistakes.masteredAside (band "very_bad" 61 30 23)
+                    |> Expect.equal (Just "23 mastered")
         , test "and nothing at all on a first day, rather than a zero" <|
             \_ ->
-                Mistakes.patchedAside (band "very_bad" 61 30 0)
+                Mistakes.masteredAside (band "very_bad" 61 30 0)
                     |> Expect.equal Nothing
         , test "work is anything due, or a new one the day still allows" <|
             \_ ->
@@ -146,11 +237,27 @@ today : Test
 today =
     describe "the day, wherever the ring used to be"
         [ test "a plain count, with nothing to measure it against" <|
-            \_ -> Mistakes.fixedToday 3 |> Expect.equal "3 fixed today"
+            \_ -> Mistakes.practicedToday 3 |> Expect.equal "3 practiced today"
         , test "one is one, not a fraction of anything" <|
-            \_ -> Mistakes.fixedToday 1 |> Expect.equal "1 fixed today"
+            \_ -> Mistakes.practicedToday 1 |> Expect.equal "1 practiced today"
         , test "a day not started yet says so without a goal" <|
-            \_ -> Mistakes.fixedToday 0 |> Expect.equal "Nothing fixed yet today"
+            \_ -> Mistakes.practicedToday 0 |> Expect.equal "Nothing practiced yet today"
+        , test "with the streak, on the practice home's head line" <|
+            \_ -> Mistakes.dayStreakLine { streak = 5, done = 2 } |> Expect.equal "5 days running · 2 practiced today"
+
+        -- A count of answers counts misses too: it never says "mastered",
+        -- which only a mistake over the top rung has earned.
+        , test "no count of answers says mastered" <|
+            \_ ->
+                [ Mistakes.practicedToday 0
+                , Mistakes.practicedToday 8
+                , Mistakes.dayStreakLine { streak = 0, done = 3 }
+                , Mistakes.dayStreakLine { streak = 5, done = 0 }
+                , Mistakes.runSummary { right = 1, total = 1 }
+                , Mistakes.runSummary { right = 0, total = 12 }
+                ]
+                    |> List.filter (String.contains "mastered")
+                    |> Expect.equal []
         ]
 
 
@@ -162,20 +269,24 @@ runEnd =
     describe "what a run ends on"
         [ test "one fixed is a whole session, and says so" <|
             \_ ->
-                Mistakes.runSummary { right = 1, close = 0, total = 1 }
-                    |> Expect.equal "One fixed. That is how it is done."
-        , test "one close still counts" <|
-            \_ ->
-                Mistakes.runSummary { right = 0, close = 1, total = 1 }
-                    |> Expect.equal "One faced, and close. That counts."
+                Mistakes.runSummary { right = 1, total = 1 }
+                    |> Expect.equal "One right. That is how it is done."
         , test "one missed says when it comes back, not that you failed" <|
             \_ ->
-                Mistakes.runSummary { right = 0, close = 0, total = 1 }
+                Mistakes.runSummary { right = 0, total = 1 }
                     |> Expect.equal "One faced. It comes back tomorrow."
         , test "more than one is the score of what was answered" <|
             \_ ->
-                Mistakes.runSummary { right = 7, close = 2, total = 10 }
+                Mistakes.runSummary { right = 7, total = 10 }
                     |> Expect.equal "7 of 10 right"
+        , test "nothing a run ends on calls an answer close: 0.02 given up is a miss" <|
+            \_ ->
+                [ Mistakes.runSummary { right = 0, total = 1 }
+                , Mistakes.runSummary { right = 1, total = 1 }
+                , Mistakes.runSummary { right = 3, total = 4 }
+                ]
+                    |> List.filter (String.contains "close")
+                    |> Expect.equal []
         ]
 
 
@@ -185,21 +296,21 @@ patched =
         [ test "the milestone, on the reveal" <|
             \_ ->
                 Mistakes.milestone 4
-                    |> Expect.equal "Patched. Four right in a row"
+                    |> Expect.equal "Mastered. Four right in a row"
         , test "the end of a run that patched one band" <|
             \_ ->
-                Mistakes.patchedRun [ "very_bad", "very_bad" ]
-                    |> Expect.equal (Just "You patched 2 very bad moves.")
+                Mistakes.masteredRun [ "very_bad", "very_bad" ]
+                    |> Expect.equal (Just "You mastered 2 very bad moves.")
         , test "two bands, worst first, joined with an and" <|
             \_ ->
-                Mistakes.patchedRun [ "bad", "very_bad", "very_bad" ]
-                    |> Expect.equal (Just "You patched 2 very bad moves and 1 bad move.")
+                Mistakes.masteredRun [ "bad", "very_bad", "very_bad" ]
+                    |> Expect.equal (Just "You mastered 2 very bad moves and 1 bad move.")
         , test "all three, commas then an and" <|
             \_ ->
-                Mistakes.patchedRun [ "doubtful", "bad", "very_bad" ]
-                    |> Expect.equal (Just "You patched 1 very bad move, 1 bad move and 1 dubious move.")
+                Mistakes.masteredRun [ "doubtful", "bad", "very_bad" ]
+                    |> Expect.equal (Just "You mastered 1 very bad move, 1 bad move and 1 dubious move.")
         , test "a run that patched nothing says nothing" <|
-            \_ -> Mistakes.patchedRun [] |> Expect.equal Nothing
+            \_ -> Mistakes.masteredRun [] |> Expect.equal Nothing
         ]
 
 
@@ -217,36 +328,247 @@ why =
         ]
 
 
+choices : Test
+choices =
+    describe "what each of the four choices would do, said before it is done"
+        [ test "SOONER: back to the start, and from where" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.soonerWhy 3 |> Expect.equal "Back to the start: it comes back tomorrow. Level 3 → 0."
+                    , \_ -> Mistakes.soonerWhy 0 |> Expect.equal "Back to the start: it comes back tomorrow."
+                    ]
+                    ()
+        , test "GOT IT on a graded pass: the level line's own words" <|
+            \_ ->
+                Mistakes.gotItGraded "Level 2 → 3 · back in 7 days"
+                    |> Expect.equal "As graded. Level 2 → 3 · back in 7 days."
+        , test "GOT IT where nothing checked the answer: the level holds" <|
+            \_ ->
+                Mistakes.gotItUnchecked 2 "back in 3 days"
+                    |> Expect.equal "Counts as right, but nothing checked it: level 2 stays · back in 3 days."
+        , test "GOT IT where the answer did not say how long the level holds" <|
+            \_ ->
+                Mistakes.gotItHolds 2
+                    |> Expect.equal "Counts as right, but nothing checked it: level 2 stays."
+        , test "GOT IT after a miss says why it is not a choice" <|
+            \_ -> Mistakes.missedNote |> Expect.equal "You missed this one."
+        , test "KNEW IT and NEVER" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.knewItWhy |> Expect.equal "I already knew this: to the top, back in a year."
+                    , \_ -> Mistakes.neverWhy |> Expect.equal "Out of your practice for good. It will not come back, and this cannot be undone."
+                    ]
+                    ()
+        , test "APPLY, and NEVER's button asks in its own words" <|
+            \_ ->
+                List.map Mistakes.applyLabel [ "sooner", "got_it", "knew_it", "never" ]
+                    |> Expect.equal [ "APPLY", "APPLY", "APPLY", "YES, NEVER" ]
+        ]
+
+
 {-| The rule, as a test: nothing a player reads here is about how any of
 it is stored.
 -}
 noJargon : Test
 noJargon =
-    test "no card, no deck, no flashcard, anywhere in these words" <|
-        \_ ->
-            let
-                everything =
+    describe "the words themselves"
+        [ test "no card, no deck, no flashcard, anywhere in these words" <|
+            \_ ->
+                List.filter (\word -> String.contains word everything) [ "card", "deck", "flashcard" ]
+                    |> Expect.equal []
+
+        -- TRAIN, learning, mastered: the old words are gone from every
+        -- sentence a player reads about practice.
+        , test "no fix, no patched, no learned, anywhere in these words" <|
+            \_ ->
+                List.filter (\word -> String.contains word everything) [ "fix", "patched", "learned", "in progress", "to start" ]
+                    |> Expect.equal []
+
+        -- American spelling in everything a player reads: practiced,
+        -- never practised.
+        , test "practiced, never practised: no sentence about practice says practis-" <|
+            \_ ->
+                [ everything
+                , String.toLower (Decks.doneToday 0)
+                , String.toLower (Decks.doneToday 3)
+                , String.toLower (Charts.daysSentence [ True, False, True ])
+                , String.toLower (Mistakes.practicedToday 0)
+                , String.toLower (Mistakes.dayStreakLine { streak = 1, done = 0 })
+                ]
+                    |> List.filter (String.contains "practis")
+                    |> Expect.equal []
+        , test "and the words it is said in are the American ones" <|
+            \_ ->
+                [ Mistakes.practicedToday 3, Mistakes.practicedToday 0, Decks.doneToday 3, Charts.daysSentence [ True, False, True ] ]
+                    |> Expect.equal [ "3 practiced today", "Nothing practiced yet today", "3 practiced today", "Practiced on 2 days of the last 30." ]
+        ]
+
+
+{-| Every sentence this module says, lower-cased and run together.
+-}
+everything : String
+everything =
                     String.toLower
                         (String.join " "
                             ([ Mistakes.bandName "very_bad"
                              , Mistakes.line (band "bad" 3 1 1)
                              , Mistakes.milestone 4
-                             , Mistakes.fixedToday 3
+                             , Mistakes.practicedToday 3
                              , Mistakes.tierName "very_bad"
-                             , Mistakes.leftToFix (band "very_bad" 61 30 23)
+                             , Mistakes.leftToMaster (band "very_bad" 61 30 23)
                              , Mistakes.goodShapeLine "very_bad"
                              , Mistakes.goodShapeWhy (band "very_bad" 61 30 23)
                              , Mistakes.allClearLine
                              , Mistakes.nextTierLabel "bad"
-                             , Mistakes.runSummary { right = 1, close = 0, total = 1 }
+                             , Mistakes.runSummary { right = 1, total = 1 }
                              , Mistakes.whyLine { grade = "bad", opponent = "Charlie" }
+                             , Mistakes.soonerWhy 3
+                             , Mistakes.gotItGraded "Level 2 → 3 · back in 7 days"
+                             , Mistakes.gotItUnchecked 2 "back in 3 days"
+                             , Mistakes.missedNote
+                             , Mistakes.knewItWhy
+                             , Mistakes.neverWhy
+                             , Mistakes.stateLine { total = 44, untouched = 12, inProgress = 20, patched = 12 }
+                             , Mistakes.guestStateLine 23 "very_bad"
+                             , Mistakes.costLine { games = 6, pr = 8.3, prWithout = 5.1 }
+                             , Tuple.first (Mistakes.costHeadline { pr = 8.3, prWithout = 0.3, prPatched = 7.7 })
+                             , Mistakes.dayStreakLine { streak = 5, done = 3 }
+                             , Mistakes.workLine { due = 4, newLeft = 3 }
+                             , Mistakes.keepGoingLine { done = 5, adds = 3 }
+                             , Mistakes.todayDone 5
+                             , Mistakes.stepsLine { stepped = 2, patched = 1 }
+                             , Mistakes.stepsLine { stepped = 0, patched = 0 }
+                             , Mistakes.addsLine 3
+                             , Mistakes.scheduledLine
+                             , Mistakes.unsavedLine
+                             , Mistakes.guestPracticeLine
+                             , Mistakes.rowLeft 23
+                             , Mistakes.freshLine
+                             , Mistakes.knownLine "back in a year"
+                             , Mistakes.earlyLine "9 Oct"
+                             , Mistakes.earlyLineUndated
+                             , Mistakes.practiceOnlyTag
+                             , Mistakes.practiceOnlyRun
+                             , Mistakes.everyOnePracticed
+                             , Mistakes.ladderLine { patchedLevel = 4, started = [ 2, 8, 5, 3, 6, 0, 0, 0 ] }
+                             , Mistakes.dueLine { due = 0, newLeft = 0, nextInDays = Just 3 }
+                             , Mistakes.strangerTierLine
+                             , Mistakes.emptyTierLine "very_bad"
+                             , String.join " " (List.map Tuple.second (Mistakes.legendParts Mistakes.legendTop))
                              ]
                                 ++ List.filterMap identity
-                                    [ Mistakes.patchedAside (band "very_bad" 61 30 23)
-                                    , Mistakes.patchedRun [ "very_bad" ]
+                                    [ Mistakes.masteredAside (band "very_bad" 61 30 23)
+                                    , Mistakes.masteredRun [ "very_bad" ]
+                                    , Mistakes.wonBackLine { pr = 8.3, prPatched = 7.7 }
+                                    , Tuple.second (Mistakes.costHeadline { pr = 8.3, prWithout = 0.3, prPatched = 7.7 })
                                     ]
                             )
                         )
-            in
-            List.filter (\word -> String.contains word everything) [ "card", "deck", "flashcard" ]
-                |> Expect.equal []
+
+
+
+{-| The practice home's words: a tier's three states, what it cost, the
+day, and the line under each of the one button's states.
+-}
+theHome : Test
+theHome =
+    describe "the practice home"
+        [ test "a tier in its three states, every part even at zero, then how many" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.stateLine { total = 44, untouched = 12, inProgress = 20, patched = 12 } |> Expect.equal "12 mastered · 20 learning · 12 to learn · of 44"
+                    , \_ -> Mistakes.stateLine { total = 3, untouched = 3, inProgress = 0, patched = 0 } |> Expect.equal "0 mastered · 0 learning · 3 to learn · of 3"
+                    , \_ -> Mistakes.guestStateLine 23 "very_bad" |> Expect.equal "23 very bad moves from your games"
+                    , \_ -> Mistakes.guestStateLine 1 "bad" |> Expect.equal "1 bad move from your games"
+                    ]
+                    ()
+        , test "what a tier cost, and what patching won back of it" <|
+            \_ ->
+                Expect.all
+                    -- Said in PR throughout: the cost is the gap between the two
+                    -- ratings the sentence names (8.3 - 5.1), never the equity
+                    -- the mistakes gave up (4.84 on this account), which is
+                    -- another unit and reads as a contradiction beside them.
+                    [ \_ -> Mistakes.costLine { games = 6, pr = 8.3, prWithout = 5.1 } |> Expect.equal "These cost you 3.2 PR over 6 games. Without them your PR would be 5.1, not 8.3."
+                    , \_ -> Mistakes.costLine { games = 1, pr = 9, prWithout = 7 } |> Expect.equal "These cost you 2.0 PR over 1 game. Without them your PR would be 7.0, not 9.0."
+                    -- The gap is of the printed figures, so it always adds up.
+                    , \_ -> Mistakes.costLine { games = 3, pr = 8.26, prWithout = 5.14 } |> Expect.equal "These cost you 3.2 PR over 3 games. Without them your PR would be 5.1, not 8.3."
+                    , \_ -> Mistakes.costLine { games = 6, pr = 8.3, prWithout = 5.1 } |> String.contains "point" |> Expect.equal False
+                    , \_ -> Mistakes.wonBackLine { pr = 8.3, prPatched = 7.7 } |> Expect.equal (Just "Mastered so far: 0.6 PR won back.")
+                    , \_ -> Mistakes.wonBackLine { pr = 8.3, prPatched = 8.3 } |> Expect.equal Nothing
+                    , \_ -> Mistakes.wonBackLine { pr = 8.3, prPatched = 8.28 } |> Expect.equal Nothing
+                    ]
+                    ()
+        , test "the headline: how much of the rating is mistakes, then what is won back once anything is" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.costHeadline { pr = 8.3, prWithout = 0.3, prPatched = 7.7 } |> Expect.equal ( "Your mistakes are 8.0 of your 8.3 PR.", Just "Mastering them has won back 0.6 so far." )
+                    , \_ -> Mistakes.costHeadline { pr = 8.3, prWithout = 0.3, prPatched = 8.3 } |> Expect.equal ( "Your mistakes are 8.0 of your 8.3 PR.", Nothing )
+                    ]
+                    ()
+        , test "the day: the streak left off at zero, the count said in words at zero" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.dayStreakLine { streak = 5, done = 3 } |> Expect.equal "5 days running · 3 practiced today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 1, done = 0 } |> Expect.equal "1 day running · nothing practiced yet today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 0 } |> Expect.equal "Nothing practiced yet today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 2 } |> Expect.equal "2 practiced today"
+                    ]
+                    ()
+        , test "the line under each button" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.workLine { due = 4, newLeft = 3 } |> Expect.equal "4 due now · 3 new today"
+                    , \_ -> Mistakes.workLine { due = 0, newLeft = 3 } |> Expect.equal "3 new today"
+                    , \_ -> Mistakes.workLine { due = 2, newLeft = 0 } |> Expect.equal "2 due now"
+                    , \_ -> Mistakes.keepGoingLine { done = 5, adds = 3 } |> Expect.equal "Today's 5 done. Keep going adds 3 more."
+                    , \_ -> Mistakes.keepGoingLine { done = 0, adds = 3 } |> Expect.equal "Nothing due here today. Keep going adds 3 more."
+                    , \_ -> Mistakes.scheduledLine |> Expect.equal "Everything here is scheduled. Practicing early moves nothing."
+                    , \_ -> Mistakes.unsavedLine |> Expect.equal "Your progress is not saved until you sign in."
+                    , \_ -> Mistakes.rowLeft 23 |> Expect.equal "23 left"
+                    , \_ -> Mistakes.rowLeft 0 |> Expect.equal "None yet"
+                    ]
+                    ()
+        ]
+
+
+
+{-| A deck's own page: the legend, the ladder in words, what is due, and
+the two lines a tier with nothing of the visitor's in it says.
+-}
+aDecksPage : Test
+aDecksPage =
+    describe "a deck's own page"
+        [ test "the legend climbs the grid's paints and ends on patched" <|
+            \_ ->
+                Mistakes.legendParts Mistakes.legendTop
+                    |> List.map Tuple.second
+                    |> String.join " · "
+                    |> Expect.equal "to learn · level 1 · 2 · 3 · mastered"
+        , test "the ladder in words, rungs with nobody on them left out" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.ladderLine { patchedLevel = 4, started = [ 0, 8, 5, 3, 0, 0, 0, 0 ] } |> Expect.equal "8 at level 1, 5 at level 2, 3 at level 3."
+                    , \_ -> Mistakes.ladderLine { patchedLevel = 4, started = [ 2, 8, 0, 3, 4, 1, 0, 1 ] } |> Expect.equal "2 back at the start, 8 at level 1, 3 at level 3, 6 mastered."
+                    , \_ -> Mistakes.ladderLine { patchedLevel = 4, started = [ 0, 0, 0, 0, 0, 0, 0, 0 ] } |> Expect.equal ""
+                    , \_ -> Mistakes.ladderLine { patchedLevel = 4, started = [] } |> Expect.equal ""
+                    ]
+                    ()
+        , test "the due line in its three shapes" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.dueLine { due = 12, newLeft = 3, nextInDays = Just 1 } |> Expect.equal "12 due now · 3 new today"
+                    , \_ -> Mistakes.dueLine { due = 0, newLeft = 0, nextInDays = Just 1 } |> Expect.equal "Nothing due. Next due tomorrow."
+                    , \_ -> Mistakes.dueLine { due = 0, newLeft = 0, nextInDays = Just 0 } |> Expect.equal "Nothing due. Next due tomorrow."
+                    , \_ -> Mistakes.dueLine { due = 0, newLeft = 0, nextInDays = Just 5 } |> Expect.equal "Nothing due. Next due in 5 days."
+                    , \_ -> Mistakes.dueLine { due = 0, newLeft = 0, nextInDays = Nothing } |> Expect.equal "Nothing due."
+                    ]
+                    ()
+        , test "nothing of yours here: a stranger, and an account with none yet" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.strangerTierLine |> Expect.equal "Play a game and your mistakes appear here."
+                    , \_ -> Mistakes.emptyTierLine "doubtful" |> Expect.equal "No dubious moves yet. They land here as your games are graded."
+                    ]
+                    ()
+        ]

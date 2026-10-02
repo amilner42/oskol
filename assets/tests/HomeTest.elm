@@ -53,7 +53,7 @@ suite =
 {-| A player with everything: two live games (the second one theirs to
 move), three rooms of graded games -- a match to seven and two single
 games -- a streak, a deck with cards at three levels and two days
-practised, and more rooms behind the first page.
+practiced, and more rooms behind the first page.
 -}
 fullJson : String
 fullJson =
@@ -443,9 +443,9 @@ practice =
                             >> Query.has [ attribute (Html.Attributes.attribute "data-tier" "very_bad") ]
                         , Query.find [ id "home-tier" ] >> Query.has [ text "??" ]
                         , Query.find [ id "home-tier" ] >> Query.has [ text "Very bad moves" ]
-                        , Query.find [ id "home-tier-left" ] >> Query.has [ text "38 left to fix" ]
-                        , Query.find [ id "home-tier-patched" ] >> Query.has [ text "23 patched" ]
-                        , Query.find [ id "home-fix-one" ] >> Query.has [ text "FIX ONE" ]
+                        , Query.find [ id "home-tier-left" ] >> Query.has [ text "38 left to master" ]
+                        , Query.find [ id "home-tier-patched" ] >> Query.has [ text "23 mastered" ]
+                        , Query.find [ id "home-fix-one" ] >> Query.has [ text "TRAIN" ]
 
                         -- The other tiers are quiet rows, not a second card.
                         , Query.find [ id "home-tier-row-bad" ] >> Query.has [ text "78 left" ]
@@ -485,7 +485,7 @@ practice =
                 in
                 render model
                     |> Query.find [ id "home-practice-note" ]
-                    |> Query.has [ text "Nothing to practise right now." ]
+                    |> Query.has [ text "Nothing to practice right now." ]
         ]
 
 

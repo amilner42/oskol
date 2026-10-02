@@ -45,9 +45,13 @@ defmodule OskolWeb.Router do
     post "/practice/more", PracticeController, :more
     post "/practice/tz", PracticeController, :tz
     post "/practice/bury", PracticeController, :bury
+    # The five decks (three tiers of mistakes, two sets) in one shape.
+    get "/practice/decks", PracticeController, :decks
+    get "/practice/decks/:slug", PracticeController, :deck
     get "/decks", DecksController, :index
     get "/decks/:id", DecksController, :show
     post "/decks/:id/join", DecksController, :join
+    post "/decks/:id/more", DecksController, :more
 
     get "/library", LandingController, :library
     get "/codes/:code", LandingController, :code
@@ -121,6 +125,11 @@ defmodule OskolWeb.Router do
     # like "login".
     get "/puzzles", SpaController, :puzzles
     get "/puzzles/:id", SpaController, :puzzle
+
+    # A deck's own page: /practice/very-bad, /practice/openings... Declared
+    # before "/:slug" so "practice" is a reserved word like "puzzles". A
+    # bare "/practice" names no game, so it is a 404 like "/login".
+    get "/practice/:slug", SpaController, :practice
 
     # Is the analysis engine answering? A plain page, declared before
     # "/:slug" so "status" is a reserved word like "login" and "puzzles".

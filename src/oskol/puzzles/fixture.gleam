@@ -50,9 +50,9 @@ pub fn stored_sample(name: String) -> Stored {
 }
 
 /// What `POST /papi/puzzles/:id/attempts` answers a guest, one per shape a
-/// reveal has to draw: a checker play that passes, holds, misses and one
-/// the stored answer cannot grade; a double and a take answered right and
-/// wrong. And the three shapes a schedule takes for an account, which the
+/// reveal has to draw: a checker play that passes, one that is dubious
+/// (a miss), a worse miss and one the stored answer cannot grade; a double
+/// and a take answered right and wrong, and a take too close to call. And the three shapes a schedule takes for an account, which the
 /// same endpoint carries in place of `null`.
 pub fn reveals() -> List(#(String, String)) {
   let move = stored_sample("move")
@@ -60,18 +60,21 @@ pub fn reveals() -> List(#(String, String)) {
   let due = 1_800_000_000_000
   [
     #("move_pass", attempted(move, moves_to(move, 1), None)),
-    #("move_hold", attempted(move, moves_to(move, 2), None)),
+    // 0.07 given up: a dubious play, and so a miss.
+    #("move_dubious", attempted(move, moves_to(move, 2), None)),
     #("move_fail", attempted(move, moves_to(move, 3), None)),
     #("move_unknown", attempted(old, moves_to(move, 3), None)),
     #("double_pass", attempted(stored_sample("double"), [], Some(1))),
     #("double_fail", attempted(stored_sample("double"), [], Some(-1))),
     #("take_pass", attempted(stored_sample("take"), [], Some(-1))),
     // A coin flip: taking and passing are within 0.02 of each other, so
-    // either answer holds.
-    #("take_hold", attempted(close_take(), [], Some(1))),
-    #("schedule_amendable", handler.schedule_json(2, 3, due, True, False)),
-    #("schedule_self_grade", handler.schedule_json(3, 3, due, False, True)),
-    #("schedule_settled", handler.schedule_json(1, 1, due, False, False)),
+    // either answer passes, the wrong side giving up a hair.
+    #("take_close", attempted(close_take(), [], Some(1))),
+    // `held_days` as `config :retain, intervals` has it: 7 days at level
+    // 3, 1 at level 1.
+    #("schedule_amendable", handler.schedule_json(2, 3, due, True, False, 7)),
+    #("schedule_self_grade", handler.schedule_json(3, 3, due, False, True, 7)),
+    #("schedule_settled", handler.schedule_json(1, 1, due, False, False, 1)),
   ]
 }
 

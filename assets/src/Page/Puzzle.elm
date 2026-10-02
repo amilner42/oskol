@@ -1,6 +1,9 @@
-module Page.Puzzle exposing
+port module Page.Puzzle exposing
     ( After(..)
     , Attempt(..)
+    , Celebration
+    , CelebrationDeck(..)
+    , DeckToday
     , End
     , Loadable(..)
     , Model
@@ -9,13 +12,23 @@ module Page.Puzzle exposing
     , Out(..)
     , Progress
     , Score
+    , Way(..)
+    , WayState(..)
+    , asksMemory
+    , countsToday
+    , dueDate
     , attemptBody
     , backIn
+    , celebrate
+    , celebrationRead
+    , celebrationTiming
     , endRun
     , init
     , levelLine
+    , levelLineFor
     , memoryLine
-    , patchedLine
+    , offering
+    , masteredLine
     , preselected
     , runProgress
     , runScore
@@ -23,6 +36,7 @@ module Page.Puzzle exposing
     , title
     , update
     , view
+    , withAnswered
     , withSession
     )
 
@@ -41,8 +55,12 @@ A tree too big to send whole arrives `lazy`, and the page fetches each
 level as the board reaches it.
 
 For a signed-in player whose deck holds the card, the reveal carries where
-it now stands ("Level 2 → 3 · back in 7 days") and the four buttons that
-override the grade. For a player who was in the game the puzzle came from,
+it now stands ("Level 2 → 3 · back in 7 days") and the four choices that
+override the grade. A choice **selects, explains, then applies**: a tap
+marks it pending and the fixed line under the row says what it would do;
+APPLY ("YES, NEVER" for NEVER) is what sends it, and in a run ANOTHER and
+I'M DONE apply a pending choice first. Nothing is sent on a tap. For a
+player who was in the game the puzzle came from,
 either seat, `/mine` adds the memory line, asked for after the attempt and
 never before. A guest sees neither, and loses nothing.
 
@@ -56,14 +74,15 @@ in the server's words -- which this page shows under the memory line. The
 
 The page is opened from a link most of the time and is complete on its
 own. NEXT appears only when the shell says there is somewhere after this
-one: a practice run is the shell's (`Main`), because it outlives this
-page. The page reports each verdict (`Answered`) and asks for the next
-(`WantsNext`); at the run's last puzzle the shell answers with the score
-(`endRun`) and the page ends the run here: "7 of 10 right", then for an
-account what the deck has left ("Done for today. 4 new tomorrow." and
-KEEP GOING) and for a guest the sign-in, in the one component, going on
-to wherever the run was started from (the practice home, or the table a
-result card's PRACTICE was pressed at).
+one: a practice run is the shell's (`Main`, `Run`), because it outlives
+this page. The page reports each verdict (`Answered`) and asks for the
+next (`WantsNext`); past the ids the run holds the shell asks the deck's
+queue again, and only when that is empty -- or at I'M DONE -- does it
+answer with the score (`endRun`), and the page ends the run here: "7 of
+10 right", then for an account the way on (`offering`: KEEP GOING, or
+PRACTICE ANYWAY once everything is started) and for a guest the sign-in,
+in the one component, going on to wherever the run was started from (the
+practice home, or the table a result card's PRACTICE was pressed at).
 
 -}
 
@@ -76,7 +95,7 @@ import Games.Backgammon.View as Board
 import Games.Backgammon.Words as Words exposing (chanceCells, cubeChances, cubeLine, gradeTag, signed)
 import Html exposing (Html, a, button, div, h1, p, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, href, id, type_)
-import Html.Events exposing (onClick)
+import Html.Events exposing (on, onClick, onFocus)
 import Json.Decode as D
 import Json.Encode as E
 import Page.Play exposing (shareInvite, shareResult)
@@ -86,8 +105,12 @@ import Route
 import Session exposing (Session)
 import Task
 import Time
+import Svg
+import Svg.Attributes as SvgA
 import Ui.Charts as Charts
 import Api.Decks
+import Api.PracticeDecks as PracticeDecks
+import Ui.Deck
 import Ui.Decks as Decks
 import Ui.Mistakes as Mistakes
 import Ui.Shell
@@ -128,6 +151,24 @@ change.
 type alias Progress =
     { at : Int
     , marks : List (Maybe Verdict)
+
+    -- Today's set of the deck the run is of, as the shell has counted it:
+    -- the ring over the board. Nothing for a run of one game's mistakes,
+    -- which is no deck's.
+    , ring : Maybe DeckToday
+
+    -- The run was started from PRACTICE ANYWAY: every answer in it is
+    -- early, practice only, and moves nothing -- the ring included.
+    , anyway : Bool
+    }
+
+
+{-| One deck's day: how many it has had, out of today's set (what was
+done, plus what is still due, plus the new ones the day still allows).
+-}
+type alias DeckToday =
+    { done : Int
+    , target : Int
     }
 
 
@@ -152,9 +193,13 @@ type alias Model =
     , attempt : Attempt
     , showing : Maybe Int -- a candidate's rank on the board; Nothing is the move played
     , before : Bool -- the roll on the board it was thrown into: the move taken back, as the replay's dice do
-    , outcome : Maybe String -- the override the player pressed, once it went through
+    , outcome : Maybe String -- the override the player applied, once it went through
+    , graded : Maybe Schedule -- the schedule the answer came back with, before any override
+    , pending : Maybe String -- a choice tapped and not yet applied
+    , missedNote : Bool -- GOT IT after a miss was tapped: say why it is not a choice
     , outcomeSending : Bool
     , outcomeError : Maybe String -- why the last override did not go through
+    , thenOut : Maybe Out -- ANOTHER or I'M DONE, waiting on the pending choice to apply
     , why : Maybe Puzzle.Why -- why this one is here, asked before the answer
     , memory : Maybe Puzzle.Memory
     , shareLabel : Maybe String
@@ -163,15 +208,17 @@ type alias Model =
     , sharing : Sharing -- which button the share sheet's answer is for
     , now : Int -- client time (ms) when the reveal landed, for "back in 7 days"
     , ended : Maybe End -- the run is over: the score, and what comes after it
+    , celebration : Maybe Celebration -- this answer finished today's set: the card under the reveal
+    , leaving : Bool -- ANOTHER was pressed and the shell is finding the next
+    , zone : Time.Zone -- the reader's own, for the day an early answer is due
     }
 
 
-{-| A run's score, as the shell counted it: a pass is right, a hold is
-close, anything else is neither.
+{-| A run's score, as the shell counted it: a pass is right, anything else
+is not.
 -}
 type alias Score =
     { right : Int
-    , close : Int
     , total : Int
     }
 
@@ -180,22 +227,89 @@ type alias End =
     { score : Score
     , answers : List Answer -- what the run did, one entry per mistake it answered
     , after : After
+    , way : Maybe WayState -- the way on, for an account's run through a deck
     }
 
 
-{-| What the end screen offers under the score.
+{-| The way on from the end of a run, once the shell has read where the
+deck stands. A run is never the last word: today's set done, there is
+always more to do.
 
-**Nothing to press but the way back.** A run ends because the player
-pressed I'M DONE, or because the tier ran out: either way they have
-said they are finished, and a card that answered with "2 more to go" or
-a fresh quota would take the moment back. The hub is where the next
-tier is chosen.
+  - `Continue`: the deck still has work today (I'M DONE was pressed with
+    some left), so KEEP GOING simply goes on with it;
+  - `MoreNew n`: today's set is done and there are mistakes never shown,
+    so KEEP GOING starts `n` more (the deck's own pace);
+  - `Anyway`: everything is started and nothing is due, so PRACTICE
+    ANYWAY goes through them early, practice only;
+  - `NoWay`: nothing to offer (a set not added, a deck with nothing in it).
+
+-}
+type Way
+    = Continue { due : Int, newLeft : Int }
+    | MoreNew Int
+    | Anyway
+    | NoWay
+
+
+{-| Where the way on stands. Its band is laid out from the moment the
+card is drawn, so the answer landing moves nothing.
+-}
+type WayState
+    = Asking
+    | Offered Way
+    | Going Way
+      -- the press found nothing more (every one of these practiced), or
+      -- the server said why not
+    | Stopped String
+
+
+{-| The moment today's set is done, under the reveal: the shell decides
+it (`Run.celebrate`, once a run, on the counted answer that brings the
+deck's ring to its target) and hands the page what it needs; the page
+draws it and plays it.
+
+  - `target`: today's set, now done -- "Today's 5 done.";
+  - `answered`: the run's answers with their puzzles, oldest first, which
+    the lines and the grid's stepping squares are counted from (kept up
+    to date by the shell: a choice applied after the card is drawn
+    changes what it says);
+  - `deck`: the deck as the server has it now (its cells for the grid,
+    what it cost, how much of a set is mastered), read once when the card
+    appears;
+  - `way`: KEEP GOING or PRACTICE ANYWAY, from where the deck stands;
+  - `ready`: the card is drawn -- once the deck is read, or failing that
+    after a moment, so nothing waits on the network for long;
+  - `playing`: the card is on the screen and its motion runs;
+  - `settled`: its last keyframe has ended (`data-settled`).
+
+-}
+type alias Celebration =
+    { target : Int
+    , answered : List ( String, Answer )
+    , deck : CelebrationDeck
+    , way : WayState
+    , ready : Bool
+    , playing : Bool
+    , settled : Bool
+    }
+
+
+type CelebrationDeck
+    = Reading
+    | Read PracticeDecks.Page
+    | Unread
+
+
+{-| What the end screen offers under the score: a guest the sign-in; an
+account the way back, and -- for a run through a deck -- the way on
+(`End.way`). Never a wall: today's set done, KEEP GOING is one tap.
 -}
 type After
     = -- a guest: the sign-in, going on to where the run was started from
       AskSignIn SignIn.Model
-      -- an account: the way back to the hub, and nothing else
-    | BackToPuzzles
+      -- an account: the way back to the page the run was started from (the
+      -- hub, a deck's page, the table, the replay), and the way on (`End.way`)
+    | BackTo String
 
 
 {-| The two share buttons report through one port, so the page remembers
@@ -214,11 +328,13 @@ type Msg
     | PickedBand Int
     | Submit
     | GotReveal (Result Api.Error Reveal)
-    | RevealedAt Time.Posix
+    | RevealedAt ( Time.Posix, Time.Zone )
     | Show (Maybe Int)
     | ToggleBefore
     | PressedDone
     | PressedOutcome String
+    | FocusedOutcome String
+    | PressedApply
     | GotOutcome String (Result Api.Error (Maybe Schedule))
     | GotWhy (Result Api.Error Puzzle.Why)
     | GotMemory (Result Api.Error Puzzle.Memory)
@@ -228,14 +344,18 @@ type Msg
     | ShareReported String
     | ShareLabelCleared
     | Next
+    | PressedWay Way
     | EndSignInMsg SignIn.Msg
+    | CelebrationWaited
+    | CelebrationInView Bool
+    | CelebrationEnded String
     | NoOp
 
 
 {-| What one answer did, as the run keeps it: how it was graded, where
 the mistake now stands (an account whose deck holds it; nothing for a
 guest, and nothing for one put out of the deck), and how bad the mistake
-was, so the end of the run can say what it patched.
+was, so the end of the run can say what it mastered.
 -}
 type alias Answer =
     { verdict : Verdict
@@ -252,9 +372,14 @@ somewhere.
 type Out
     = NoOut
     | Answered Answer
+      -- a pending choice applied on the way out: keep the answer, then go
+    | AnsweredThen Answer Out
     | WantsNext
     | WantsEnd
     | StartRun (List String) (Maybe Today) (Maybe String)
+      -- KEEP GOING or PRACTICE ANYWAY, pressed on the end card: the shell
+      -- owns the run, so it asks for more and goes on with it
+    | GoOn Way
     | SignedIn (Maybe Session.User)
     | Go String
 
@@ -295,8 +420,12 @@ init session config =
       , showing = Nothing
       , before = False
       , outcome = Nothing
+      , graded = Nothing
+      , pending = Nothing
+      , missedNote = False
       , outcomeSending = False
       , outcomeError = Nothing
+      , thenOut = Nothing
       , why = Nothing
       , memory = Nothing
       , shareLabel = Nothing
@@ -305,6 +434,9 @@ init session config =
       , sharing = CleanLink
       , now = 0
       , ended = Nothing
+      , celebration = Nothing
+      , leaving = False
+      , zone = Time.utc
       }
     , Cmd.batch
         [ Api.get session (base config.id) Puzzle.decoder GotPuzzle
@@ -418,17 +550,27 @@ update msg model =
         GotReveal (Ok reveal) ->
             let
                 revealed =
-                    marked reveal.verdict
-                        { model | attempt = Revealed reveal, showing = Nothing, before = False }
+                    marked reveal
+                        { model | attempt = Revealed reveal, graded = reveal.schedule, showing = Nothing, before = False }
             in
             ( revealed
             , Cmd.batch
-                [ Task.perform RevealedAt Time.now
+                [ Task.perform RevealedAt (Task.map2 Tuple.pair Time.now Time.here)
 
                 -- Only now: the memory line is a fact about the player
                 -- and the game, and asking for it before the answer
                 -- would put the move that was played within reach.
-                , Api.get model.session (base model.id ++ "/mine") Puzzle.memoryDecoder GotMemory
+                --
+                -- Never in a run through a set (the openings...): a set
+                -- is the same position for everyone, and a game of yours
+                -- that happened to reach it is not why it is in front of
+                -- you. Games are named only where the puzzle is one of
+                -- your mistakes, or opened on its own from a link.
+                , if asksMemory model then
+                    Api.get model.session (base model.id ++ "/mine") Puzzle.memoryDecoder GotMemory
+
+                  else
+                    Cmd.none
                 ]
               -- The shell keeps the run's score, and what this answer did
               -- to the mistake, for the line at the end of the run.
@@ -442,8 +584,8 @@ update msg model =
         GotReveal (Err err) ->
             stay { model | attempt = Refused (Api.errorMessage err) } Cmd.none
 
-        RevealedAt time ->
-            stay { model | now = Time.posixToMillis time } Cmd.none
+        RevealedAt ( time, zone ) ->
+            stay { model | now = Time.posixToMillis time, zone = zone } Cmd.none
 
         Show rank ->
             stay { model | showing = rank, before = False } Cmd.none
@@ -454,40 +596,77 @@ update msg model =
         ToggleBefore ->
             stay { model | before = not model.before, showing = Nothing } Cmd.none
 
+        -- A tap selects and sends nothing: the line under the row says
+        -- what the choice would do, and APPLY is what does it. Tapping the
+        -- choice already in force takes the selection back.
         PressedOutcome outcome ->
             if model.outcomeSending then
                 stay model Cmd.none
 
+            else if outcome == "got_it" && gotItBarred model then
+                stay { model | pending = Nothing, missedNote = True, outcomeError = Nothing } Cmd.none
+
+            else if Just outcome == inForce model then
+                stay { model | pending = Nothing, missedNote = False, outcomeError = Nothing } Cmd.none
+
             else
-                stay { model | outcomeSending = True, outcomeError = Nothing }
-                    (Api.post model.session
-                        (base model.id ++ "/attempts/" ++ model.key ++ "/outcome")
-                        (E.object (( "outcome", E.string outcome ) :: deckField model))
-                        (D.field "schedule" (D.nullable Puzzle.scheduleDecoder))
-                        (GotOutcome outcome)
-                    )
+                stay { model | pending = Just outcome, missedNote = False, outcomeError = Nothing } Cmd.none
+
+        -- GOT IT after a miss says why it is not a choice when it is
+        -- reached by the keyboard too, not only by a tap.
+        FocusedOutcome outcome ->
+            if outcome == "got_it" && gotItBarred model then
+                stay { model | missedNote = True } Cmd.none
+
+            else
+                stay model Cmd.none
+
+        PressedApply ->
+            case model.pending of
+                Just outcome ->
+                    apply outcome Nothing model
+
+                Nothing ->
+                    stay model Cmd.none
 
         GotOutcome outcome (Ok schedule) ->
-            amended outcome
-                schedule
-                { model
-                    | outcomeSending = False
-                    , outcomeError = Nothing
-                    , outcome = Just outcome
-                    , attempt =
-                        case ( model.attempt, schedule ) of
-                            ( Revealed reveal, Just s ) ->
-                                Revealed { reveal | schedule = Just s }
+            let
+                ( settled, cmd, answered ) =
+                    amended outcome
+                        schedule
+                        { model
+                            | outcomeSending = False
+                            , outcomeError = Nothing
+                            , outcome = Just outcome
+                            , pending = Nothing
+                            , thenOut = Nothing
+                            , attempt =
+                                case ( model.attempt, schedule ) of
+                                    ( Revealed reveal, Just s ) ->
+                                        Revealed { reveal | schedule = Just s }
 
-                            ( other, _ ) ->
-                                other
-                }
+                                    ( other, _ ) ->
+                                        other
+                        }
+            in
+            -- ANOTHER or I'M DONE was waiting on this: the shell keeps the
+            -- answer first, so the run's score is about what was settled on.
+            case ( model.thenOut, answered ) of
+                ( Just onward, Answered answer ) ->
+                    ( settled, cmd, AnsweredThen answer onward )
+
+                ( Just onward, _ ) ->
+                    ( settled, cmd, onward )
+
+                ( Nothing, _ ) ->
+                    ( settled, cmd, answered )
 
         GotOutcome _ (Err err) ->
-            -- A 409 (nothing to amend any more) or a lost connection: the
-            -- line keeps saying what the server last said, and why the
-            -- press changed nothing is said under it.
-            stay { model | outcomeSending = False, outcomeError = Just (Api.errorMessage err) } Cmd.none
+            -- A 409 (nothing to amend any more), a 422 or a lost
+            -- connection: the line keeps saying what the server last said,
+            -- the selection stays, and why it changed nothing is said in
+            -- the explanation's place. A run waiting on it stays here.
+            stay { model | outcomeSending = False, thenOut = Nothing, leaving = False, outcomeError = Just (Api.errorMessage err) } Cmd.none
 
         GotWhy (Ok why) ->
             stay { model | why = Just why } Cmd.none
@@ -566,13 +745,90 @@ update msg model =
         ShareLabelCleared ->
             stay { model | shareLabel = Nothing, storyLabel = Nothing } Cmd.none
 
+        -- ANOTHER, and I'M DONE below: a choice selected and not applied
+        -- is applied first, so the common path is still one tap.
         Next ->
-            ( model, Cmd.none, WantsNext )
+            if model.leaving then
+                stay model Cmd.none
+
+            else
+                leave WantsNext { model | leaving = True }
+
+        -- KEEP GOING or PRACTICE ANYWAY on the end card: the button says it
+        -- is on its way, and the shell does the asking.
+        PressedWay way ->
+            let
+                state =
+                    case model.ended of
+                        Just end ->
+                            end.way
+
+                        Nothing ->
+                            Maybe.map .way model.celebration
+            in
+            case state of
+                Just (Offered offered) ->
+                    if offered == way && way /= NoWay then
+                        ( offering (Going way) model, Cmd.none, GoOn way )
+
+                    else
+                        stay model Cmd.none
+
+                _ ->
+                    stay model Cmd.none
+
+        -- The deck was slow to answer: draw the card with what the run
+        -- knows rather than keep the moment waiting.
+        CelebrationWaited ->
+            case model.celebration of
+                Just c ->
+                    if c.ready then
+                        stay model Cmd.none
+
+                    else
+                        ready { c | deck = Unread } model
+
+                Nothing ->
+                    stay model Cmd.none
+
+        -- The card is on the screen: play it. With reduced motion there is
+        -- nothing to play, and the final state is already drawn.
+        CelebrationInView reduced ->
+            case model.celebration of
+                Just c ->
+                    if c.playing then
+                        stay model Cmd.none
+
+                    else
+                        stay { model | celebration = Just { c | playing = True, settled = c.settled || reduced } }
+                            (if reduced then
+                                Cmd.none
+
+                             else
+                                -- Belt and braces: a tab put in the background
+                                -- mid-flight may never hear its last keyframe end.
+                                Process.sleep (toFloat (celebrationTiming c).total + 1500) |> Task.perform (\_ -> CelebrationEnded settleName)
+                            )
+
+                Nothing ->
+                    stay model Cmd.none
+
+        CelebrationEnded name ->
+            case model.celebration of
+                Just c ->
+                    if name == settleName && c.playing then
+                        stay { model | celebration = Just { c | settled = True } } Cmd.none
+
+                    else
+                        stay model Cmd.none
+
+                Nothing ->
+                    stay model Cmd.none
 
         -- I'M DONE: the run stops here and the shell hands back the
         -- score, however few this was. One is a whole session.
         PressedDone ->
-            ( model, Cmd.none, WantsEnd )
+            leave WantsEnd model
 
         EndSignInMsg signInMsg ->
             case model.ended of
@@ -618,7 +874,7 @@ endRun score answers next model =
         -- Nothing is asked of the server: what the run did is what the
         -- run knows, and the day's count came with it.
         Just _ ->
-            ( { model | ended = Just { score = score, answers = answers, after = BackToPuzzles } }
+            ( { model | ended = Just { score = score, answers = answers, after = BackTo next, way = Nothing } }
             , Cmd.none
             )
 
@@ -627,9 +883,126 @@ endRun score answers next model =
                 ( signIn, cmd ) =
                     SignIn.init { next = next, email = "" }
             in
-            ( { model | ended = Just { score = score, answers = answers, after = AskSignIn signIn } }
+            ( { model | ended = Just { score = score, answers = answers, after = AskSignIn signIn, way = Nothing } }
             , Cmd.map EndSignInMsg cmd
             )
+
+
+{-| The way on from the end card, as the shell has found it: asking
+where the deck stands, what it offers, on its way, or stopped. Only an
+account's end card has one; a guest's keeps the sign-in and nothing else.
+-}
+offering : WayState -> Model -> Model
+offering state model =
+    case model.ended of
+        Just end ->
+            case end.after of
+                BackTo _ ->
+                    { model | ended = Just { end | way = Just state } }
+
+                AskSignIn _ ->
+                    model
+
+        -- The celebration's way on is the same press, under the reveal.
+        Nothing ->
+            { model | celebration = Maybe.map (\c -> { c | way = state }) model.celebration }
+
+
+{-| Today's set is done, on this answer: the card under the reveal. The
+deck is read next (`celebrationRead`); if it is slow, the card is drawn
+without it after a moment.
+-}
+celebrate : { target : Int, answered : List ( String, Answer ) } -> Model -> ( Model, Cmd Msg )
+celebrate config model =
+    case ( model.celebration, model.session.user ) of
+        ( Nothing, Just _ ) ->
+            ( { model
+                | celebration =
+                    Just
+                        { target = config.target
+                        , answered = config.answered
+                        , deck = Reading
+                        , way = Asking
+                        , ready = False
+                        , playing = False
+                        , settled = False
+                        }
+              }
+            , Process.sleep 1500 |> Task.perform (\_ -> CelebrationWaited)
+            )
+
+        -- Once on a page, and never for a guest: a guest has no day.
+        _ ->
+            ( model, Cmd.none )
+
+
+{-| The deck, as the server has it now, for the card: its cells for the
+grid and what the lines say. `Nothing` is a read that failed: the card
+is drawn without the grid.
+-}
+celebrationRead : Maybe PracticeDecks.Page -> Model -> ( Model, Cmd Msg )
+celebrationRead read model =
+    case model.celebration of
+        Just c ->
+            if c.ready then
+                -- Drawn already without it: keep what is on the screen.
+                ( model, Cmd.none )
+
+            else
+                let
+                    ( next, cmd, _ ) =
+                        ready
+                            { c
+                                | deck =
+                                    case read of
+                                        Just page ->
+                                            Read page
+
+                                        Nothing ->
+                                            Unread
+                            }
+                            model
+                in
+                ( next, cmd )
+
+        Nothing ->
+            ( model, Cmd.none )
+
+
+ready : Celebration -> Model -> ( Model, Cmd Msg, Out )
+ready c model =
+    ( { model | celebration = Just { c | ready = True } }
+    , celebrateCard celebrationId
+    , NoOut
+    )
+
+
+{-| What the run's answers are now, for the card's lines: a choice
+applied after it appeared changes what the run did.
+-}
+withAnswered : List ( String, Answer ) -> Model -> Model
+withAnswered answered model =
+    { model | celebration = Maybe.map (\c -> { c | answered = answered }) model.celebration }
+
+
+celebrationId : String
+celebrationId =
+    "pz-today-done"
+
+
+settleName : String
+settleName =
+    "pz-cele-settle"
+
+
+{-| Bring the card into view (smoothly, a beat after the reveal, so the
+verdict is read first) and say when it is on the screen, and whether the
+reader asked for reduced motion.
+-}
+port celebrateCard : String -> Cmd msg
+
+
+port celebrationInView : (Bool -> msg) -> Sub msg
 
 
 afterEnd : After -> Model -> Model
@@ -647,27 +1020,109 @@ answered a second time (back, then PLAY again) replaces its mark and is
 **not** counted again: only the first answer at a card is recorded, so
 counting a retry would make the ring say more happened today than did.
 -}
-marked : Verdict -> Model -> Model
-marked verdict model =
+marked : Reveal -> Model -> Model
+marked reveal model =
     case model.progress of
         Nothing ->
             model
 
         Just progress ->
             let
-                first =
-                    markAt progress == Nothing
-            in
-            { model
-                | progress = Just { progress | marks = setAt progress.at (Just verdict) progress.marks }
-                , counted = model.counted || first
-                , today =
-                    if first && not model.counted then
-                        Maybe.map (\today -> { today | done = today.done + 1 }) model.today
+                counts =
+                    markAt progress == Nothing && not model.counted && countsToday progress.anyway reveal.schedule
+
+                up day =
+                    if counts then
+                        { day | done = day.done + 1 }
 
                     else
-                        model.today
+                        day
+            in
+            { model
+                | progress =
+                    Just
+                        { progress
+                            | marks = setAt progress.at (Just reveal.verdict) progress.marks
+                            , ring = Maybe.map up progress.ring
+                        }
+                , counted = model.counted || counts
+                , today = Maybe.map up model.today
             }
+
+
+{-| Does this answer count toward the day -- the ring, and "3 practiced
+today"? Only one the server moved the mistake for (`amendable`): that is
+exactly what it counts the day by. Not one given early (PRACTICE ANYWAY,
+or a second go), not one it could not grade (a self-grade is deferred,
+and a deferral is not counted), and not one of a puzzle outside the
+player's practice (nothing is written). Counting any of those here would
+make the number go down when the server's own count next lands.
+-}
+countsToday : Bool -> Maybe Schedule -> Bool
+countsToday anyway schedule =
+    not anyway && (Maybe.map .amendable schedule |> Maybe.withDefault False)
+
+
+{-| Send a selected choice. `thenOut` is where the page goes once it has
+gone through: nowhere (APPLY), or on through the run.
+-}
+apply : String -> Maybe Out -> Model -> ( Model, Cmd Msg, Out )
+apply outcome thenOut model =
+    ( { model | outcomeSending = True, outcomeError = Nothing, thenOut = thenOut }
+    , Api.post model.session
+        (base model.id ++ "/attempts/" ++ model.key ++ "/outcome")
+        (E.object (( "outcome", E.string outcome ) :: deckField model))
+        (D.field "schedule" (D.nullable Puzzle.scheduleDecoder))
+        (GotOutcome outcome)
+    , NoOut
+    )
+
+
+{-| ANOTHER or I'M DONE. A pending choice is applied on the way and the
+page goes on once it has; one already on its way is waited for. Nothing
+pending, the page goes at once.
+-}
+leave : Out -> Model -> ( Model, Cmd Msg, Out )
+leave out model =
+    if model.outcomeSending then
+        ( { model | thenOut = Just out }, Cmd.none, NoOut )
+
+    else
+        case model.pending of
+            Just outcome ->
+                apply outcome (Just out) model
+
+            Nothing ->
+                ( model, Cmd.none, out )
+
+
+{-| The choice that stands: the one applied, else the one the grade
+stands for.
+-}
+inForce : Model -> Maybe String
+inForce model =
+    case ( model.outcome, model.attempt ) of
+        ( Just outcome, _ ) ->
+            Just outcome
+
+        ( Nothing, Revealed reveal ) ->
+            reveal.schedule |> Maybe.andThen (preselected reveal.verdict)
+
+        _ ->
+            Nothing
+
+
+{-| GOT IT is not one of the choices after a miss: the server refuses
+it, and the page draws it disabled in its own column.
+-}
+gotItBarred : Model -> Bool
+gotItBarred model =
+    case model.attempt of
+        Revealed reveal ->
+            reveal.verdict == Fail
+
+        _ ->
+            False
 
 
 {-| The override the player pressed, once it went through: the shell is
@@ -842,6 +1297,17 @@ attemptBody model =
             Nothing
 
 
+{-| Does this page ask, after the reveal, whether the player was in a game
+that reached this position (`/mine`: the memory line, and the button that
+shares their own mistake)? Not in a run through a set: there the position
+is the set's, the same for everyone, and no game of theirs is why it is in
+front of them.
+-}
+asksMemory : Model -> Bool
+asksMemory model =
+    model.deck == Nothing
+
+
 {-| The set this run is of, for the attempt and its override: the answer
 counts on that set's ladder rather than the player's mistakes'.
 -}
@@ -869,8 +1335,20 @@ shareField model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
-    shareResult ShareReported
+subscriptions model =
+    Sub.batch
+        [ shareResult ShareReported
+        , case model.celebration of
+            Just c ->
+                if c.playing then
+                    Sub.none
+
+                else
+                    celebrationInView CelebrationInView
+
+            Nothing ->
+                Sub.none
+        ]
 
 
 
@@ -879,7 +1357,7 @@ subscriptions _ =
 
 view : Model -> Html Msg
 view model =
-    div [ class "rp-page pz-page paper", id "puzzle" ]
+    div [ classList [ ( "rp-page pz-page paper", True ), ( "has-run", model.progress /= Nothing ), ( "is-ended", model.ended /= Nothing ) ], id "puzzle" ]
         (case ( model.ended, model.puzzle ) of
             ( Just end, _ ) ->
                 [ viewHead, viewEnd model end ]
@@ -922,16 +1400,145 @@ viewEnd : Model -> End -> Html Msg
 viewEnd model end =
     div [ class "pz-end mx-auto w-full max-w-md q-card sheet p-6 sm:p-8 mt-4", id "pz-end" ]
         (p [ class "pixel q-eyebrow text-[9px] mb-3" ] [ text "DONE" ]
-            :: p [ id "pz-score", class "text-[24px] sm:text-[28px] font-bold leading-tight mb-1", attribute "style" "color: var(--ink)" ]
+            :: p [ id "pz-score", class "text-[24px] sm:text-[28px] font-bold leading-tight mb-4", attribute "style" "color: var(--ink)" ]
                 [ text (runScoreIn model end.score) ]
-            :: closeLine end.score
-            :: viewPatched model end.answers
+            :: viewPracticeOnly model
+            :: viewMastered model end.answers
             :: viewToday model
+            :: viewWay model end
             :: viewAfter model end.after
         )
 
 
-{-| The day, under the score: "3 fixed today". The same words the hub
+{-| A run through PRACTICE ANYWAY says, once more at its end, that none
+of it moved anything: the score is real, the ladder did not hear of it.
+-}
+viewPracticeOnly : Model -> Html Msg
+viewPracticeOnly model =
+    if Maybe.map .anyway model.progress == Just True then
+        p [ id "pz-practice-only", class "q-note text-[13px] mb-4" ] [ text Mistakes.practiceOnlyRun ]
+
+    else
+        text ""
+
+
+{-| The way on, for an account's run through a deck: one button in a band
+whose height is fixed from the moment the card is drawn -- the line over
+it held to two lines, the button laid out even while the shell is still
+asking where the deck stands -- so nothing moves when the answer lands
+or the button is pressed.
+
+KEEP GOING where the deck still has work today, or where today's set is
+done and there are mistakes never shown (it starts the deck's pace of
+them); PRACTICE ANYWAY where everything is started and nothing is due.
+-}
+viewWay : Model -> End -> Html Msg
+viewWay model end =
+    case end.way of
+        Nothing ->
+            text ""
+
+        Just state ->
+            let
+                shown =
+                    case state of
+                        Asking ->
+                            Nothing
+
+                        Offered way ->
+                            Just way
+
+                        Going way ->
+                            Just way
+
+                        Stopped _ ->
+                            Nothing
+
+                going =
+                    case state of
+                        Going _ ->
+                            True
+
+                        _ ->
+                            False
+
+                line =
+                    case state of
+                        Stopped why ->
+                            why
+
+                        _ ->
+                            Maybe.map (wayLine model) shown |> Maybe.withDefault ""
+
+                ( buttonId, label, action ) =
+                    case shown of
+                        Just Anyway ->
+                            ( "pz-anyway", "PRACTICE ANYWAY", "practice-anyway" )
+
+                        Just (MoreNew _) ->
+                            ( "pz-keep-going", "KEEP GOING", "keep-going" )
+
+                        Just (Continue _) ->
+                            ( "pz-keep-going", "KEEP GOING", "continue" )
+
+                        _ ->
+                            ( "pz-way-idle", "KEEP GOING", "" )
+
+                offered =
+                    case shown of
+                        Just NoWay ->
+                            False
+
+                        Just _ ->
+                            True
+
+                        Nothing ->
+                            False
+            in
+            div [ class "pz-way", id "pz-way", attribute "data-way" action ]
+                [ p [ class "pz-way-line q-note text-[13px]", id "pz-way-line", attribute "aria-live" "polite" ] [ text line ]
+                , button
+                    [ classList [ ( "q-btn pz-action pz-way-go", True ), ( "is-idle", not offered ), ( "is-busy", going ) ]
+                    , id buttonId
+                    , attribute "data-action" action
+                    , disabled (not offered || going)
+                    , attribute "aria-busy"
+                        (if going then
+                            "true"
+
+                         else
+                            "false"
+                        )
+                    , onClick (Maybe.withDefault NoWay shown |> PressedWay)
+                    ]
+                    [ text label
+                    , span [ class "hero-arrow-right w-4 h-4", attribute "aria-hidden" "true" ] []
+                    ]
+                ]
+
+
+{-| The line over the way on, in the words of what the run was of.
+-}
+wayLine : Model -> Way -> String
+wayLine model way =
+    case way of
+        Continue work ->
+            Mistakes.workLine work
+
+        MoreNew adds ->
+            Mistakes.keepGoingLine
+                { done = model.progress |> Maybe.andThen .ring |> Maybe.map .done |> Maybe.withDefault 0
+                , adds = adds
+                }
+
+        Anyway ->
+            Mistakes.scheduledLine
+
+        NoWay ->
+            ""
+
+
+{-| The day, under the score: "3 practiced today". The same words the hub
 and the session use, and the same plain count.
 -}
 viewToday : Model -> Html Msg
@@ -945,14 +1552,14 @@ viewToday model =
             text ""
 
 
-{-| What the run patched, under the score: "You patched 2 very bad
+{-| What the run mastered, under the score: "You mastered 2 very bad
 moves." Nothing when it crossed nobody over the rung -- the score has
 already said how it went -- and nothing for a guest, whose mistakes
 nothing is keeping.
 -}
-viewPatched : Model -> List Answer -> Html Msg
-viewPatched model answers =
-    case patchedLineIn model answers of
+viewMastered : Model -> List Answer -> Html Msg
+viewMastered model answers =
+    case masteredLineIn model answers of
         Just line ->
             p [ id "pz-patched", class "q-note text-[13px] leading-snug mb-4" ] [ text line ]
 
@@ -961,27 +1568,27 @@ viewPatched model answers =
 
 
 {-| The sentence, from the answers the run collected: the grade of every
-mistake whose schedule says this answer patched it.
+mistake whose schedule says this answer mastered it.
 -}
-patchedLine : List Answer -> Maybe String
-patchedLine answers =
+masteredLine : List Answer -> Maybe String
+masteredLine answers =
     crossed answers
         |> List.map .grade
         |> List.filter (\grade -> grade /= "")
-        |> Mistakes.patchedRun
+        |> Mistakes.masteredRun
 
 
 {-| The same, in the words of what the run was of: a set is made of no
-mistake, so there is no band to count by, only how many were learned.
+mistake, so there is no band to count by, only how many were mastered.
 -}
-patchedLineIn : Model -> List Answer -> Maybe String
-patchedLineIn model answers =
+masteredLineIn : Model -> List Answer -> Maybe String
+masteredLineIn model answers =
     case model.deck of
         Just _ ->
-            Decks.learnedRun (List.length (crossed answers))
+            Decks.masteredRun (List.length (crossed answers))
 
         Nothing ->
-            patchedLine answers
+            masteredLine answers
 
 
 {-| The answers whose schedule says this answer took them over the rung.
@@ -1022,30 +1629,32 @@ dayLine model done =
             Decks.doneToday done
 
         Nothing ->
-            Mistakes.fixedToday done
-
-
-closeLine : Score -> Html Msg
-closeLine score =
-    if score.close > 0 && score.total > 1 then
-        p [ id "pz-close", class "q-note text-[13px] mb-4" ]
-            [ text (String.fromInt score.close ++ " close") ]
-
-    else
-        p [ class "mb-4" ] []
+            Mistakes.practicedToday done
 
 
 viewAfter : Model -> After -> List (Html Msg)
 viewAfter model after =
     case after of
-        BackToPuzzles ->
+        BackTo next ->
             [ a
-                [ href (Route.href Route.puzzles)
+                [ href next
                 , id "pz-home"
                 , class "inline-block font-semibold"
                 , attribute "style" "color: var(--pen)"
                 ]
-                [ text "Back to puzzles →" ]
+                [ text
+                    (Mistakes.backLine
+                        { next = next
+                        , name =
+                            case model.deck of
+                                Just deck ->
+                                    Just deck.name
+
+                                Nothing ->
+                                    Maybe.map Mistakes.tierName model.tier
+                        }
+                    )
+                ]
             ]
 
         AskSignIn signIn ->
@@ -1080,17 +1689,23 @@ skip model =
         text ""
 
 
-{-| Where this session is, above the board: the tier's mark, the day's
-count, the marks so far, and why this position is here.
+{-| Where this session is, above the board, in one row that never
+changes height: the deck's mark (a tier) or name (a set), today's ring
+for that deck with its count beside it, then a tile per answer so far --
+18 pixels, a check on the green for right, a cross on the red for a
+miss, a dash for one nothing could check -- the one on the board
+outlined in ink. Under the row, one reserved line: the day's count, and
+for a mistake why it is in front of you.
 
 Only in a run, and only on the puzzle itself: a puzzle opened from a
 link is not a session and says nothing about one.
 
-**No bar, and no "4 of 10".** A run has no length -- it goes on until
-I'M DONE -- so a counter out of a total would promise a finish line
-that does not exist. What is drawn instead is what has actually
-happened: how many were fixed today, and a mark for each one answered
-so far.
+**The tiles never wrap.** They sit in a strip that scrolls sideways and
+opens at its newest end (`direction: rtl` on the strip, so the browser
+starts it there with no script), so the twentieth answer leaves the
+board exactly where the first did. **No "4 of 10"**: a run goes on
+until I'M DONE, so there is no total to count against -- the ring is
+today's set, which is a real one.
 
 -}
 viewProgress : Model -> Html Msg
@@ -1100,60 +1715,157 @@ viewProgress model =
             text ""
 
         Just progress ->
-            div [ class "pz-progress", id "pz-progress" ]
-                [ div [ class "pz-progress-bar" ]
-                    [ p [ class "pz-progress-count pixel text-[8px]", id "pz-progress-count" ]
-                        [ text (runProgress model) ]
-                    , div [ class "pz-marks", id "pz-marks" ]
-                        (progress.marks
-                            |> List.take (progress.at + 1)
-                            |> List.indexedMap (runMark progress.at)
-                        )
-                    , viewWhy model
+            div
+                [ classList [ ( "pz-progress", True ), ( "has-why", model.deck == Nothing ), ( "is-anyway", progress.anyway ) ]
+                , id "pz-progress"
+                , attribute "role" "group"
+                , attribute "aria-label" (runProgress model)
+                ]
+                [ div [ class "pz-strip", id "pz-strip" ]
+                    [ span
+                        [ classList [ ( "pz-strip-label", True ), ( "pixel", model.deck == Nothing ) ]
+                        , class (runLabelClass model)
+                        , id "pz-progress-label"
+                        ]
+                        [ text (runLabel model) ]
+                    , viewRing progress
+                    , div [ class "pz-tiles", id "pz-marks" ]
+                        [ div [ class "pz-tiles-in" ]
+                            (progress.marks
+                                |> List.take (progress.at + 1)
+                                |> List.indexedMap (runMark progress.at)
+                            )
+                        ]
                     ]
+                , p [ class "pz-under", id "pz-under" ]
+                    (span [ class "pz-progress-count", id "pz-progress-count" ] [ text (underLine model) ]
+                        :: (case model.why of
+                                Just why ->
+                                    [ span [ class "pz-why-sep", attribute "aria-hidden" "true" ] [ text " · " ]
+                                    , span [ class "pz-why", id "pz-why" ]
+                                        [ text (Mistakes.whyLine { grade = why.grade, opponent = why.opponent }) ]
+                                    ]
+
+                                Nothing ->
+                                    []
+                           )
+                    )
                 ]
 
 
-{-| Why this position is in front of you: "A very bad move, from your
-game vs Charlie". Only for the player who was in the game it came from --
-on a shared link the server says nothing, and neither does this.
-
-It is the mistake's severity and whose game it was, and nothing else: it
-is drawn before the answer, so nothing that could hint at one is in it.
+{-| Today's set for the run's deck: the ring at strip size, a check once
+it is done, and "3/5" beside it in the pixel font, because at 28 pixels a
+fraction inside the ring would be a smudge. Nothing for a run that is of
+no deck (one game's mistakes).
 -}
-viewWhy : Model -> Html Msg
-viewWhy model =
-    case model.why of
-        Just why ->
-            p [ class "pz-why", id "pz-why" ]
-                [ text (Mistakes.whyLine { grade = why.grade, opponent = why.opponent }) ]
+viewRing : Progress -> Html Msg
+viewRing progress =
+    case progress.ring of
+        Just ring ->
+            let
+                -- A deck with nothing in today's set (PRACTICE ANYWAY,
+                -- once everything is scheduled) has nothing left to do
+                -- today: its ring is full, with no "0/0" beside it.
+                empty =
+                    ring.target <= 0
+
+                drawn =
+                    if empty then
+                        { done = 1, target = 1 }
+
+                    else
+                        ring
+            in
+            span
+                [ classList [ ( "pz-strip-ring", True ), ( "is-done", drawn.done >= drawn.target ) ]
+                , id "pz-ring"
+                , attribute "data-done" (String.fromInt ring.done)
+                , attribute "data-target" (String.fromInt ring.target)
+                ]
+                [ Charts.ring { done = drawn.done, target = drawn.target, label = ringLabel ring }
+                , span [ class "pz-ring-count pixel", id "pz-ring-count" ]
+                    [ text
+                        (if empty then
+                            ""
+
+                         else
+                            String.fromInt ring.done ++ "/" ++ String.fromInt ring.target
+                        )
+                    ]
+                ]
 
         Nothing ->
             text ""
 
 
-{-| "?? · 3 fixed today": which tier this run is of, and what the day
-has had. The mark alone for a guest, who has no day counted; the count
-alone for a run of one game's mistakes, which is not a tier.
+ringLabel : DeckToday -> String
+ringLabel ring =
+    if ring.target <= 0 then
+        "Nothing left to do today"
+
+    else
+        String.fromInt ring.done ++ " of today's " ++ String.fromInt ring.target ++ " done"
+
+
+{-| What the run is of, at the head of the strip: the tier's mark (??),
+or the set's name.
+-}
+runLabel : Model -> String
+runLabel model =
+    case model.deck of
+        Just deck ->
+            deck.name
+
+        Nothing ->
+            Maybe.map Mistakes.mark model.tier |> Maybe.withDefault ""
+
+
+{-| A tier's mark at the head of the strip is in its grade's colour, as
+on the hub and in the replay; a set's name is in ink.
+-}
+runLabelClass : Model -> String
+runLabelClass model =
+    case ( model.deck, model.tier ) of
+        ( Nothing, Just tier ) ->
+            Mistakes.markClass tier
+
+        _ ->
+            ""
+
+
+{-| The reserved line's own words: the day's count -- or, in a run of
+early answers, that it is practice only, since nothing in it moves the
+day.
+-}
+underLine : Model -> String
+underLine model =
+    if Maybe.map .anyway model.progress == Just True then
+        Mistakes.practiceOnlyTag
+
+    else
+        Maybe.map (\today -> dayLine model today.done) model.today |> Maybe.withDefault ""
+
+
+{-| "?? · 3 of today's 5 done · 3 practiced today": the strip as one
+sentence, for a reader who hears it rather than sees it. The mark alone
+for a guest, who has no day counted.
 -}
 runProgress : Model -> String
 runProgress model =
-    [ case model.deck of
-        Just deck ->
-            Just deck.name
-
-        Nothing ->
-            Maybe.map Mistakes.mark model.tier
-    , Maybe.map (\today -> dayLine model today.done) model.today
+    [ Just (runLabel model)
+    , Maybe.andThen .ring model.progress |> Maybe.map ringLabel
+    , Just (underLine model)
     ]
         |> List.filterMap identity
         |> List.filter (\part -> part /= "")
         |> String.join " · "
 
 
-{-| One mark per puzzle of the run, in order, in the verdict's own
-colours: right, close, missed, or not answered yet. The one being played
-is named so the player can see where they are.
+{-| One tile per puzzle of the run reached so far, in order: a check on
+the green for right, a cross on the red for a miss, a dash for an answer
+nothing could check (and the legacy "close" of an attempt stored before
+dubious became a miss). The one on the board is outlined in ink, answered
+or not.
 -}
 runMark : Int -> Int -> Maybe Verdict -> Html Msg
 runMark at index verdict =
@@ -1165,13 +1877,33 @@ runMark at index verdict =
 
                 Nothing ->
                     "blank"
+
+        glyph =
+            case verdict of
+                Just Pass ->
+                    "M4.6 9.4 L7.6 12.4 L13.4 5.8"
+
+                Just Fail ->
+                    "M5.6 5.6 L12.4 12.4 M12.4 5.6 L5.6 12.4"
+
+                Just _ ->
+                    "M5.5 9 L12.5 9"
+
+                Nothing ->
+                    ""
     in
     span
-        [ classList [ ( "pz-mark", True ), ( "is-" ++ name, True ), ( "is-here", index == at ) ]
+        [ classList [ ( "pz-mark", True ), ( "pz-tile", True ), ( "is-" ++ name, True ), ( "is-here", index == at ) ]
         , attribute "data-mark" name
         , attribute "aria-hidden" "true"
         ]
-        []
+        [ if glyph == "" then
+            text ""
+
+          else
+            Svg.svg [ SvgA.viewBox "0 0 18 18", SvgA.class "pz-tile-glyph" ]
+                [ Svg.path [ SvgA.d glyph, SvgA.fill "none", SvgA.strokeWidth "2.4", SvgA.strokeLinecap "round", SvgA.strokeLinejoin "round" ] [] ]
+        ]
 
 
 viewHead : Html Msg
@@ -1446,7 +2178,7 @@ scoreLine puzzle =
                     "cube " ++ String.fromInt q.cube.value ++ ", Black's"
 
                 _ ->
-                    "cube centred"
+                    "cube centered"
     in
     score ++ " · " ++ cube
 
@@ -1511,15 +2243,34 @@ viewControls model puzzle =
                     -- or stop. Stopping is a finished thing to have
                     -- done, so I'M DONE is always offered and never
                     -- reads as giving up.
-                    :: (if model.hasNext then
-                            [ button [ class "q-btn pz-action", id "pz-next", onClick Next ]
+                    :: (if model.celebration /= Nothing then
+                            -- Today's set is done, on this answer: the card
+                            -- under the reveal holds the way on, KEEP GOING
+                            -- beside I'M DONE, and the band keeps SHARE. The
+                            -- band is drawn with the reveal, so it is never
+                            -- seen with these and nothing in it moves.
+                            []
+
+                        else if model.hasNext then
+                            [ button
+                                [ classList [ ( "q-btn pz-action", True ), ( "is-busy", model.leaving ) ]
+                                , id "pz-next"
+                                , attribute "aria-busy"
+                                    (if model.leaving then
+                                        "true"
+
+                                     else
+                                        "false"
+                                    )
+                                , onClick Next
+                                ]
                                 [ text "ANOTHER", span [ class "hero-arrow-right w-4 h-4", attribute "aria-hidden" "true" ] [] ]
                             ]
 
                         else
                             []
                        )
-                    ++ (if model.inRun then
+                    ++ (if model.inRun && model.celebration == Nothing then
                             [ button [ class "q-btn plain pz-action", id "pz-done", onClick PressedDone ]
                                 [ text "I'M DONE" ]
                             ]
@@ -1587,28 +2338,60 @@ viewReveal model puzzle reveal =
             ++ viewSchedule model reveal
             ++ viewMemory model
             ++ viewStory reveal
+            ++ [ viewCelebration model ]
         )
 
 
+{-| Right or a miss, and for a miss the band it fell in, in the replay's
+own mark, name and colour: 0.02 or more given up is a mistake, so there is
+no "close" (a `Hold` is only ever an attempt stored before that).
+-}
 viewVerdict : Reveal -> Html Msg
 viewVerdict reveal =
     let
-        ( word, sentence ) =
-            case reveal.verdict of
-                Pass ->
-                    ( "RIGHT", "That is the play." )
+        mark =
+            Words.gradeMark reveal.band
 
-                Hold ->
-                    ( "CLOSE", "Not far off the best." )
+        ( word, sentence, band ) =
+            case ( reveal.verdict, reveal.cost ) of
+                ( Pass, Just cost ) ->
+                    if cost > 0 then
+                        ( "RIGHT", Words.nearlyBest, "" )
 
-                Fail ->
-                    ( "NOT THIS TIME", "The best play is better." )
+                    else
+                        ( "RIGHT", "That is the play.", "" )
 
-                Unknown ->
-                    ( "UNRANKED", "The engine did not rank this one." )
+                ( Pass, Nothing ) ->
+                    ( "RIGHT", "That is the play.", "" )
+
+                ( Hold, _ ) ->
+                    ( "CLOSE", "Not far off the best.", "" )
+
+                ( Fail, Just cost ) ->
+                    if mark == "" then
+                        ( "NOT THIS TIME", "The best play is better.", "" )
+
+                    else
+                        ( mark ++ " " ++ String.toUpper (Mistakes.bandName reveal.band)
+                        , Words.givesUp cost (reveal.schedule /= Nothing)
+                        , reveal.band
+                        )
+
+                ( Fail, Nothing ) ->
+                    ( "NOT THIS TIME", "The best play is better.", "" )
+
+                ( Unknown, _ ) ->
+                    ( "UNRANKED", "The engine did not rank this one.", "" )
     in
-    div [ class ("pz-verdict is-" ++ Puzzle.verdictName reveal.verdict), id "pz-verdict", attribute "data-verdict" (Puzzle.verdictName reveal.verdict) ]
-        [ span [ class "pz-verdict-word pixel text-[9px]" ] [ text word ]
+    div
+        [ class ("pz-verdict is-" ++ Puzzle.verdictName reveal.verdict)
+        , id "pz-verdict"
+        , attribute "data-verdict" (Puzzle.verdictName reveal.verdict)
+        , attribute "data-band" band
+        ]
+        [ span
+            [ classList [ ( "pz-verdict-word pixel text-[9px]", True ), ( "g-" ++ band, band /= "" ) ] ]
+            [ text word ]
         , span [ class "pz-verdict-why" ] [ text sentence ]
         ]
 
@@ -1837,10 +2620,378 @@ viewCubeReveal model puzzle cube =
     ]
 
 
-{-| The level line and the four buttons, for an account whose deck holds
-the card. The graded button is preselected where the engine graded the
-play and the player may amend it; nothing is where the player grades it;
-no buttons where there is nothing to say. NEVER puts the card aside.
+-- TODAY'S SET, DONE
+
+
+{-| The card under the reveal, the moment today's set is done. Under the
+reveal and never over it -- the answer is read first -- and appended, so
+nothing above it moves.
+
+  - today's ring at 64 pixels, its arc running from where it stood before
+    this answer to full, then the check drawn in;
+  - "Today's 5 done.", with the highlighter swept under it;
+  - what the run did: "2 stepped up a level · 1 mastered";
+  - the deck's grid, the squares this run moved stepping up a shade one
+    after another, oldest first;
+  - for a tier what mastering has won back, for a set how much of it is
+    mastered;
+  - the way on, KEEP GOING (or PRACTICE ANYWAY) beside I'M DONE, in one
+    band whose height is fixed: never a wall.
+
+The motion is all CSS, run once the card is on the screen
+(`is-playing`); with reduced motion the final state is drawn at once.
+
+-}
+viewCelebration : Model -> Html Msg
+viewCelebration model =
+    case model.celebration of
+        Nothing ->
+            text ""
+
+        Just c ->
+            let
+                timing =
+                    celebrationTiming c
+
+                ms n =
+                    String.fromInt n ++ "ms"
+
+                from =
+                    if c.target <= 0 then
+                        0
+
+                    else
+                        toFloat (100 * (c.target - 1)) / toFloat c.target
+
+                counts =
+                    stepCounts c.answered
+
+                steps =
+                    case model.deck of
+                        Just _ ->
+                            Decks.stepsLine { stepped = counts.stepped, mastered = counts.patched }
+
+                        Nothing ->
+                            Mistakes.stepsLine counts
+
+                tail =
+                    case c.deck of
+                        Read page ->
+                            case page.deck.kind of
+                                PracticeDecks.Set ->
+                                    page.deck.standing
+                                        |> Maybe.map (\st -> Decks.masteredOf { mastered = st.patched, total = st.total })
+
+                                PracticeDecks.Tier ->
+                                    page.deck.cost
+                                        |> Maybe.andThen
+                                            (\cost ->
+                                                if cost.lostPatched > 0 then
+                                                    Mistakes.wonBackLine { pr = cost.pr, prPatched = cost.prPatched }
+
+                                                else
+                                                    Nothing
+                                            )
+
+                        _ ->
+                            Nothing
+
+                eyebrow =
+                    case model.deck of
+                        Just deck ->
+                            deck.name
+
+                        Nothing ->
+                            Maybe.map Mistakes.tierName model.tier |> Maybe.withDefault ""
+            in
+            div
+                [ classList
+                    [ ( "pz-cele", True )
+                    , ( "is-ready", c.ready )
+                    , ( "is-playing", c.playing )
+                    , ( "is-set", model.deck /= Nothing )
+                    ]
+                , id celebrationId
+                , attribute "role" "status"
+                , attribute "aria-live" "polite"
+                , attribute "data-settled" (boolText c.settled)
+                , attribute "data-playing" (boolText c.playing)
+                , attribute "data-target" (String.fromInt c.target)
+                , attribute "style"
+                    ("--from:"
+                        ++ String.fromFloat from
+                        ++ ";--grid-at:"
+                        ++ ms timing.gridAt
+                        ++ ";--step:"
+                        ++ ms timing.step
+                        ++ ";--tail-at:"
+                        ++ ms timing.tailAt
+                    )
+                , on "animationend" (D.map CelebrationEnded (D.field "animationName" D.string))
+                ]
+                [ div [ class "pz-cele-head" ]
+                    [ span [ class "pz-cele-ring", id "pz-today-ring", attribute "data-cele-anchor" "true" ]
+                        [ Charts.ring
+                            { done = c.target
+                            , target = c.target
+                            , label = Mistakes.todayDone c.target
+                            }
+                        , span [ class "pz-cele-sparks", attribute "aria-hidden" "true" ]
+                            (List.map (\i -> span [ class "pz-cele-spark", attribute "style" ("--n:" ++ String.fromInt i) ] []) (List.range 0 7))
+                        ]
+                    , div [ class "pz-cele-words" ]
+                        [ p [ class "pz-cele-eyebrow pixel", id "pz-today-eyebrow" ] [ text (String.toUpper eyebrow) ]
+                        , p [ class "pz-cele-title", id "pz-today-title" ]
+                            [ span [ class "pz-cele-hl" ] [ text (Mistakes.todayDone c.target) ] ]
+                        , p [ class "pz-cele-steps", id "pz-today-steps" ] [ text steps ]
+                        ]
+                    ]
+                , viewCelebrationGrid model c
+                , p [ class "pz-cele-tail", id "pz-today-tail" ]
+                    [ text (Maybe.withDefault "" tail) ]
+                , viewCelebrationWay model c
+                ]
+
+
+boolText : Bool -> String
+boolText b =
+    if b then
+        "true"
+
+    else
+        "false"
+
+
+{-| How many of this run's answers climbed a rung, and how many of those
+mastered the position.
+-}
+stepCounts : List ( String, Answer ) -> { stepped : Int, patched : Int }
+stepCounts answered =
+    let
+        schedules =
+            List.filterMap (Tuple.second >> .schedule) answered
+    in
+    { stepped = List.length (List.filter (\sc -> sc.levelAfter > sc.levelBefore) schedules)
+    , patched = List.length (List.filter .patched schedules)
+    }
+
+
+{-| The answers that step a square up, oldest first, with the shade the
+square had before: a position never started was paper.
+-}
+stepping : List ( String, Answer ) -> List ( String, { level : Int, status : String } )
+stepping answered =
+    answered
+        |> List.filterMap
+            (\( id, given ) ->
+                given.schedule
+                    |> Maybe.andThen
+                        (\sc ->
+                            if sc.levelAfter > sc.levelBefore then
+                                Just
+                                    ( id
+                                    , if sc.levelBefore <= 0 then
+                                        { level = 0, status = "new" }
+
+                                      else
+                                        { level = sc.levelBefore, status = "active" }
+                                    )
+
+                            else
+                                Nothing
+                        )
+            )
+
+
+{-| When each part of the card moves, in milliseconds from the moment it
+is on the screen: the ring (0.15 s to 0.75 s) and its check (to 1.05 s),
+the grid's squares from 1 s, 120 ms apart -- closer when there are many,
+so the whole sequence is never longer than about 0.7 s -- and last the
+line under the grid, whose end is the card settling.
+-}
+celebrationTiming : Celebration -> { gridAt : Int, step : Int, tailAt : Int, total : Int }
+celebrationTiming c =
+    let
+        n =
+            List.length (stepping c.answered)
+
+        gap =
+            if n <= 1 then
+                120
+
+            else
+                min 120 (720 // (n - 1))
+
+        gridAt =
+            1000
+
+        gridEnd =
+            if n <= 0 then
+                gridAt
+
+            else
+                gridAt + (n - 1) * gap + 320
+
+        tailAt =
+            max 1150 (gridEnd - 120)
+    in
+    { gridAt = gridAt, step = gap, tailAt = tailAt, total = tailAt + 360 }
+
+
+{-| The deck's grid, small, with this run's squares stepping up. Drawn
+only once the deck is read: its box is a function of the deck's size,
+which the read says.
+-}
+viewCelebrationGrid : Model -> Celebration -> Html Msg
+viewCelebrationGrid model c =
+    case c.deck of
+        Read page ->
+            let
+                moving =
+                    stepping c.answered
+
+                order id =
+                    moving
+                        |> List.indexedMap (\k ( other, was ) -> ( k, other, was ))
+                        |> List.filter (\( _, other, _ ) -> other == id)
+                        |> List.head
+
+                cells =
+                    List.map
+                        (\cell ->
+                            let
+                                now =
+                                    { level = cell.level, status = cell.status }
+                            in
+                            case order cell.id of
+                                Just ( k, _, was ) ->
+                                    if was /= now then
+                                        { level = cell.level, status = cell.status, from = Just was, order = k }
+
+                                    else
+                                        { level = cell.level, status = cell.status, from = Nothing, order = 0 }
+
+                                Nothing ->
+                                    { level = cell.level, status = cell.status, from = Nothing, order = 0 }
+                        )
+                        page.cells
+            in
+            div [ class "pz-cele-grid", id "pz-today-grid" ]
+                [ Charts.gridStepping
+                    { cells = cells
+                    , columns = Ui.Deck.columns page.deck
+                    , patchedLevel = page.patchedLevel
+                    , sentence = Mistakes.stepsLine (stepCounts c.answered)
+                    }
+                ]
+
+        _ ->
+            text ""
+
+
+{-| KEEP GOING (or PRACTICE ANYWAY) beside I'M DONE, in a band whose
+height is fixed, with one quiet line under it saying what the first
+does. The first button is laid out while the deck is read and hidden
+where there is no way on; I'M DONE is always there.
+-}
+viewCelebrationWay : Model -> Celebration -> Html Msg
+viewCelebrationWay model c =
+    let
+        shown =
+            case c.way of
+                Offered way ->
+                    Just way
+
+                Going way ->
+                    Just way
+
+                _ ->
+                    Nothing
+
+        going =
+            case c.way of
+                Going _ ->
+                    True
+
+                _ ->
+                    False
+
+        ( buttonId, label, action ) =
+            case shown of
+                Just Anyway ->
+                    ( "pz-anyway", "PRACTICE ANYWAY", "practice-anyway" )
+
+                Just (MoreNew _) ->
+                    ( "pz-keep-going", "KEEP GOING", "keep-going" )
+
+                Just (Continue _) ->
+                    ( "pz-keep-going", "KEEP GOING", "continue" )
+
+                _ ->
+                    ( "pz-way-idle", "KEEP GOING", "" )
+
+        offered =
+            case shown of
+                Just NoWay ->
+                    False
+
+                Just _ ->
+                    True
+
+                Nothing ->
+                    False
+
+        line =
+            case c.way of
+                Stopped why ->
+                    why
+
+                _ ->
+                    case shown of
+                        Just (MoreNew adds) ->
+                            Mistakes.addsLine adds
+
+                        Just Anyway ->
+                            Mistakes.scheduledLine
+
+                        Just (Continue work) ->
+                            Mistakes.workLine work
+
+                        _ ->
+                            ""
+    in
+    div [ class "pz-cele-way", id "pz-today-way", attribute "data-way" action ]
+        [ div [ class "pz-cele-buttons" ]
+            [ button
+                [ classList [ ( "q-btn pz-action pz-cele-go", True ), ( "is-idle", not offered ), ( "is-busy", going ) ]
+                , id buttonId
+                , attribute "data-action" action
+                , disabled (not offered || going)
+                , attribute "aria-busy" (boolText going)
+                , onClick (Maybe.withDefault NoWay shown |> PressedWay)
+                ]
+                [ text label
+                , span [ class "hero-arrow-right w-4 h-4", attribute "aria-hidden" "true" ] []
+                ]
+            , button [ class "q-btn plain pz-action", id "pz-done", onClick PressedDone ]
+                [ text "I'M DONE" ]
+            ]
+        , p [ class "pz-cele-way-line", id "pz-today-way-line" ] [ text line ]
+        ]
+
+
+{-| The level line and the four choices, for an account whose deck holds
+the card. The graded choice is in force where the engine graded the play
+and the player may amend it; nothing is where the player grades it; no
+choices where there is nothing to say.
+
+A choice **selects, explains, then applies**. A tap marks it pending
+(outlined) and sends nothing; the fixed line under the row says what the
+selected one would do; APPLY ("YES, NEVER" for NEVER) sends it. The line
+and APPLY's slot are always laid out, so nothing under them moves when a
+choice is tapped. GOT IT after a miss keeps its column, disabled, and
+says why when tapped. Once NEVER has gone through the four stay where they
+are, disabled.
 -}
 viewSchedule : Model -> Reveal -> List (Html Msg)
 viewSchedule model reveal =
@@ -1851,42 +3002,103 @@ viewSchedule model reveal =
         Just schedule ->
             let
                 chosen =
-                    case model.outcome of
-                        Just outcome ->
-                            Just outcome
-
-                        Nothing ->
-                            preselected reveal.verdict schedule
+                    inForce model
 
                 offered =
-                    (schedule.amendable || schedule.selfGrade) && model.outcome /= Just "never"
+                    schedule.amendable || schedule.selfGrade
+
+                setAside =
+                    model.outcome == Just "never"
+
+                barred =
+                    gotItBarred model
 
                 line =
-                    if model.outcome == Just "never" then
+                    if setAside then
                         "Set aside: it will not come back."
 
-                    else if not schedule.amendable && not schedule.selfGrade then
-                        "Already scheduled."
+                    else if not offered then
+                        -- Answered before it was due (PRACTICE ANYWAY, or a
+                        -- second go at one already answered today): the
+                        -- ladder did not hear of it, and the line says so.
+                        if schedule.due > model.now && model.now > 0 then
+                            Mistakes.earlyLine (dueDate model.zone schedule.due)
+
+                        else
+                            Mistakes.earlyLineUndated
 
                     else
-                        levelLine model.now schedule
+                        levelLineFor model.outcome model.now schedule
+
+                -- What the selected choice would do: the pending one, else
+                -- the one in force. A refusal takes its place, so the
+                -- reveal keeps its height whatever the server says.
+                ( why, refused ) =
+                    case model.outcomeError of
+                        Just error ->
+                            ( error, True )
+
+                        Nothing ->
+                            if model.missedNote then
+                                ( Mistakes.missedNote, False )
+
+                            else if setAside then
+                                ( "", False )
+
+                            else
+                                ( model.pending
+                                    |> orElse chosen
+                                    |> Maybe.map (outcomeWhy model reveal.verdict (Maybe.withDefault schedule model.graded))
+                                    |> Maybe.withDefault ""
+                                , False
+                                )
 
                 option outcome label =
+                    let
+                        isBarred =
+                            outcome == "got_it" && barred
+
+                        on =
+                            chosen == Just outcome
+                    in
                     button
-                        [ classList [ ( "pz-outcome", True ), ( "is-on", chosen == Just outcome ) ]
-                        , id ("pz-outcome-" ++ String.replace "_" "-" outcome)
-                        , attribute "data-outcome" outcome
-                        , attribute "aria-pressed"
-                            (if chosen == Just outcome then
+                        ([ classList
+                            [ ( "pz-outcome", True )
+                            , ( "is-on", on )
+                            , ( "is-pending", model.pending == Just outcome && not on )
+                            , ( "is-barred", isBarred )
+                            ]
+                         , id ("pz-outcome-" ++ String.replace "_" "-" outcome)
+                         , attribute "data-outcome" outcome
+                         , attribute "aria-pressed"
+                            (if on then
                                 "true"
 
                              else
                                 "false"
                             )
-                        , disabled model.outcomeSending
-                        , onClick (PressedOutcome outcome)
-                        ]
+                         , attribute "aria-describedby" "pz-outcome-why"
+                         , disabled (model.outcomeSending || setAside)
+                         , onClick (PressedOutcome outcome)
+                         ]
+                            ++ (if isBarred then
+                                    -- Not `disabled`: a disabled button
+                                    -- hears no tap, and this one has to
+                                    -- say why it is not a choice.
+                                    [ attribute "aria-disabled" "true", onFocus (FocusedOutcome outcome) ]
+
+                                else
+                                    []
+                               )
+                        )
                         [ text label ]
+
+                applying =
+                    if setAside then
+                        Nothing
+
+                    else
+                        model.pending
             in
             [ div
                 [ classList
@@ -1895,25 +3107,95 @@ viewSchedule model reveal =
                     ]
                 , id "pz-level"
                 ]
-                [ span [ class "pz-level-line", id "pz-level-line" ] [ text line ]
-                , if offered then
-                    div [ class "pz-outcomes", id "pz-outcomes" ]
-                        [ option "sooner" "SOONER"
-                        , option "got_it" "GOT IT"
-                        , option "knew_it" "KNEW IT"
-                        , option "never" "NEVER"
-                        ]
+                ([ span [ class "pz-level-line", id "pz-level-line" ] [ text line ] ]
+                    ++ (if offered then
+                            [ div [ classList [ ( "pz-outcomes", True ), ( "is-closed", setAside ) ], id "pz-outcomes" ]
+                                [ option "sooner" "SOONER"
+                                , option "got_it" "GOT IT"
+                                , option "knew_it" "KNEW IT"
+                                , option "never" "NEVER"
+                                ]
+                            , p
+                                [ classList [ ( "pz-outcome-why", True ), ( "pz-outcome-error", refused ) ]
+                                , id
+                                    (if refused then
+                                        "pz-outcome-error"
 
-                  else
-                    text ""
-                , case model.outcomeError of
-                    Just why ->
-                        span [ class "pz-outcome-error", id "pz-outcome-error" ] [ text why ]
+                                     else
+                                        "pz-outcome-why"
+                                    )
+                                , attribute "aria-live" "polite"
+                                ]
+                                [ text why ]
+                            , div [ class "pz-apply-slot" ]
+                                [ button
+                                    [ class "q-btn plain pz-action pz-apply"
+                                    , id "pz-apply"
+                                    , classList [ ( "is-idle", applying == Nothing ) ]
+                                    , disabled (applying == Nothing || model.outcomeSending)
+                                    , onClick PressedApply
+                                    ]
+                                    [ text (Mistakes.applyLabel (Maybe.withDefault "" applying)) ]
+                                ]
+                            ]
+
+                        else
+                            case model.outcomeError of
+                                Just error ->
+                                    [ span [ class "pz-outcome-error", id "pz-outcome-error" ] [ text error ] ]
+
+                                Nothing ->
+                                    []
+                       )
+                )
+            ]
+
+
+{-| What a choice would do to this mistake, said before it is done. Read
+off the schedule the answer first came back with, so it says the same
+thing whatever has been applied since.
+-}
+outcomeWhy : Model -> Verdict -> Schedule -> String -> String
+outcomeWhy model verdict graded outcome =
+    case outcome of
+        "sooner" ->
+            Mistakes.soonerWhy graded.levelBefore
+
+        "got_it" ->
+            if verdict == Fail then
+                Mistakes.missedNote
+
+            else if verdict == Pass && graded.amendable then
+                Mistakes.gotItGraded (levelLine model.now graded)
+
+            else
+                -- Nothing checked the answer: it counts, and the level holds
+                -- for as long as the server's ladder says that level waits.
+                case graded.heldDays of
+                    Just days ->
+                        Mistakes.gotItUnchecked graded.levelAfter (backIn 0 (days * 86400000))
 
                     Nothing ->
-                        text ""
-                ]
-            ]
+                        Mistakes.gotItHolds graded.levelAfter
+
+        "knew_it" ->
+            Mistakes.knewItWhy
+
+        "never" ->
+            Mistakes.neverWhy
+
+        _ ->
+            ""
+
+
+orElse : Maybe a -> Maybe a -> Maybe a
+orElse fallback first =
+    case first of
+        Just _ ->
+            first
+
+        Nothing ->
+            fallback
 
 
 {-| The button the engine's grade stands for, where it graded the play and
@@ -1941,7 +3223,20 @@ once. An attempt that did not count is kept out of this line by
 -}
 levelLine : Int -> Schedule -> String
 levelLine now schedule =
-    if schedule.patched then
+    levelLineFor Nothing now schedule
+
+
+{-| The level line after the choice that stands. KNEW IT puts the
+mistake at the top in one step, so the line says it is marked known and
+when it comes back -- never "seven right in a row", which nobody
+answered. Everything else is the plain line.
+-}
+levelLineFor : Maybe String -> Int -> Schedule -> String
+levelLineFor outcome now schedule =
+    if outcome == Just "knew_it" then
+        Mistakes.knownLine (backIn now schedule.due)
+
+    else if schedule.patched then
         -- The moment the whole thing exists for: this mistake is one the
         -- player has stopped making. Said plainly, in the same type as
         -- everything else.
@@ -1966,6 +3261,56 @@ grade to something else.
 patchedNow : Model -> Schedule -> Bool
 patchedNow model schedule =
     schedule.patched && model.outcome /= Just "never"
+
+
+{-| The day an early answer's mistake is due, in the reader's own zone:
+"9 Oct".
+-}
+dueDate : Time.Zone -> Int -> String
+dueDate zone due =
+    let
+        posix =
+            Time.millisToPosix due
+
+        month =
+            case Time.toMonth zone posix of
+                Time.Jan ->
+                    "Jan"
+
+                Time.Feb ->
+                    "Feb"
+
+                Time.Mar ->
+                    "Mar"
+
+                Time.Apr ->
+                    "Apr"
+
+                Time.May ->
+                    "May"
+
+                Time.Jun ->
+                    "Jun"
+
+                Time.Jul ->
+                    "Jul"
+
+                Time.Aug ->
+                    "Aug"
+
+                Time.Sep ->
+                    "Sep"
+
+                Time.Oct ->
+                    "Oct"
+
+                Time.Nov ->
+                    "Nov"
+
+                Time.Dec ->
+                    "Dec"
+    in
+    String.fromInt (Time.toDay zone posix) ++ " " ++ month
 
 
 {-| When the card is due again, in days from now: "back tomorrow", "back

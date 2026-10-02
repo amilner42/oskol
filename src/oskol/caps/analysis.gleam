@@ -4,6 +4,7 @@
 //// -- that file and this one must agree on constructor tags and field order.
 
 import gleam/option.{type Option}
+import oskol/rooms/seat.{type Seat}
 
 /// One `game_actions` row. `payload_json` is the payload as JSON text (the
 /// payload is whatever the client sent; it crosses as text, not Dynamic).
@@ -170,6 +171,27 @@ pub type GradedRoomGame {
   )
 }
 
+/// One mistake an account's seat made, as what it **cost**: which puzzle it
+/// became, its band (`very_bad`, `bad`, `doubtful`: the source row's own
+/// grade, not the worst its puzzle was ever reached at), the game it was
+/// made in, the seat that made it, and the equity it gave up -- the same
+/// unit the engine's totals count a seat's error in, so the two can be
+/// subtracted.
+///
+/// The seat rides along because the query finds these rows by asking which
+/// seats *name* the account, and the holder rule (`rooms/seat.holder`), not
+/// the query, says whose a seat is.
+pub type MistakeCost {
+  MistakeCost(
+    puzzle_id: String,
+    band: String,
+    game_id: String,
+    game_number: Int,
+    seat: Seat,
+    equity_lost: Float,
+  )
+}
+
 pub type AnalysisCaps {
   AnalysisCaps(
     /// The room's log, or None when no started game has this code.
@@ -256,6 +278,12 @@ pub type AnalysisCaps {
     /// games: ten rooms is ten lines whether they are ten single games or
     /// ten matches to seven, and no page boundary falls inside a match.
     graded_rooms_for: fn(String, Int, Option(Cursor)) -> List(GradedRoomGame),
+    /// Every mistake the seats this account holds have made, in any game
+    /// (user id). Rows only: the `puzzle_sources` an extraction wrote,
+    /// never a skipped one, each with its seat so the caller can ask the
+    /// holder rule. What `practice/cost` subtracts from the window
+    /// `graded_for` reads. Last, so every field before it keeps its place.
+    mistake_costs: fn(String) -> List(MistakeCost),
   )
 }
 
@@ -285,5 +313,6 @@ pub fn stub() -> AnalysisCaps {
     forget_grades: fn(_, _) { panic as "stub analysis.forget_grades" },
     graded_for: fn(_, _) { panic as "stub analysis.graded_for" },
     graded_rooms_for: fn(_, _, _) { panic as "stub analysis.graded_rooms_for" },
+    mistake_costs: fn(_) { panic as "stub analysis.mistake_costs" },
   )
 }

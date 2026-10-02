@@ -128,6 +128,37 @@ defmodule OskolWeb.SpaController do
   end
 
   @doc """
+  A deck's page (`/practice/:slug`): one of the three tiers of a player's
+  mistakes, or one of the universal sets. `oskol/handlers/practice.deck_head`
+  writes the title and description and says whether the page may be
+  indexed: a set is the same page for everyone and is (with a canonical, and
+  in the sitemap); a tier is somebody's own mistakes and is not. A slug that
+  names no deck, and a set nobody has built, is a 404.
+  """
+  def practice(conn, %{"slug" => slug}) do
+    case :oskol@handlers@practice.deck_head(Oskol.Gleam.CtxBuilder.build(), slug) do
+      {:ok, {:deck_head, title, description, true}} ->
+        conn
+        |> assign(:page_title, title)
+        |> assign(:meta_description, description)
+        |> assign(:canonical, url(~p"/practice/#{slug}"))
+        |> assign(:og_title, title)
+        |> assign(:og_description, description)
+        |> render_spa()
+
+      {:ok, {:deck_head, title, description, false}} ->
+        conn
+        |> assign(:page_title, title)
+        |> assign(:meta_description, description)
+        |> assign(:no_index, true)
+        |> render_spa()
+
+      {:error, _} ->
+        raise OskolWeb.NotFoundError
+    end
+  end
+
+  @doc """
   A puzzle's page (`/puzzles/:id`). The head is the one thing the page
   cannot supply for itself before it has fetched anything, and the one
   thing a link preview reads: the question as the title, the score and cube

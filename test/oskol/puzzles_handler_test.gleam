@@ -30,6 +30,7 @@ import oskol/core/error
 import oskol/core/session.{Session}
 import oskol/fakes
 import oskol/handlers/puzzles as handler
+import oskol/practice/deck
 import oskol/puzzles.{
   type Answer, type Kind, type Probs, type Question, Candidate, CubeAnswer,
   Double, DoublePass, Move, MoveAnswer, Outcome as Result_, Probs, Question,
@@ -282,6 +283,8 @@ fn ctx_with(rows: List(puzzles_caps.Stored)) -> Ctx {
     ),
     practice: practice.PracticeCaps(
       ..practice.stub(),
+      // The ladder as `config :retain, intervals` has it.
+      intervals: fn() { [1, 1, 3, 7, 21, 58, 145, 365] },
       cards: fn(uid, keys) {
         list.filter_map(keys, fn(key) {
           list.find(get_cards("cards"), fn(c) { c.0 == held(uid, key) })
@@ -451,6 +454,11 @@ fn int_at(body: String, path: List(String)) -> Int {
   value
 }
 
+fn float_at(body: String, path: List(String)) -> Float {
+  let assert Ok(value) = json.parse(body, decode.at(path, decode.float))
+  value
+}
+
 fn bool_at(body: String, path: List(String)) -> Bool {
   let assert Ok(value) = json.parse(body, decode.at(path, decode.bool))
   value
@@ -544,7 +552,7 @@ pub fn the_head_is_the_question_and_the_score_test() {
   let assert Ok(handler.Head(title, description)) = handler.head(ctx, "p1", "")
   assert title == "White to play 6-4. What's your play?"
   assert description
-    == "Match play, 3 away against 5. Cube centred. A backgammon puzzle: play it on the board."
+    == "Match play, 3 away against 5. Cube centered. A backgammon puzzle: play it on the board."
   let assert Ok(handler.Head(take_title, take_description)) =
     handler.head(ctx, "t1", "")
   assert take_title == "White is doubled. Take?"
@@ -573,7 +581,7 @@ pub fn a_money_game_says_so_in_the_head_test() {
   // One point each way is a single game, not a match at 1 away against 1.
   assert string.starts_with(
     handler.describe(puzzles.Question(..q, away_mover: 1, away_opponent: 1)),
-    "Single game. Cube centred.",
+    "Single game. Cube centered.",
   )
   assert string.starts_with(
     handler.describe(
@@ -583,7 +591,7 @@ pub fn a_money_game_says_so_in_the_head_test() {
   )
   assert string.starts_with(
     handler.describe(puzzles.Question(..q, crawford: True)),
-    "Match play, 3 away against 5, Crawford. Cube centred.",
+    "Match play, 3 away against 5, Crawford. Cube centered.",
   )
 }
 
@@ -690,15 +698,32 @@ fn band_attempt(
   )
 }
 
-pub fn the_three_verdicts_test() {
+/// Right or a miss, and the band it fell in: a play that gives up 0.05 is
+/// a dubious one, which is a miss -- there is no "close".
+pub fn the_verdicts_and_their_bands_test() {
   reset()
   let ctx = ctx_with([stored("p1", move_question(), move_answer())])
   let assert Ok(best) = attempt(ctx, guest("g1"), "p1", path_to(0), "k1")
   assert text_at(best, ["verdict"]) == "pass"
+  assert text_at(best, ["band"]) == "best"
+  assert float_at(best, ["cost"]) == 0.0
   let assert Ok(middle) = attempt(ctx, guest("g1"), "p1", path_to(1), "k2")
-  assert text_at(middle, ["verdict"]) == "hold"
+  assert text_at(middle, ["verdict"]) == "fail"
+  assert text_at(middle, ["band"]) == "doubtful"
+  assert float_at(middle, ["cost"]) == 0.05
   let assert Ok(worst) = attempt(ctx, guest("g1"), "p1", path_to(2), "k3")
   assert text_at(worst, ["verdict"]) == "fail"
+  assert text_at(worst, ["band"]) == "very_bad"
+}
+
+/// A play the answer has never heard of costs nothing anybody knows.
+pub fn an_unknown_play_has_no_band_test() {
+  reset()
+  let ctx = ctx_with([stored("p1", move_question(), old_move_answer())])
+  let assert Ok(body) = attempt(ctx, guest("g1"), "p1", path_to(2), "k1")
+  assert text_at(body, ["verdict"]) == "unknown"
+  assert text_at(body, ["band"]) == "unknown"
+  assert is_null(body, "cost")
 }
 
 /// The reveal: what they played, the best, and the top five -- and never
@@ -767,6 +792,14 @@ pub fn a_cube_answer_is_graded_by_its_side_test() {
   assert text_at(body, ["verdict"]) == "pass"
   assert int_at(body, ["cube", "band"]) == 2
   assert bool_at(body, ["cube", "too_good"]) == False
+  // The right side gave up nothing.
+  assert text_at(body, ["band"]) == "best"
+  assert float_at(body, ["cost"]) == 0.0
+  // Not doubling gives up the whole point: very bad.
+  let assert Ok(timid) = band_attempt(ctx, guest("g1"), "d1", -1, "k0")
+  assert text_at(timid, ["verdict"]) == "fail"
+  assert text_at(timid, ["band"]) == "very_bad"
+  assert float_at(timid, ["cost"]) == 1.0
   // Taking pays the doubler 1.4 where passing pays 1.0, so the responder
   // passes, and passes big: "pass" is right, "take" is wrong.
   let assert Ok(take) = band_attempt(ctx, guest("g1"), "t1", -1, "k2")
@@ -897,13 +930,51 @@ pub fn a_miss_goes_back_to_the_start_test() {
   assert recorded("deck") == ["review:p1:again"]
 }
 
-pub fn a_hold_keeps_its_level_test() {
+/// A dubious answer is a miss like any other: the card does not hold its
+/// level, it goes back to the start and comes back tomorrow.
+pub fn a_dubious_answer_goes_back_to_the_start_test() {
   reset()
   deck_holds("p1", Active, 4, now - day)
   let ctx = ctx_with([stored("p1", move_question(), move_answer())])
   let assert Ok(body) = attempt(ctx, account("u1"), "p1", path_to(1), "k1")
-  assert int_at(body, ["schedule", "level_after"]) == 4
-  assert recorded("deck") == ["review:p1:partial"]
+  assert text_at(body, ["verdict"]) == "fail"
+  assert text_at(body, ["band"]) == "doubtful"
+  assert float_at(body, ["cost"]) == 0.05
+  assert int_at(body, ["schedule", "level_after"]) == 0
+  assert int_at(body, ["schedule", "due"]) == now + day
+  assert recorded("deck") == ["review:p1:again"]
+}
+
+/// An attempt written before dubious was a miss still says what it said:
+/// a retried key reports its own row, and the row says "hold".
+pub fn a_legacy_hold_retried_still_answers_hold_test() {
+  reset()
+  deck_holds("p1", Active, 4, now - day)
+  let schedule = handler.schedule_json(3, 3, now + day, True, False, 7)
+  let _ =
+    put_attempts("attempts", [
+      puzzles_caps.Attempt(
+        id: 1,
+        puzzle_id: "p1",
+        user_id: "u1",
+        key: "k1",
+        verdict: "hold",
+        outcome: None,
+        scheduled: True,
+        review_id: Some(7),
+        schedule_json: schedule,
+        fresh: True,
+      ),
+    ])
+  let ctx = ctx_with([stored("p1", move_question(), move_answer())])
+  let assert Ok(body) = attempt(ctx, account("u1"), "p1", path_to(1), "k1")
+  assert text_at(body, ["verdict"]) == "hold"
+  assert int_at(body, ["schedule", "level_after"]) == 3
+  assert recorded("deck") == []
+  // GOT IT on it is still what it always was: the level held.
+  let assert Ok(_) = override(ctx, account("u1"), "p1", "k1", "got_it")
+  let assert [newest, ..] = recorded("deck")
+  assert newest == "amend:p1:7:partial"
 }
 
 /// A card nobody has seen is introduced by being answered.
@@ -970,7 +1041,34 @@ pub fn an_unknown_answer_waits_until_tomorrow_test() {
   assert bool_at(body, ["schedule", "amendable"]) == False
   assert int_at(body, ["schedule", "level_after"]) == 3
   assert int_at(body, ["schedule", "due"]) == now + day
+  // What GOT IT would hold it at, from the ladder the deck runs on: level
+  // 3 waits 7 days. The page keeps no copy of the ladder.
+  assert int_at(body, ["schedule", "held_days"]) == 7
   assert recorded("deck") == ["defer:p1"]
+}
+
+/// `held_days` is the ladder's interval at the level the answer left the
+/// card on, whatever the answer was.
+pub fn every_schedule_says_how_long_its_level_holds_test() {
+  reset()
+  deck_holds("p1", Active, 2, now - day)
+  let ctx = ctx_with([stored("p1", move_question(), move_answer())])
+  let assert Ok(body) = attempt(ctx, account("u1"), "p1", path_to(1), "k1")
+  // A miss: back to level 0, which waits a day.
+  assert int_at(body, ["schedule", "level_after"]) == 0
+  assert int_at(body, ["schedule", "held_days"]) == 1
+}
+
+pub fn held_days_reads_the_ladder_test() {
+  let ladder = [1, 1, 3, 7, 21, 58, 145, 365]
+  assert deck.held_days(ladder, 0) == 1
+  assert deck.held_days(ladder, 2) == 3
+  assert deck.held_days(ladder, 7) == 365
+  // Off either end: the nearest rung.
+  assert deck.held_days(ladder, 9) == 365
+  assert deck.held_days(ladder, -1) == 1
+  // Another ladder says another thing: nothing here is a copy of it.
+  assert deck.held_days([2, 4], 1) == 4
 }
 
 pub fn a_signed_in_answer_needs_a_key_test() {
@@ -1017,10 +1115,27 @@ pub fn got_it_keeps_the_engines_own_grade_test() {
   reset()
   deck_holds("p1", Active, 2, now - day)
   let ctx = ctx_with([stored("p1", move_question(), move_answer())])
-  let assert Ok(_) = attempt(ctx, account("u1"), "p1", path_to(1), "k1")
+  let assert Ok(_) = attempt(ctx, account("u1"), "p1", path_to(0), "k1")
   let assert Ok(_) = override(ctx, account("u1"), "p1", "k1", "got_it")
   let assert [newest, ..] = recorded("deck")
-  assert newest == "amend:p1:42:partial"
+  assert newest == "amend:p1:42:pass"
+}
+
+/// GOT IT is not one of a miss's choices: pressing it would be agreeing
+/// the miss was fine. KNEW IT, SOONER and NEVER still are.
+pub fn got_it_after_a_miss_is_refused_test() {
+  reset()
+  deck_holds("p1", Active, 2, now - day)
+  let ctx = ctx_with([stored("p1", move_question(), move_answer())])
+  let assert Ok(_) = attempt(ctx, account("u1"), "p1", path_to(1), "k1")
+  assert override(ctx, account("u1"), "p1", "k1", "got_it")
+    == Error(error.validation_failed(handler.got_it_after_miss_message))
+  assert recorded("deck") == ["review:p1:again"]
+  let assert Ok(sooner) = override(ctx, account("u1"), "p1", "k1", "sooner")
+  assert int_at(sooner, ["schedule", "level_after"]) == 0
+  let assert Ok(knew) = override(ctx, account("u1"), "p1", "k1", "knew_it")
+  assert int_at(knew, ["schedule", "level_after"]) == 7
+  let assert Ok(_) = override(ctx, account("u1"), "p1", "k1", "never")
 }
 
 /// An answer the engine could not grade has no review to correct, so the
@@ -1430,7 +1545,7 @@ pub fn the_head_of_a_story_link_names_the_sharer_test() {
   assert recorded("shares") == ["tok-ok"]
   assert recorded("records") == []
   assert description
-    == "Match play, 3 away against 5. Cube centred. A backgammon puzzle: play it on the board."
+    == "Match play, 3 away against 5. Cube centered. A backgammon puzzle: play it on the board."
   let assert Ok(handler.Head(plain, _)) = handler.head(ctx, "p1", "tok-nope")
   assert plain == "White to play 6-4. What's your play?"
   let assert Ok(handler.Head(other, _)) = handler.head(ctx, "p1", "tok-other")

@@ -3,9 +3,12 @@
 ////
 //// **A checker play is graded by where it leaves the board**, never by its
 //// notation: the engine sent a result for every legal play, so an attempt
-//// is looked up among them and costs exactly what it costs. Within 0.02 of
-//// the best passes, under 0.08 holds, worse misses -- the site's own bands,
-//// the ones the replay already prints. A play the stored answer has no
+//// is looked up among them and costs exactly what it costs. Under 0.02
+//// lost passes and 0.02 or more misses -- the site's own line between an
+//// ok play and a doubtful one, the bands the replay already prints and the
+//// threshold a puzzle is made at. There is no "close": a play the replay
+//// would mark `?!` is a mistake, and there is a whole tier of the player's
+//// own dubious moves to fix. A play the stored answer has no
 //// result for is `Unknown`: old reviews kept only the five the engine
 //// described, and telling somebody they were wrong on evidence we do not
 //// have would be a lie. They grade themselves instead.
@@ -24,10 +27,11 @@
 ////
 //// A margin becomes one of five bands -- big (0.08 and up), plain (0.02 and
 //// up), or borderline -- on either side of zero, numbered -2..+2, with +1
-//// and +2 always the aggressive answer (double, take). The grade is the
-//// distance between the bands: the same band passes, one off holds, two or
-//// more misses. So Double when the engine says Borderline holds; Double
-//// when it says No double misses.
+//// and +2 always the aggressive answer (double, take). The right side
+//// passes and the wrong side misses. Borderline (band 0) passes either
+//// side: the wrong side there gives up under 0.02, which is not a mistake
+//// by the same rule a checker play is graded by. What the wrong side gave
+//// up is the margin itself (`cube_cost`).
 
 import gleam/float
 import gleam/list
@@ -40,6 +44,10 @@ import oskol/puzzles.{
 /// How an answer went. `Unknown` is not a miss: it is "we cannot say".
 pub type Verdict {
   Pass
+  /// Legacy: grading produced it for a play that gave up 0.02 to 0.08
+  /// until 2026-10-01, and never does now. It is still read off the
+  /// `puzzle_attempts` rows written before then, because a retried key
+  /// reports what its own attempt reported.
   Hold
   Fail
   Unknown
@@ -54,11 +62,10 @@ pub fn verdict_name(verdict: Verdict) -> String {
   }
 }
 
-/// Within this of the best play, an answer is right.
+/// Within this of the best play, an answer is right. The same number as
+/// `puzzles.mistake_threshold`: a pass is exactly a play that is not a
+/// mistake.
 pub const pass_within = 0.02
-
-/// Up to this, it holds its level rather than passing or missing.
-pub const hold_within = 0.08
 
 /// The margins that separate the five bands.
 pub const big_margin = 0.08
@@ -92,18 +99,44 @@ pub fn move_cost(answer: Answer, board: List(Int)) -> Option(Float) {
   }
 }
 
-/// A play's verdict from what it cost.
+/// A play's verdict from what it cost: right under 0.02, a miss from there
+/// on.
 pub fn move_verdict(cost: Option(Float)) -> Verdict {
   case cost {
     None -> Unknown
     Some(lost) ->
-      case lost <. pass_within -. slack, lost <. hold_within -. slack {
-        True, _ -> Pass
-        False, True -> Hold
-        False, False -> Fail
+      case lost <. pass_within -. slack {
+        True -> Pass
+        False -> Fail
       }
   }
 }
+
+/// The band an answer's cost falls in, by the names the replay grades a
+/// move with (`report.grade_names`): "best", "ok" (under 0.02), "doubtful"
+/// (under 0.08), "bad" (under 0.16), "very_bad"; "unknown" when nothing
+/// says what it cost. The same edges, with the same slack, as the verdict.
+pub fn band_name(cost: Option(Float)) -> String {
+  case cost {
+    None -> "unknown"
+    Some(lost) ->
+      case
+        lost <. slack,
+        lost <. pass_within -. slack,
+        lost <. big_margin -. slack,
+        lost <. very_bad_from -. slack
+      {
+        True, _, _, _ -> "best"
+        False, True, _, _ -> "ok"
+        False, False, True, _ -> "doubtful"
+        False, False, False, True -> "bad"
+        False, False, False, False -> "very_bad"
+      }
+  }
+}
+
+/// Where a bad play ends and a very bad one starts.
+const very_bad_from = 0.16
 
 /// Where a play stands among all the legal ones: 1 for the best, counting
 /// up. Read off the stored results, which is the only place every play is.
@@ -167,14 +200,30 @@ pub fn band_in_range(band: Int) -> Bool {
 /// How far the engine says this side should lean, from the three equities
 /// it worked out for the doubler.
 pub fn engine_band(kind: Kind, answer: Answer) -> Option(Int) {
+  margin(kind, answer) |> option.map(band_of)
+}
+
+/// The margin for the side being asked, positive for the aggressive answer.
+fn margin(kind: Kind, answer: Answer) -> Option(Float) {
   case answer {
     CubeAnswer(no_double: nd, double_take: dt, double_pass: dp, ..) ->
       case kind {
-        Double -> Some(band_of(float.min(dt, dp) -. nd))
-        Take -> Some(band_of(dp -. dt))
+        Double -> Some(float.min(dt, dp) -. nd)
+        Take -> Some(dp -. dt)
         Move -> None
       }
     MoveAnswer(..) -> None
+  }
+}
+
+/// What a side gave up: nothing on the side the margin leans to, the whole
+/// margin on the other. Inside band 0 that is under 0.02, which is why
+/// either side passes there.
+pub fn cube_cost(kind: Kind, answer: Answer, answered: Int) -> Option(Float) {
+  use m <- option.map(margin(kind, answer))
+  case m == 0.0 || { answered > 0 } == { m >. 0.0 } {
+    True -> 0.0
+    False -> float.absolute_value(m)
   }
 }
 
@@ -197,10 +246,11 @@ fn sign(margin: Float) -> Int {
 
 /// The verdict for a side against the engine's band: the right side
 /// passes, the wrong side misses, and when the engine calls it too close
-/// (within 0.02 either way) either side holds -- nobody fails a coin flip.
+/// (within 0.02 either way) either side passes -- nobody fails a coin flip,
+/// and giving up under 0.02 is not a mistake.
 pub fn cube_verdict(answered: Int, engine: Int) -> Verdict {
   case engine == 0, { answered > 0 } == { engine > 0 } {
-    True, _ -> Hold
+    True, _ -> Pass
     False, True -> Pass
     False, False -> Fail
   }

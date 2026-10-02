@@ -27,7 +27,7 @@ defmodule Oskol.PracticeTest do
 
     {:practice_caps, put_user, put_items, cards, relapse, queue, start, start_new, review, amend,
      defer_until, defer_tomorrow, master, suspend, resume, summary, ladder, days, day, severity,
-     band_queue} =
+     band_queue, cells, answered_today_by_band, start_new_in_band, intervals} =
       Practice.build()
 
     caps = %{
@@ -50,7 +50,11 @@ defmodule Oskol.PracticeTest do
       days: days,
       day: day,
       severity: severity,
-      band_queue: band_queue
+      band_queue: band_queue,
+      cells: cells,
+      answered_today_by_band: answered_today_by_band,
+      start_new_in_band: start_new_in_band,
+      intervals: intervals
     }
 
     uid = "acct-#{System.unique_integer([:positive])}"

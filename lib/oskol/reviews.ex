@@ -175,12 +175,34 @@ defmodule Oskol.Reviews do
   # the expensive part of both queries below -- about 0.25 ms a game on a
   # laptop, nearly all of it detoasting the stored answer -- so neither
   # asks for a row it will not use.
+  #
+  # And the two parts are taken out of each answer once, in the inner
+  # `answer` subquery, rather than by three `r.response -> ...` expressions:
+  # each of those decompressed the whole stored value again, which on
+  # production's answers (64 KB compressed, 208 KB as text, on average) was
+  # most of the read -- 96 ms against 37-42 ms for the 58-game account,
+  # measured 2026-10-01. OFFSET 0 keeps the planner from folding the parts
+  # back into every expression that reads them.
+  #
+  # It is a scalar subquery in the select list, not a LATERAL in the FROM
+  # clause, on purpose. A lateral is part of the join tree and runs wherever
+  # the planner puts it: in the recent list's query, on the estimates a
+  # small or freshly vacuumed table gives, that was the inner side of a
+  # nested loop rescanned once per room of the page -- every graded game of
+  # the account decompressed ten times over, 1000 answers read for the 30 a
+  # page shows (64 ms against 2.4 ms). The select list is evaluated once
+  # per row the query returns, whatever the join order.
   @totals """
-  jsonb_build_object(
-           'players', r.response -> 'players',
-           'turns', jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
-             'player', r.response -> 'turns' -> 0 -> 'player',
-             'cube', r.response -> 'turns' -> 0 -> 'cube'))))\
+  (SELECT jsonb_build_object(
+             'players', answer.players,
+             'turns', jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+               'player', answer.first_turn -> 'player',
+               'cube', answer.first_turn -> 'cube'))))
+           FROM (
+             SELECT r.response -> 'players' AS players,
+                    r.response -> 'turns' -> 0 AS first_turn
+             OFFSET 0
+           ) AS answer)\
   """
 
   # The seat-to-account join both queries are built on. The containment
@@ -421,6 +443,90 @@ defmodule Oskol.Reviews do
     """
 
     {sql, [user_id, mine(user_id), rooms] ++ cursor_params}
+  end
+
+  @doc """
+  Every mistake the seats this account holds have made: what
+  `src/oskol/practice/cost.gleam` takes away from the rating `graded_for/2`
+  reads, to say what each band of them cost.
+
+  The seats are found the way `graded_for/2` finds them -- the containment
+  test `games_players_gin` is built on, and the `unnest` beside it to name
+  which seat matched -- and not by `puzzle_sources.owner_user_id`. That
+  column is an index key written when the sources are and refreshed when a
+  sign-in stamps a seat; a seat that came to an account any other way
+  leaves it stale, and a stale owner here would leave that game's error in
+  the rating while dropping its mistakes, so the "without them" number
+  would be wrong in the direction that flatters nobody. Reaching the
+  sources through the seat keeps the two sides of the subtraction on the
+  same rows. Each row comes back with its seat, so the holder rule in
+  Gleam, and not this query, says whose it is.
+
+  Only what an extraction stored as a puzzle (`puzzle_id`, no
+  `skipped_reason`). Rows only: no answer is decompressed, no log read.
+  """
+  def mistake_costs(user_id) when is_binary(user_id) do
+    {sql, params} = mistake_costs_sql(user_id)
+    %{rows: rows} = Ecto.Adapters.SQL.query!(Repo, sql, params)
+
+    Enum.map(rows, fn [
+                        puzzle_id,
+                        band,
+                        game_id,
+                        game_number,
+                        equity_lost,
+                        player_id,
+                        guest_id,
+                        seat_user,
+                        bot
+                      ] ->
+      %{
+        puzzle_id: puzzle_id,
+        band: band,
+        game_id: game_id,
+        game_number: game_number,
+        equity_lost: equity_lost,
+        player_id: player_id,
+        guest_id: guest_id,
+        user_id: seat_user,
+        bot: bot
+      }
+    end)
+  end
+
+  @doc false
+  # A builder, so the regression test can EXPLAIN the statement we send.
+  def mistake_costs_sql(user_id) do
+    # The seats first, materialised, so the account's games are always
+    # found through the players index whatever the planner makes of the
+    # sources; each game then reaches its own through the (game_id,
+    # game_number, ...) unique index or, on a small table, one hash.
+    sql = """
+    WITH seats AS MATERIALIZED (
+      SELECT g.id AS game_id, seat.p
+      FROM games g
+        JOIN LATERAL unnest(g.players) WITH ORDINALITY AS seat(p, ord)
+          ON seat.p ->> 'user_id' = $1
+      WHERE oskol_players_jsonb(g.players) @> $2
+    )
+    SELECT s.puzzle_id,
+           s.grade,
+           s.game_id,
+           s.game_number,
+           s.equity_lost,
+           seats.p ->> 'id',
+           seats.p ->> 'guest_id',
+           seats.p ->> 'user_id',
+           coalesce((seats.p ->> 'bot')::boolean, false)
+    FROM seats
+      JOIN puzzle_sources s
+        ON s.game_id = seats.game_id AND s.player_id = seats.p ->> 'id'
+    WHERE s.puzzle_id IS NOT NULL
+      AND s.skipped_reason IS NULL
+    ORDER BY s.game_id, s.game_number, s.turn, s.kind
+    """
+
+    {sql, [user_id, mine(user_id)]}
   end
 
   # Postgrex encodes a jsonb parameter itself: hand it the term, not text. A

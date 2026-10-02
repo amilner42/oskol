@@ -114,7 +114,7 @@ pub fn joined(standing: Standing) -> Bool {
   standing.total > 0
 }
 
-/// Everything not patched: what "left to learn" counts.
+/// Everything not patched: what "left to master" counts.
 pub fn left(standing: Standing) -> Int {
   int.max(standing.total - standing.patched, 0)
 }
@@ -211,6 +211,14 @@ pub fn queue(ctx: Ctx, deck: Deck, uid: String) -> List(Entry) {
     list.map(found.reviews, entry(_, True)),
     list.map(found.fresh, entry(_, False)),
   )
+}
+
+/// PRACTICE ANYWAY through a set: its positions in rotation, soonest due
+/// first (`deck.anyway` in the set's own scope), each one an answer that
+/// moves nothing. `from` skips that many from the front (`deck.anyway`).
+pub fn anyway(ctx: Ctx, set: Deck, uid: String, from: Int) -> List(Entry) {
+  deck.anyway(in_deck(ctx, set), uid, "", from)
+  |> list.map(entry(_, False))
 }
 
 fn entry(card: Card, due: Bool) -> Entry {
