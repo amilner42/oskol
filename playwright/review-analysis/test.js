@@ -345,6 +345,18 @@ async function theReplay(browser, tag, viewport, touch, room, link, errors) {
     for (const sel of ['#pz-save', '#pz-analysis', '#pz-replay']) {
       if (!(await page.isVisible(sel))) throw new Error(`${tag}: the reveal has no ${sel}`);
     }
+    // SHARE, SAVE and ANALYSIS on one row, one height, at every size.
+    const row = await page.$$eval('#pz-share, #pz-save, #pz-analysis', (els) => els.map((e) => {
+      const r = e.getBoundingClientRect();
+      return [Math.round(r.top), Math.round(r.height), e.scrollWidth <= e.clientWidth];
+    }));
+    if (row.length !== 3 || new Set(row.map((r) => r[0])).size !== 1 || row.some((r) => r[1] !== 32 || !r[2]))
+      throw new Error(`${tag}: the reveal's three buttons are not one row of 32px, whole: ${JSON.stringify(row)}`);
+    // The sentence names the badge's grade.
+    const band = await page.getAttribute('#pz-verdict', 'data-band');
+    const verdict = (await page.innerText('#pz-verdict .pz-verdict-why')).trim();
+    const word = { doubtful: 'a dubious mistake', bad: 'a bad mistake', very_bad: 'a very bad mistake' }[band];
+    if (word && !verdict.includes(word)) throw new Error(`${tag}: the badge is ${band} and the sentence says "${verdict}"`);
     await noSideScroll(page, `${tag} the shared reveal`);
     if (tag === '844x390') {
       // Sideways the reveal scrolls in its own column: down to the way back.

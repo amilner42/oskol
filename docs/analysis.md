@@ -426,8 +426,9 @@ pastes anywhere). Neither spends engine time.
   `Route.analysisXgid`; on a step that is no decision it keeps its place
   unseen (`.is-off`, a span), so nothing moves as the reader steps. SHARE
   sits beside it (below).
-- **Every puzzle page**: OPEN IN ANALYSIS (`#pz-analysis`) after the
-  reveal, beside SHARE, to `Route.analysisPuzzle id` (`/analysis?p=<id>`).
+- **Every puzzle page**: ANALYSIS (`#pz-analysis`, one word and the
+  new-tab mark so SHARE, SAVE and it fit one row at 320) after the
+  reveal, beside SHARE and SAVE, to `Route.analysisPuzzle id` (`/analysis?p=<id>`).
 - `playwright/test-backgammon-replay` opens a graded turn, a double, a
   take, a turn of the Crawford game and one after it, and checks the new
   tab's 24 points (read from the editor's targets), bars, dice, cube and
@@ -734,7 +735,7 @@ the same machinery as Openings. The analysis board reaches it through SAVE
   board in view beside the answer), a cube's answer, a line of three steps
   in PLAY, the save sheet for an account and a guest, /puzzles with "Your
   sets", the set's page with MANAGE, the replay's head with SHARE and OPEN
-  IN ANALYSIS, and a shared position's reveal with SAVE, OPEN IN ANALYSIS
-  and WATCH THE REPLAY. `serve.sh` serves the same data, with the
+  IN ANALYSIS, and a shared position's reveal with SAVE, ANALYSIS and
+  WATCH THE REPLAY. `serve.sh` serves the same data, with the
   stand-in engine, until Ctrl-C, for walking it by hand (sign in as
   analysis-review@oskol.test from `/dev/mailbox`).

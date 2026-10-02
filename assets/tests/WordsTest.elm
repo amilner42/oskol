@@ -42,12 +42,30 @@ suite =
 puzzleVerdicts : Test
 puzzleVerdicts =
     describe "a puzzle answer's verdict"
-        [ test "a miss names what it gave up, to two places" <|
+        [ test "a dubious miss says dubious, as its badge does" <|
             \_ ->
-                Words.givesUp 0.04 False |> Expect.equal "Gives up 0.04 — a mistake."
+                Words.givesUp "doubtful" 0.04 False |> Expect.equal "Gives up 0.04 — a dubious mistake."
+        , test "a bad miss says bad" <|
+            \_ ->
+                Words.givesUp "bad" 0.137 False |> Expect.equal "Gives up 0.14 — a bad mistake."
+        , test "a very bad miss says very bad" <|
+            \_ ->
+                Words.givesUp "very_bad" 0.24 False |> Expect.equal "Gives up 0.24 — a very bad mistake."
         , test "a miss on the player's schedule says it comes back" <|
             \_ ->
-                Words.givesUp 0.137 True |> Expect.equal "Gives up 0.14 — a mistake, so it comes back."
+                Words.givesUp "bad" 0.137 True |> Expect.equal "Gives up 0.14 — a bad mistake, so it comes back."
+        , test "the badge's grade and the sentence's word agree at every band edge" <|
+            \_ ->
+                [ 0.02, 0.0799, 0.08, 0.1599, 0.16, 0.4 ]
+                    |> List.map (\c -> Words.givesUp (Words.gradeOf c) c False)
+                    |> Expect.equal
+                        [ "Gives up 0.02 — a dubious mistake."
+                        , "Gives up 0.08 — a dubious mistake."
+                        , "Gives up 0.08 — a bad mistake."
+                        , "Gives up 0.16 — a bad mistake."
+                        , "Gives up 0.16 — a very bad mistake."
+                        , "Gives up 0.40 — a very bad mistake."
+                        ]
         , test "right but not the best is not a mistake" <|
             \_ ->
                 Words.nearlyBest |> Expect.equal "Within 0.02 of the best. Not a mistake."
