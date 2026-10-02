@@ -67,7 +67,14 @@ fn turn(
   move: Option(report.MoveReview),
   cube: Option(report.CubeReview),
 ) -> report.TurnReview {
-  report.TurnReview(index: index, player: 0, cube: cube, move: move, luck: None)
+  report.TurnReview(
+    index: index,
+    player: 0,
+    cube: cube,
+    move: move,
+    luck: None,
+    rolls: None,
+  )
 }
 
 fn cube(probs: Option(report.Probs)) -> report.CubeReview {

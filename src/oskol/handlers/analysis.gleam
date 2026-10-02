@@ -3,6 +3,8 @@
 ////     POST /papi/analysis        a set-up position (`analysis/setup`'s wire)
 ////     GET  /papi/analysis/:key   where that ask stands
 ////     POST /papi/analysis/moves  the legal plays of a set-up roll: no engine
+////     POST /papi/analysis/rolls  a board's per-roll grid, and two plays of it
+////                                against each other
 ////
 //// **An analyzed position is a puzzle row.** The question is the key
 //// (`oskol/puzzles.key`), so a position asked before -- by anyone, as a
@@ -18,6 +20,11 @@
 //// account 30 an hour and 150 a day, everybody 600 a day, all from
 //// `config :oskol, :analysis_budget`.
 ////
+//// **A per-roll grid is a different shape of ask** (`rolls_json`): 0.2 s of
+//// engine time, so it is answered inside the request -- no job, no polling --
+//// cached on the engine request's bytes, charged by the minute rather than by
+//// the day, and still behind the asker's circuit. See `docs/analysis.md`.
+////
 //// The asker owns the queue and nothing else. It hands the engine's answer
 //// back to `store`, which decides whether it can be trusted -- every legal
 //// play and a board on every candidate, or the cube's chances -- and only
@@ -26,17 +33,18 @@
 
 import backgammon/analysis
 import gleam/bool
-import gleam/dynamic/decode
+import gleam/dynamic/decode.{type Decoder}
 import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
-import oskol/analysis/setup.{type Setup}
+import oskol/analysis/rolls.{type Rolls}
+import oskol/analysis/setup.{type Setup, Setup}
 import oskol/caps/analysis.{
   type Ask, type AskBudget, type Job, type Refused, Ask, Asked, Down, Free, Full,
-  JobDone, JobFailed, JobPending,
+  JobDone, JobFailed, JobPending, RollsRefused, RollsUnreachable,
 } as _asker
 import oskol/caps/auth.{type LimitBucket, LimitBucket}
 import oskol/caps/puzzles.{type Keyed} as _puzzle_caps
@@ -486,6 +494,254 @@ pub fn moves_buckets(session: Session) -> List(LimitBucket) {
     LimitBucket(
       key: "moves:global:minute",
       limit: moves_global_per_minute,
+      window_s: minute_s,
+    ),
+  ]
+}
+
+// ---------- POST /papi/analysis/rolls ----------
+
+/// A comparison is two plays; a third is not a comparison.
+pub const too_many_boards_message = "Two plays at a time is the most to compare"
+
+/// Only a roll has plays whose grids could be compared.
+pub const no_candidates_message = "Only a roll has plays to compare"
+
+pub const rolls_limited_message = "That is a lot of positions at once. Try again in a minute."
+
+/// How each of the 21 rolls fares from a set-up position, and -- given the
+/// boards one or two plays leave -- from each of those, with the difference
+/// between them.
+///
+/// `{setup}` answers `{ok, rolls}`: the mover's own grid, on the board the
+/// turn begins from and the cube the roll that follows is played on
+/// (`setup.grid_position`, so a take's grid is on the doubled cube and a
+/// double's is the pre-roll board). `{setup, after: [a]}` or `{setup, after:
+/// [a, b]}` answers `{ok, grids}` and, with two, `diff`: each play's grid read
+/// from the **opponent's** side (`rolls.opposite`), because what follows a
+/// play is their roll, and the difference positive where the second play does
+/// better for the player who moved.
+///
+/// **Answered in the request.** A grid is about 0.2 s of engine time, so
+/// unlike `POST /papi/analysis` there is no job to join and nothing to poll:
+/// this either answers the grids or says why not. The circuit still counts --
+/// a desktop asleep behind a tailnet must be asked once, not once per keen
+/// player -- so the asker's state is read before anything is asked: open is a
+/// 503, a full line a 429.
+///
+/// **A stored grid is free.** Grids are cached on the request's bytes
+/// (`cached_rolls`, `Oskol.Analysis.Rolls`), so a request every board of which
+/// is stored costs no engine time and no budget: nothing is charged and
+/// nothing is asked. Only the boards no row answers are charged for
+/// (`rolls_buckets`: a caller's minute, everybody's minute) and they go to the
+/// engine in one round trip.
+pub fn rolls_json(
+  ctx: Ctx,
+  session: Session,
+  body_json: String,
+) -> Result(String, ApiError) {
+  let reader = {
+    use s <- decode.field("setup", setup.decoder())
+    use after <- decode.optional_field(
+      "after",
+      [],
+      decode.list(board_decoder()),
+    )
+    decode.success(#(s, after))
+  }
+  use #(s, after) <- result.try(
+    json.parse(body_json, reader)
+    |> result.replace_error(error.validation_failed(not_a_position_message)),
+  )
+  use s <- result.try(
+    setup.check(s) |> result.map_error(error.validation_failed),
+  )
+  use <- bool.guard(
+    list.length(after) > 2,
+    Error(error.validation_failed(too_many_boards_message)),
+  )
+  let cube_question = case s.ask {
+    setup.Move(_) -> False
+    setup.Double | setup.Take -> True
+  }
+  use <- bool.guard(
+    after != [] && cube_question,
+    Error(error.validation_failed(no_candidates_message)),
+  )
+  use positions <- result.try(case after {
+    [] -> Ok([setup.grid_position(s)])
+    boards -> list.try_map(boards, candidate_position(s, _))
+  })
+  let jacoby = setup.unlimited(s)
+  let bodies =
+    list.map(positions, fn(p) {
+      json.to_string(analysis.rolls_request(p, jacoby))
+    })
+  use grids <- result.try(grids_of(ctx, session, bodies))
+  case after, grids {
+    [], [one] -> Ok(position_grid_body(one))
+    _, [one] -> Ok(envelope.ok([#("grids", json.array([one], rolls.to_json))]))
+    _, [baseline, compared] -> Ok(compare_grids_body(baseline, compared))
+    // One or two boards go in and one grid per board comes back, so there is
+    // no third shape; one that got here would be ours, not a player's.
+    _, _ -> Error(error.Internal(failed_message))
+  }
+}
+
+/// `{ok, rolls: {level, equity, cells}}`: one position's own grid. Public so
+/// the fixture task renders the bytes a page is sent, with no capabilities.
+pub fn position_grid_body(grid: Rolls) -> String {
+  envelope.ok([#("rolls", rolls.to_json(grid))])
+}
+
+/// `{ok, grids: [two], diff}`: two plays, and how the second does against the
+/// first roll by roll. `diff`'s own `equity` is the plays' equity difference in
+/// the mover's view, which is the weighted mean of its cells.
+pub fn compare_grids_body(baseline: Rolls, compared: Rolls) -> String {
+  envelope.ok([
+    #("grids", json.array([baseline, compared], rolls.to_json)),
+    #("diff", rolls.diff_json(compared.level, rolls.diff(baseline, compared))),
+  ])
+}
+
+/// A board on the wire, in the setup's own shape and nothing else: where a
+/// candidate play left the checkers, White positive, point 1 first.
+type Board24 {
+  Board24(points: List(Int), white_bar: Int, black_bar: Int)
+}
+
+fn board_decoder() -> Decoder(Board24) {
+  use points <- decode.field("points", decode.list(decode.int))
+  use white_bar <- decode.optional_field("white_bar", 0, decode.int)
+  use black_bar <- decode.optional_field("black_bar", 0, decode.int)
+  decode.success(Board24(points, white_bar, black_bar))
+}
+
+/// The grid for one board a play of this setup left, read from the opponent's
+/// side because the rolls it describes are theirs.
+///
+/// The board is checked as the setup itself is, so a post-move board that is
+/// not a position comes back with the setup's own sentence -- and a play that
+/// bore the last checker off is "The game is over in this position", which is
+/// the truth about its grid.
+fn candidate_position(
+  s: Setup,
+  b: Board24,
+) -> Result(analysis.Position, ApiError) {
+  let moved =
+    Setup(..s, points: b.points, white_bar: b.white_bar, black_bar: b.black_bar)
+  use moved <- result.try(
+    setup.check(moved) |> result.map_error(error.validation_failed),
+  )
+  Ok(rolls.opposite(setup.grid_position(moved)))
+}
+
+/// The grids for these request bodies: the stored ones free, the rest asked
+/// for in one round trip and charged once.
+fn grids_of(
+  ctx: Ctx,
+  session: Session,
+  bodies: List(String),
+) -> Result(List(Rolls), ApiError) {
+  let stored = ctx.analysis.cached_rolls(bodies)
+  let missing =
+    list.zip(bodies, stored)
+    |> list.filter_map(fn(pair) {
+      case pair.1 {
+        None -> Ok(pair.0)
+        Some(_) -> Error(Nil)
+      }
+    })
+  use fresh <- result.try(case missing {
+    [] -> Ok([])
+    _ -> ask_grids(ctx, session, missing)
+  })
+  // Each board's own answer: its stored one, else the next of the fresh ones,
+  // which came back in the order they were asked for.
+  let #(answers, _) =
+    list.fold(stored, #([], fresh), fn(so_far, one) {
+      let #(kept, left) = so_far
+      case one, left {
+        Some(body), _ -> #([body, ..kept], left)
+        None, [body, ..rest] -> #([body, ..kept], rest)
+        None, [] -> #(kept, [])
+      }
+    })
+  let answers = list.reverse(answers)
+  use <- bool.guard(
+    list.length(answers) != list.length(bodies),
+    Error(no_grid()),
+  )
+  list.try_map(answers, fn(body) {
+    rolls.parse(body) |> result.replace_error(no_grid())
+  })
+}
+
+/// Ask for the boards no row answers: the circuit first, then one charge, then
+/// one round trip. A charge for an ask the engine refused or never answered is
+/// handed back, as a position's is.
+fn ask_grids(
+  ctx: Ctx,
+  session: Session,
+  bodies: List(String),
+) -> Result(List(String), ApiError) {
+  use _ <- result.try(case ctx.analysis.asking(grid_circuit_key) {
+    Down(seconds) -> Error(engine_down(seconds))
+    Full -> Error(busy())
+    Asked | Free -> Ok(Nil)
+  })
+  let budget = ctx.analysis.ask_budget()
+  let charged = rolls_buckets(budget, session)
+  use _ <- result.try(
+    ctx.analysis.allow_ask(charged)
+    |> result.map_error(fn(refused: Refused) {
+      error.Limited(
+        rate_limited_code,
+        rolls_limited_message,
+        int.max(refused.retry_after_s, 1),
+      )
+    }),
+  )
+  ctx.analysis.ask_rolls(bodies)
+  |> result.map_error(fn(failure) {
+    ctx.analysis.release_ask(charged)
+    case failure {
+      RollsRefused(_) -> error.validation_failed(rejected_message)
+      RollsUnreachable(seconds) -> engine_down(int.max(seconds, 1))
+    }
+  })
+}
+
+/// The key the grid path reads the asker's state under. A grid is never
+/// queued, so this names no job: it is only how the circuit and the line are
+/// asked about.
+const grid_circuit_key = "rolls"
+
+/// The engine answered, and not with a grid. Nothing a player can fix, and
+/// trying again may work.
+fn no_grid() -> ApiError {
+  error.Unavailable(engine_down_code, failed_message, 1)
+}
+
+/// The buckets one grid request is charged to: the caller's minute (an
+/// account's when signed in, else the browser's) and everybody's, as a move
+/// tree is. One charge a request, whether it asks about one board or two,
+/// because a comparison is one press.
+pub fn rolls_buckets(budget: AskBudget, session: Session) -> List(LimitBucket) {
+  let who = case session.user_id, session.guest_id {
+    Some(user_id), _ -> "rolls:user:" <> user_id
+    None, Some(guest_id) -> "rolls:guest:" <> guest_id
+    None, None -> "rolls:guest:none"
+  }
+  [
+    LimitBucket(
+      key: who <> ":minute",
+      limit: budget.rolls_minute,
+      window_s: minute_s,
+    ),
+    LimitBucket(
+      key: "rolls:global:minute",
+      limit: budget.rolls_global_minute,
       window_s: minute_s,
     ),
   ]

@@ -5,6 +5,8 @@ defmodule OskolWeb.Api.AnalysisController do
       POST /papi/analysis        ask about a set-up position
       GET  /papi/analysis/:key   where that ask stands
       POST /papi/analysis/moves  every legal play of a set-up roll (no engine)
+      POST /papi/analysis/rolls  how each of the 21 rolls fares from a board,
+                                 and two candidate plays against each other
 
   Every decision -- whether the position can be asked, whether it has been
   answered already, whose budget it costs, what each refusal says -- is
@@ -34,6 +36,19 @@ defmodule OskolWeb.Api.AnalysisController do
     body = Jason.encode!(conn.body_params)
 
     case :oskol@handlers@analysis.moves_json(CtxBuilder.build(), CtxBuilder.session(conn), body) do
+      {:ok, json} -> json_resp(conn, 200, json)
+      {:error, error} -> error_resp(conn, error)
+    end
+  end
+
+  # Per-roll grids, answered in the request: a grid is about 0.2 s of engine
+  # time, so there is no job to join and nothing to poll. Gleam decides what is
+  # asked, on which cube and from which side; `Oskol.Analysis.Rolls` makes the
+  # call and keeps the answer.
+  def rolls(conn, _params) do
+    body = Jason.encode!(conn.body_params)
+
+    case :oskol@handlers@analysis.rolls_json(CtxBuilder.build(), CtxBuilder.session(conn), body) do
       {:ok, json} -> json_resp(conn, 200, json)
       {:error, error} -> error_resp(conn, error)
     end

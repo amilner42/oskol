@@ -6,7 +6,7 @@ defmodule Oskol.Gleam.Caps.Analysis do
       AnalysisCaps(log, stored, ratings, summaries, report, save, backfill_turns,
       enqueue, review, report_turn, charge, replace, grades, forget_grades,
       graded_for, graded_rooms_for, mistake_costs, ask_budget, asking, submit,
-      allow_ask, release_ask, stored_one)
+      allow_ask, release_ask, stored_one, cached_rolls, ask_rolls)
       RatedGame(game_id, game_number, seat, response_json, ended_at_ms)
       GameLog(slug, format, clock, seed, seats, entries, record_generation)
       LogEntry(kind, player_id, payload_json, at_ms)
@@ -17,10 +17,12 @@ defmodule Oskol.Gleam.Caps.Analysis do
       GradedRoomGame(format, over, winners, game)
       Cursor(ended_at_ms, room_id)
       MistakeCost(puzzle_id, band, game_id, game_number, seat, equity_lost)
-      AskBudget(guest_hour, guest_day, user_hour, user_day, global_day)
+      AskBudget(guest_hour, guest_day, user_hour, user_day, global_day,
+      rolls_minute, rolls_global_minute)
       Ask(key, ids, kind, question_json, request_body, buckets)
       Asker: :free | :asked | :full | {:down, retry_after_s}
       Refused(key, retry_after_s)
+      RollsFailure: {:rolls_refused, detail} | {:rolls_unreachable, retry_after_s}
       LimitBucket(key, limit, window_s)   (src/oskol/caps/auth.gleam)
       Seat(player_id, guest_id, user_id, bot)   (src/oskol/rooms/seat.gleam)
       Status: :pending | :done | :failed
@@ -56,7 +58,8 @@ defmodule Oskol.Gleam.Caps.Analysis do
      &backfill_turns/3, &enqueue/1, Keyword.get(opts, :review, &review/1), &report_turn/3,
      &charge/4, &replace/3, grades, &forget_grades/2, &graded_for/2, &graded_rooms_for/3,
      &mistake_costs/1, &ask_budget/0, &Oskol.Analysis.Asker.asking/1,
-     &Oskol.Analysis.Asker.submit/1, &Oskol.Limiter.allow/1, &release_ask/1, &stored_one/2}
+     &Oskol.Analysis.Asker.submit/1, &Oskol.Limiter.allow/1, &release_ask/1, &stored_one/2,
+     &Oskol.Analysis.Rolls.cached/1, &Oskol.Analysis.Rolls.ask/1}
   end
 
   defp release_ask(buckets) do
@@ -71,7 +74,8 @@ defmodule Oskol.Gleam.Caps.Analysis do
 
     {:ask_budget, positive(config, :guest_hour, 10), positive(config, :guest_day, 30),
      positive(config, :user_hour, 30), positive(config, :user_day, 150),
-     positive(config, :global_day, 600)}
+     positive(config, :global_day, 600), positive(config, :rolls_minute, 30),
+     positive(config, :rolls_global_minute, 120)}
   end
 
   defp positive(config, key, default) do

@@ -13,6 +13,10 @@ defmodule Mix.Tasks.Oskol.Fixtures do
       embedded in `assets/tests/Fixtures.elm` for elm-test. A changed shape
       means the clients must follow.
 
+  The puzzle, reveal, analysis and per-roll-grid payloads
+  (`assets/tests/Puzzle*Fixtures.elm`, `AnalysisFixtures.elm`,
+  `RollsFixtures.elm`) are written the same way, from `oskol/puzzles/fixture`.
+
   The replays are committed and guarded by `test/gamekit/golden_test.gleam`.
   The payloads and `Fixtures.elm` are derived (and large), so they are not
   committed: `bin/check` and CI generate them before running elm-test.
@@ -126,6 +130,25 @@ defmodule Mix.Tasks.Oskol.Fixtures do
     )
 
     Mix.shell().info("wrote assets/tests/CubeCallFixtures.elm (#{length(calls)} cube calls)")
+
+    grids = Enum.map(:oskol@puzzles@fixture.rolls_answers(), fn {name, json} -> {name, json} end)
+
+    File.write!(
+      "assets/tests/RollsFixtures.elm",
+      elm_module(grids, "RollsFixtures", rolls_doc())
+    )
+
+    Mix.shell().info("wrote assets/tests/RollsFixtures.elm (#{length(grids)} grids)")
+  end
+
+  defp rolls_doc do
+    """
+    Each entry is one `POST /papi/analysis/rolls` answer, rendered by
+    `oskol/handlers/analysis` itself from real engine grids: `rolls`, one
+    position's own 21 cells, and `compare`, two candidate plays with the
+    difference between them. The equities are the live engine's, so what a page
+    colours is what real positions produce.
+    """
   end
 
   defp cube_call_doc do

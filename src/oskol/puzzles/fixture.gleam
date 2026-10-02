@@ -18,6 +18,7 @@ import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import oskol/analysis/rolls.{type Roll, type Rolls, Roll, Rolls}
 import oskol/caps/puzzles.{
   type ReplayLink, type Stored, Keyed, ReplayLink, Stored,
 } as _
@@ -29,6 +30,133 @@ import oskol/puzzles.{
   Question, Take,
 }
 import oskol/puzzles/tree
+
+// ---------- The per-roll grids ----------
+
+/// One real 3-ply grid, named: what `POST /papi/analysis/rolls` answers about.
+/// Taken from the live engine (bgsage 2.0.20260907) rather than made up, so
+/// the colours a page draws are the colours real positions produce.
+///
+///   * `opening` -- the opening position, the mover's own 21 rolls. 6-6 is the
+///     best throw there is and 1-2 the worst, which is the sign in a form
+///     anybody can check.
+///   * `baseline` and `compared` -- the boards 24/18 13/8 and a blot-leaving
+///     play of 6-5 leave in a real early midgame, each read from the
+///     opponent's side. The second lets them hit from the bar on 2-2, 2-6 and
+///     1-1, and dances on 5-5, 6-6 and 6-5; the difference grid says so.
+pub fn rolls_sample(name: String) -> Rolls {
+  case name {
+    "baseline" -> baseline_grid()
+    "compared" -> compared_grid()
+    _ -> opening_grid()
+  }
+}
+
+/// The same grid as the engine writes one: `{level, equity, rows}`, which is
+/// what a turn of a review carries and what `POST /backgammon/rolls` answers.
+/// What a test stands in for the engine with, so both sides of the wire are
+/// read from one artefact.
+pub fn rolls_answer(name: String) -> String {
+  let grid = rolls_sample(name)
+  json.to_string(
+    json.object([
+      #("level", json.string(grid.level)),
+      #("equity", json.float(grid.equity)),
+      #(
+        "rows",
+        json.array(grid.rows, fn(row: Roll) {
+          json.object([
+            #("dice", json.array([row.dice.0, row.dice.1], json.int)),
+            #("weight", json.int(row.weight)),
+            #("equity", json.float(row.equity)),
+            #("best", json.string(row.best)),
+          ])
+        }),
+      ),
+    ]),
+  )
+}
+
+/// The opening position's own grid, from the engine.
+fn opening_grid() -> Rolls {
+  Rolls(level: analysis.rolls_level, equity: 0.09823331981897354, rows: [
+    Roll(#(1, 1), 1, 0.29992392659187317, "8/7(2) 6/5(2)"),
+    Roll(#(2, 2), 1, 0.3128664791584015, "13/11(2) 6/4(2)"),
+    Roll(#(3, 3), 1, 0.3341923654079437, "8/5(2) 6/3(2)"),
+    Roll(#(4, 4), 1, 0.43256622552871704, "24/20(2) 13/9(2)"),
+    Roll(#(5, 5), 1, 0.1593828648328781, "13/3(2)"),
+    Roll(#(6, 6), 1, 0.586184561252594, "24/18(2) 13/7(2)"),
+    Roll(#(1, 2), 2, -0.0043206606060266495, "24/23 13/11"),
+    Roll(#(1, 3), 2, 0.21308979392051697, "8/5 6/5"),
+    Roll(#(1, 4), 2, -0.005338947754353285, "24/23 13/9"),
+    Roll(#(1, 5), 2, 0.007008453365415335, "24/23 13/8"),
+    Roll(#(1, 6), 2, 0.13307785987854004, "13/7 8/7"),
+    Roll(#(2, 3), 2, 0.006010701414197683, "24/21 13/11"),
+    Roll(#(2, 4), 2, 0.14198105037212372, "8/4 6/4"),
+    Roll(#(2, 5), 2, 0.008565329946577549, "24/22 13/8"),
+    Roll(#(2, 6), 2, 0.015899542719125748, "24/18 13/11"),
+    Roll(#(3, 4), 2, -0.0037979776971042156, "24/20 13/10"),
+    Roll(#(3, 5), 2, 0.06961020082235336, "8/3 6/3"),
+    Roll(#(3, 6), 2, 0.0077416375279426575, "24/18 13/10"),
+    Roll(#(4, 5), 2, 0.024491041898727417, "24/20 13/8"),
+    Roll(#(4, 6), 2, 0.010247399099171162, "24/18 13/9"),
+    Roll(#(5, 6), 2, 0.08137615025043488, "24/13"),
+  ])
+}
+
+/// The grid of the board 24/18 13/8 leaves, from the opponent's side.
+fn baseline_grid() -> Rolls {
+  Rolls(level: analysis.rolls_level, equity: -0.17296656966209412, rows: [
+    Roll(#(1, 1), 1, 0.1338711529970169, "8/7* 8/7 6/5(2)"),
+    Roll(#(2, 2), 1, -0.006393031217157841, "13/11(2) 6/4(2)"),
+    Roll(#(3, 3), 1, 0.14689384400844574, "13/7* 13/7"),
+    Roll(#(4, 4), 1, 0.04608413204550743, "13/5(2)"),
+    Roll(#(5, 5), 1, 0.07805745303630829, "13/8(2) 6/1* 6/1"),
+    Roll(#(6, 6), 1, 0.2759859561920166, "13/7* 13/1* 7/1"),
+    Roll(#(1, 2), 2, -0.30465424060821533, "13/11 8/7*"),
+    Roll(#(1, 3), 2, -0.1855165958404541, "8/5 6/5"),
+    Roll(#(1, 4), 2, -0.3066243529319763, "13/9 8/7*"),
+    Roll(#(1, 5), 2, -0.26294395327568054, "13/7*"),
+    Roll(#(1, 6), 2, 0.041188932955265045, "13/7 8/7*"),
+    Roll(#(2, 3), 2, -0.32637879252433777, "13/8"),
+    Roll(#(2, 4), 2, -0.19894637167453766, "8/4 6/4"),
+    Roll(#(2, 5), 2, -0.29792696237564087, "24/22 13/8"),
+    Roll(#(2, 6), 2, -0.22064875066280365, "13/11 13/7*"),
+    Roll(#(3, 4), 2, -0.35619020462036133, "13/6"),
+    Roll(#(3, 5), 2, -0.27225619554519653, "24/16"),
+    Roll(#(3, 6), 2, -0.22931762039661407, "24/21 13/7*"),
+    Roll(#(4, 5), 2, -0.3907969295978546, "13/9 13/8"),
+    Roll(#(4, 6), 2, -0.18040518462657928, "24/14"),
+    Roll(#(5, 6), 2, 0.04076911881566048, "24/13"),
+  ])
+}
+
+/// The same for a play that leaves two blots and a checker on their bar.
+fn compared_grid() -> Rolls {
+  Rolls(level: analysis.rolls_level, equity: 0.22087480127811432, rows: [
+    Roll(#(1, 1), 1, 0.8395447731018066, "bar/24* 24/23* 6/5(2)"),
+    Roll(#(2, 2), 1, 0.8083012104034424, "bar/23* 13/11 6/4(2)"),
+    Roll(#(3, 3), 1, 0.28395354747772217, "bar/22 13/10(3)"),
+    Roll(#(4, 4), 1, 0.6964887976646423, "bar/17* 13/9(2)"),
+    Roll(#(5, 5), 1, -0.30075767636299133, ""),
+    Roll(#(6, 6), 1, -0.30075767636299133, ""),
+    Roll(#(1, 2), 2, 0.3234127163887024, "bar/23* 23/22"),
+    Roll(#(1, 3), 2, 0.22590960562229156, "bar/24* 13/10"),
+    Roll(#(1, 4), 2, 0.23651398718357086, "bar/24* 13/9"),
+    Roll(#(1, 5), 2, 0.22563494741916656, "bar/24* 13/8"),
+    Roll(#(1, 6), 2, 0.18630999326705933, "bar/24* 13/7"),
+    Roll(#(2, 3), 2, 0.36217036843299866, "bar/23* 13/10"),
+    Roll(#(2, 4), 2, 0.38164207339286804, "bar/23* 13/9"),
+    Roll(#(2, 5), 2, 0.36413660645484924, "bar/23* 13/8"),
+    Roll(#(2, 6), 2, 0.5679813623428345, "bar/23* 23/17*"),
+    Roll(#(3, 4), 2, 0.048757873475551605, "bar/22 13/9"),
+    Roll(#(3, 5), 2, 0.3221558630466461, "bar/17*"),
+    Roll(#(3, 6), 2, 0.0036598944570869207, "bar/16"),
+    Roll(#(4, 5), 2, 0.0036598944570869207, "bar/16"),
+    Roll(#(4, 6), 2, 0.011172774247825146, "bar/15"),
+    Roll(#(5, 6), 2, -0.30075767636299133, ""),
+  ])
+}
 
 /// One payload per shape a page has to draw, named: exactly what
 /// `GET /papi/puzzles/:id` answers for each.
@@ -109,6 +237,23 @@ pub fn analyses() -> List(#(String, String)) {
     #("take", analysed("take", levels)),
     #("double_close", analysed("double_close", levels)),
     #("move_no_levels", analysed("move", "{\"levels\":null}")),
+  ]
+}
+
+/// What `POST /papi/analysis/rolls` answers, named: one position's own grid,
+/// and two plays with the difference between them. Its own corpus rather than
+/// one of `analyses`, which is every answer the *status* endpoint gives and is
+/// decoded as such.
+pub fn rolls_answers() -> List(#(String, String)) {
+  [
+    #("rolls", analysis_handler.position_grid_body(rolls_sample("opening"))),
+    #(
+      "compare",
+      analysis_handler.compare_grids_body(
+        rolls_sample("baseline"),
+        rolls_sample("compared"),
+      ),
+    ),
   ]
 }
 

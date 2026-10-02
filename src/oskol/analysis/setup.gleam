@@ -394,6 +394,33 @@ pub fn turn(setup: Setup) -> Result(Turn, String) {
   ))
 }
 
+/// The position a per-roll grid of this setup is taken on: the board as it
+/// stands, from the side of the player who rolls next (`mover`), on the cube
+/// that roll is played on.
+///
+/// The cube is the setup's own for a move and for a double -- a cube question
+/// is asked before the cube is turned, so its grid is the pre-roll board --
+/// and for a take it is what the take left: twice the value, owned by the
+/// taker, who from the doubler's side is the opponent. That is the engine's
+/// own rule for everything after a take (`play_cube` in its `app/review.py`),
+/// and it is why a take's grid is not the same question as its double's.
+///
+/// Unlike `turn`, a roll that plays nothing is not refused: a grid is about
+/// all 21 rolls and not about the one that happens to be set. Meant for a
+/// setup that passed `check`.
+pub fn grid_position(setup: Setup) -> Position {
+  let p = position(setup, mover(setup))
+  case setup.ask {
+    Take -> Position(..p, cube_value: p.cube_value * 2, cube_owner: "opponent")
+    Move(_) | Double -> p
+  }
+}
+
+/// Whether this setup's own play is `jacoby`'s: unlimited play.
+pub fn unlimited(setup: Setup) -> Bool {
+  jacoby(setup)
+}
+
 /// The setup a stored question opens as (`/analysis?p=<id>`): the solver as
 /// White at the bottom, as `handlers/puzzles.shown` draws it, so a stored
 /// take comes back as a `Take` asked of White with the doubler Black.

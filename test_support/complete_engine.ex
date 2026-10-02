@@ -26,7 +26,50 @@ defmodule Oskol.CompleteEngine do
 
   def respond(conn, opts \\ []) do
     {:ok, body, conn} = Plug.Conn.read_body(conn, length: 20_000_000)
-    Req.Test.json(conn, answer(Jason.decode!(body), opts))
+    asked = Jason.decode!(body)
+
+    case conn.request_path do
+      "/backgammon/rolls" ->
+        Req.Test.json(conn, grid(asked))
+
+      "/backgammon/batch" ->
+        results = Enum.map(asked["items"], fn item -> grid(item["request"]) end)
+        Req.Test.json(conn, %{"results" => results})
+
+      _ ->
+        Req.Test.json(conn, answer(asked, opts))
+    end
+  end
+
+  @doc """
+  One board's per-roll grid, the shape `POST /backgammon/rolls` answers and
+  `rolls: true` puts on a turn: 21 rows, `a <= b`, doubles first, weight 1 for
+  a double and 2 otherwise.
+
+  The equities are made up but the invariant is not: the top-level equity is
+  the rows' weighted mean, which is what the page and `oskol/analysis/rolls`
+  lean on. 6-6 is the best roll here, so a test can check a sign.
+  """
+  def grid(_request) do
+    rows =
+      for [d1, d2] <- dice_pairs() do
+        %{
+          "dice" => [d1, d2],
+          "weight" => if(d1 == d2, do: 1, else: 2),
+          "equity" => (d1 + d2) / 100.0 - 0.07,
+          "best" => "#{13 - d1}/#{13 - d1 - d2}"
+        }
+      end
+
+    total = Enum.reduce(rows, 0.0, fn row, sum -> sum + row["weight"] * row["equity"] end)
+
+    %{"level" => "3ply", "equity" => total / 36.0, "rows" => rows}
+  end
+
+  defp dice_pairs do
+    doubles = for d <- 1..6, do: [d, d]
+    rest = for low <- 1..5, high <- (low + 1)..6, do: [low, high]
+    doubles ++ rest
   end
 
   @doc "The engine's answer to a decoded review request, as a map."
@@ -44,6 +87,7 @@ defmodule Oskol.CompleteEngine do
           "move" => move(turn, prefer),
           "luck" => %{"luck" => 0.0}
         }
+        |> grid_if_asked(request, turn)
       end)
 
     n = length(turns)
@@ -62,6 +106,12 @@ defmodule Oskol.CompleteEngine do
       "turns" => turns,
       "players" => [totals, totals]
     }
+  end
+
+  # The engine puts a grid on every turn when the request asks for one, and on
+  # no turn when it does not -- which is what the review path relies on.
+  defp grid_if_asked(out, request, turn) do
+    if request["rolls"], do: Map.put(out, "rolls", grid(turn)), else: out
   end
 
   defp move(%{"board" => board, "dice" => [_, _] = dice, "played" => played}, prefer) do

@@ -60,3 +60,4 @@ package-lock.json
 /assets/tests/PuzzleRevealFixtures.elm
 /assets/tests/AnalysisFixtures.elm
 /assets/tests/CubeCallFixtures.elm
+/assets/tests/RollsFixtures.elm

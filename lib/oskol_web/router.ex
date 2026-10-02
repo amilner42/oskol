@@ -106,6 +106,10 @@ defmodule OskolWeb.Router do
     # player's press, bounded and cached by its question.
     post "/analysis", AnalysisController, :create
     post "/analysis/moves", AnalysisController, :moves
+    # How each of the 21 rolls fares from a board, answered in the request
+    # (0.2 s, cached by the question's bytes); with `after`, one or two
+    # candidate plays' grids and the difference between them.
+    post "/analysis/rolls", AnalysisController, :rolls
     get "/analysis/:key", AnalysisController, :show
   end
 

@@ -327,6 +327,66 @@ POST /papi/analysis/moves              {setup, node?} -> {ok, tree}: every legal
                                          `rate_limited` past 120 a minute a caller
                                          (3000 a minute everybody), kept by the
                                          same limiter as the asks
+POST /papi/analysis/rolls              {setup} -> {ok, rolls: {level, equity,
+                                         cells}}: how each of the 21 distinct
+                                         rolls fares from the set-up position,
+                                         for the player who rolls next. A cell
+                                         is {dice: [a, b], weight (1 for a
+                                         double, 2 otherwise; 36 in all),
+                                         value, best}. **`value` is the roll's
+                                         own cubeful equity**, from the side the
+                                         grid is drawn for: zero is an even
+                                         position, positive is good for that
+                                         player. `level` is always "3ply", and
+                                         `equity` is the weighted mean of the
+                                         cells, which is the position's own
+                                         3-ply equity -- label it, because the
+                                         verdict above it is 4-ply.
+                                       **The colour scale is the client's, and
+                                         it is fixed**: one ramp over every
+                                         grid, 0 neutral, +1 the darkest green,
+                                         -1 the darkest red, anything beyond
+                                         clamped (a cubeful equity can pass 1
+                                         when gammons weigh in; none of twenty
+                                         live grids did). Nothing about colour
+                                         is on the wire: a band would be a
+                                         coarser answer to the same question in
+                                         a second place, and the ramp is what
+                                         must not drift. A cell is **not a
+                                         grade**: the engine plays the best move
+                                         for every roll, so no cell holds a
+                                         mistake.
+                                       {setup, after: [a] | [a, b]} -> {ok,
+                                         grids: [...], diff} -- the boards one
+                                         or two plays left, each as {points,
+                                         white_bar, black_bar} in the setup's
+                                         own shape, answered as a grid each,
+                                         read from the OPPONENT's side (what
+                                         follows a play is their roll). With two,
+                                         `diff` is the same shape again: each
+                                         cell is how much better (positive) or
+                                         worse the second play does on that
+                                         roll for the player who moved, and its
+                                         `equity` is the plays' equity
+                                         difference, the weighted mean of its
+                                         cells.
+                                       Answered in the request: a grid is about
+                                         0.2 s of engine time, so there is no job
+                                         to join and nothing to poll. Cached on
+                                         the engine request's bytes, and a board
+                                         already stored costs no engine time and
+                                         no budget. 422 `validation_failed` with
+                                         the setup's sentence (a roll that plays
+                                         nothing is NOT refused: a grid is about
+                                         all 21 rolls), "Two plays at a time is
+                                         the most to compare", or "Only a roll
+                                         has plays to compare" for a cube
+                                         question with `after`; 429
+                                         `rate_limited` past 30 presses a minute
+                                         a caller (120 a minute everybody, from
+                                         `config :oskol, :analysis_budget`); 503
+                                         `engine_down` while the asker's circuit
+                                         is open
 GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, else
                                        normalised: the one that answered comes back)
 POST /papi/auth/start                  {email, next?} -> {ok}  (always ok: no

@@ -46,6 +46,10 @@ defmodule Oskol.Analysis.Asker do
   @task_supervisor Oskol.Analysis.AskerSupervisor
   @keep_ms :timer.minutes(10)
   @sweep_ms :timer.minutes(1)
+  # The grids (`Oskol.Analysis.Rolls`) are rows rather than ETS and are kept
+  # for the turn grades' week, so they are swept on their own hour.
+  @grid_sweep_ms :timer.hours(1)
+  @grid_keep_days 7
   @route "/backgammon/review"
 
   def start_link(opts) do
@@ -94,6 +98,22 @@ defmodule Oskol.Analysis.Asker do
     :exit, _ -> :full
   end
 
+  @doc """
+  The engine did not answer something this process did not itself ask: open
+  the circuit for `circuit_ms` and say for how many seconds.
+
+  A per-roll grid is asked inside the request rather than queued
+  (`Oskol.Analysis.Rolls`), but it is the same engine, so it closes the same
+  door: a desktop asleep behind a tailnet is asked once and every ask after
+  it, grid or position, is a 503 at once. The jobs already waiting fail with
+  the engine's own sentence, exactly as they do when an ask fails.
+  """
+  def engine_failed(reason) when is_binary(reason) do
+    GenServer.call(__MODULE__, {:engine_failed, reason})
+  catch
+    :exit, _ -> div(config(:circuit_ms, 60_000), 1000)
+  end
+
   @doc "Wait until nothing is queued or in flight. For tests."
   def await_idle(timeout \\ 30_000) do
     GenServer.call(__MODULE__, :await_idle, timeout)
@@ -109,6 +129,7 @@ defmodule Oskol.Analysis.Asker do
     ensure_table()
     :ets.delete_all_objects(@table)
     Process.send_after(self(), :sweep, @sweep_ms)
+    Process.send_after(self(), :sweep_grids, @grid_sweep_ms)
     {:ok, fresh()}
   end
 
@@ -135,6 +156,11 @@ defmodule Oskol.Analysis.Asker do
     end
   end
 
+  def handle_call({:engine_failed, reason}, _from, state) do
+    state = opened(state, reason)
+    {:reply, div(circuit_left() + 999, 1000), counted(state)}
+  end
+
   def handle_call(:await_idle, from, state) do
     if idle?(state) do
       {:reply, :ok, state}
@@ -158,6 +184,19 @@ defmodule Oskol.Analysis.Asker do
       {{:"$1", :"$2", :_, :"$3"},
        [{:is_binary, :"$1"}, {:"=/=", :"$2", :pending}, {:<, :"$3", cutoff}], [true]}
     ])
+
+    {:noreply, state}
+  end
+
+  def handle_info(:sweep_grids, state) do
+    Process.send_after(self(), :sweep_grids, @grid_sweep_ms)
+
+    Task.Supervisor.start_child(@task_supervisor, fn ->
+      case Oskol.Analysis.Rolls.sweep(@grid_keep_days) do
+        0 -> :ok
+        count -> Logger.info("dropped #{count} roll grids older than #{@grid_keep_days} days")
+      end
+    end)
 
     {:noreply, state}
   end
@@ -213,12 +252,18 @@ defmodule Oskol.Analysis.Asker do
   # The engine did not answer. Not asked again for a while, and every job
   # waiting for it is told so now rather than in a minute.
   defp finished(state, key, {:engine_failed, reason}) do
+    fail(key, engine_down_sentence())
+    opened(state, reason)
+  end
+
+  # The circuit, from a failed ask or from a failed grid: shut for
+  # `circuit_ms`, and every job still waiting told so now rather than in a
+  # minute. They never reached the engine, so their budget is handed back.
+  defp opened(state, reason) do
     circuit_ms = config(:circuit_ms, 60_000)
     Logger.warning("analysis paused for #{div(circuit_ms, 1000)}s: #{reason}")
     down = engine_down_sentence()
-    fail(key, down)
 
-    # These never reached the engine: their budget is handed back.
     state.queue
     |> :queue.to_list()
     |> Enum.each(fn {:ask, waiting, _, _, _, _, buckets} ->

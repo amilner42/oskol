@@ -105,6 +105,7 @@ fn moved(results: Int, n_legal: Int, top: List(report.Candidate)) {
       grade: "best",
     )),
     luck: None,
+    rolls: None,
   )
 }
 

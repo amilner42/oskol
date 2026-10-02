@@ -27,6 +27,7 @@ import oskol/puzzles.{
   type Answer, type Question, Candidate, CubeAnswer, DoublePass, MoveAnswer,
   Outcome, Probs,
 }
+import oskol/puzzles/fixture
 import oskol/puzzles/tree
 
 import oskol/fakes
@@ -52,9 +53,10 @@ fn recorded(key: String) -> List(String) {
 }
 
 fn reset() -> Nil {
-  list.each(["allow", "buckets", "submit", "stored", "pictures"], fn(k) {
-    put(k, [])
-  })
+  list.each(
+    ["allow", "buckets", "submit", "stored", "pictures", "asked", "bodies"],
+    fn(k) { put(k, []) },
+  )
 }
 
 // ---------- Positions ----------
@@ -96,6 +98,8 @@ fn budget() -> analysis_caps.AskBudget {
     user_hour: 30,
     user_day: 150,
     global_day: 600,
+    rolls_minute: 30,
+    rolls_global_minute: 120,
   )
 }
 
@@ -411,17 +415,19 @@ pub fn a_new_key_reserves_then_asks_what_openings_would_test() {
     == json.to_string(analysis.position_request(turn, 1, openings.jacoby))
   assert string.contains(ask.request_body, "\"all_results\":true")
   assert string.contains(ask.request_body, "\"include_luck\":false")
+  // A game's turn and a board asked on its own differ in exactly two flags:
+  // this path wants neither the luck nor the grid, both of which cost the
+  // engine a cube evaluation that nothing here reads.
+  assert string.contains(ask.request_body, "\"rolls\":false")
   assert ask.request_body
-    == string.replace(
-      json.to_string(analysis.turns_request(
-        [#(1, turn)],
-        openings.jacoby,
-        None,
-        None,
-      )),
-      "\"include_luck\":true",
-      "\"include_luck\":false",
-    )
+    == json.to_string(analysis.turns_request(
+      [#(1, turn)],
+      openings.jacoby,
+      None,
+      None,
+    ))
+    |> string.replace("\"include_luck\":true", "\"include_luck\":false")
+    |> string.replace("\"rolls\":true", "\"rolls\":false")
   assert list.map(ask.buckets, fn(b) { b.key })
     == [
       "analysis:guest:g1:hour",
@@ -436,6 +442,20 @@ pub fn a_game_turn_is_still_asked_with_its_luck_test() {
     json.to_string(analysis.one_turn_request(turn, 1, True)),
     "\"include_luck\":true",
   )
+}
+
+/// A game's turn asks for its per-roll grid, which rides free on the luck
+/// analysis the turn already makes -- and so the bytes a turn is graded and
+/// cached under moved when that flag was added. Every grade stored before the
+/// deploy is a miss, asked again once at the end of its game.
+pub fn a_game_turn_is_asked_for_its_grid_test() {
+  let assert Ok(turn) = openings.turn(openings.start(), #(3, 1))
+  let body = json.to_string(analysis.one_turn_request(turn, 1, True))
+  assert string.contains(body, "\"rolls\":true")
+  // And the end-of-game lookup builds the same bytes as the grade taken as the
+  // turn was played: one builder, so the cache cannot miss by a flag.
+  assert body
+    == json.to_string(analysis.turns_request([#(1, turn)], True, None, None))
 }
 
 pub fn a_charged_ask_the_asker_will_not_take_is_handed_back_test() {
@@ -943,4 +963,309 @@ pub fn too_many_moves_in_a_minute_is_429_test() {
   assert error.status(err) == 429
   assert error.message(err) == handler.moves_limited_message
   assert error.retry_after_s(err) == Some(42)
+}
+
+// ---------- POST /papi/analysis/rolls ----------
+
+/// A context whose grid store holds the named request bodies and whose engine
+/// records what it was asked for and answers every board with one sample grid.
+/// `cached` is matched on the whole request body, which is how the real store
+/// is keyed.
+fn grids_ctx(cached: List(String)) -> Ctx {
+  let base = fresh_ctx()
+  Ctx(
+    ..base,
+    analysis: analysis_caps.AnalysisCaps(
+      ..base.analysis,
+      cached_rolls: fn(bodies: List(String)) {
+        list.map(bodies, fn(body) {
+          case list.contains(cached, body) {
+            True -> Some(fixture.rolls_answer("baseline"))
+            False -> None
+          }
+        })
+      },
+      ask_rolls: fn(bodies: List(String)) {
+        record("asked", int.to_string(list.length(bodies)))
+        list.each(bodies, fn(body) { record("bodies", body) })
+        Ok(list.map(bodies, fn(_) { fixture.rolls_answer("opening") }))
+      },
+    ),
+  )
+}
+
+fn rolls_body(s: Setup, after: List(List(Int))) -> String {
+  let board = fn(points) {
+    json.object([
+      #("points", json.array(points, json.int)),
+      #("white_bar", json.int(0)),
+      #("black_bar", json.int(0)),
+    ])
+  }
+  json.to_string(
+    json.object([
+      #("setup", setup.to_json(s)),
+      #("after", json.array(after, board)),
+    ]),
+  )
+}
+
+/// The engine request Gleam built for the nth board it asked about.
+fn asked_body(index: Int) -> String {
+  let assert Ok(body) = list.drop(recorded("bodies"), index) |> list.first
+  body
+}
+
+fn asked_board(index: Int) -> List(Int) {
+  let assert Ok(board) =
+    json.parse(asked_body(index), decode.at(["board"], decode.list(decode.int)))
+  board
+}
+
+fn asked_cube(index: Int) -> #(Int, String) {
+  let assert Ok(cube) =
+    json.parse(asked_body(index), {
+      use value <- decode.field("cube_value", decode.int)
+      use owner <- decode.field("cube_owner", decode.string)
+      decode.success(#(value, owner))
+    })
+  cube
+}
+
+pub fn a_positions_grid_is_asked_at_three_ply_and_nowhere_else_test() {
+  let s = opening(#(3, 1))
+  let ctx = grids_ctx([])
+  let assert Ok(body) = handler.rolls_json(ctx, guest(), rolls_body(s, []))
+  assert recorded("asked") == ["1"]
+  assert recorded("allow") == ["allow"]
+  // 3-ply, always: 2-ply rows are the bare net and 4-ply rows are corrupt.
+  assert string.contains(asked_body(0), "\"level\":\"3ply\"")
+  assert asked_board(0) == setup.question(s).board
+  assert asked_cube(0) == #(1, "centered")
+  // The answer is cells, and the rows never leave.
+  assert string.contains(body, "\"ok\":true,\"rolls\":{\"level\":\"3ply\"")
+  assert !string.contains(body, "\"rows\"")
+  assert count(body, "\"dice\":[") == 21
+}
+
+/// A grid already stored costs no engine time **and no budget**: nothing is
+/// asked and nothing is charged, so a player reading a replay turn by turn is
+/// never told to wait for a position that is already answered.
+pub fn a_stored_grid_costs_nothing_test() {
+  let s = opening(#(3, 1))
+  let asked =
+    json.to_string(analysis.rolls_request(setup.grid_position(s), True))
+  let ctx = grids_ctx([asked])
+  let assert Ok(body) = handler.rolls_json(ctx, guest(), rolls_body(s, []))
+  assert recorded("asked") == []
+  assert recorded("allow") == []
+  assert string.contains(body, "\"ok\":true,\"rolls\":")
+}
+
+/// Two candidate plays go to the engine together -- one round trip -- and each
+/// is read from the opponent's side, because what follows a play is their roll.
+pub fn two_plays_are_asked_about_together_from_the_other_side_test() {
+  let s = opening(#(3, 1))
+  let played = after_31()
+  let ctx = grids_ctx([])
+  let assert Ok(body) =
+    handler.rolls_json(ctx, guest(), rolls_body(s, [played, after_65()]))
+  // One call, two boards, and one charge for the press.
+  assert recorded("asked") == ["2"]
+  assert recorded("allow") == ["allow"]
+  // Each board is the opposite of what the mover sees.
+  let moved = Setup(..s, points: played)
+  assert asked_board(0) == puzzles.flip(setup.question(moved).board)
+  assert asked_board(0) != setup.question(moved).board
+  // Two grids and one difference, and the difference is 21 cells.
+  assert string.contains(body, "\"grids\":[{")
+  assert string.contains(body, "\"diff\":{")
+  assert count(body, "\"dice\":[") == 63
+}
+
+pub fn a_cube_questions_grid_is_the_pre_roll_board_test() {
+  let s = Setup(..opening(#(3, 1)), ask: setup.Double)
+  let ctx = grids_ctx([])
+  let assert Ok(_) = handler.rolls_json(ctx, guest(), rolls_body(s, []))
+  // The board the turn stands on, on the cube as it stands: the double has not
+  // been offered yet in the position being asked about.
+  assert asked_board(0) == setup.question(s).board
+  assert asked_cube(0) == #(1, "centered")
+}
+
+/// A take is answered on the cube the take left: twice the value, owned by the
+/// taker, who from the doubler's side is the opponent. Everything after a take
+/// is played on that cube, which is the engine's own rule.
+pub fn a_takes_grid_is_on_the_doubled_cube_test() {
+  let s =
+    Setup(
+      ..opening(#(3, 1)),
+      ask: setup.Take,
+      cube_value: 2,
+      cube_owner: Some(Black),
+    )
+  let ctx = grids_ctx([])
+  let assert Ok(_) = handler.rolls_json(ctx, guest(), rolls_body(s, []))
+  assert asked_cube(0) == #(4, "opponent")
+  // And from the doubler's side, who is on roll once the cube is turned.
+  assert asked_board(0) == setup.question(s).board
+}
+
+pub fn a_grid_is_charged_to_the_minute_and_refused_over_it_test() {
+  let s = opening(#(3, 1))
+  let base = grids_ctx([])
+  let ctx =
+    Ctx(
+      ..base,
+      analysis: analysis_caps.AnalysisCaps(..base.analysis, allow_ask: fn(_) {
+        Error(analysis_caps.Refused("rolls:guest:g1:minute", 12))
+      }),
+    )
+  let assert Error(err) = handler.rolls_json(ctx, guest(), rolls_body(s, []))
+  assert error.status(err) == 429
+  assert error.code(err) == handler.rate_limited_code
+  assert error.message(err) == handler.rolls_limited_message
+  assert recorded("asked") == []
+  // The buckets: this caller's minute, then everybody's.
+  assert list.map(handler.rolls_buckets(budget(), guest()), fn(b) {
+      #(b.key, b.limit, b.window_s)
+    })
+    == [
+      #("rolls:guest:g1:minute", 30, 60),
+      #("rolls:global:minute", 120, 60),
+    ]
+  assert list.map(handler.rolls_buckets(budget(), account()), fn(b) { b.key })
+    == ["rolls:user:u1:minute", "rolls:global:minute"]
+}
+
+pub fn an_engine_that_will_not_answer_hands_the_charge_back_test() {
+  list.each(
+    [
+      #(analysis_caps.RollsUnreachable(30), 503),
+      #(analysis_caps.RollsRefused("board"), 422),
+    ],
+    fn(outcome) {
+      let base = grids_ctx([])
+      let ctx =
+        Ctx(
+          ..base,
+          analysis: analysis_caps.AnalysisCaps(
+            ..base.analysis,
+            ask_rolls: fn(_) { Error(outcome.0) },
+            release_ask: fn(buckets: List(LimitBucket)) {
+              list.each(buckets, fn(b) { record("released", b.key) })
+            },
+          ),
+        )
+      let _ = put("released", [])
+      let assert Error(err) =
+        handler.rolls_json(ctx, guest(), rolls_body(opening(#(3, 1)), []))
+      assert error.status(err) == outcome.1
+      assert recorded("released")
+        == ["rolls:guest:g1:minute", "rolls:global:minute"]
+    },
+  )
+}
+
+/// The asker's circuit is read before anything is asked, so an engine that
+/// just failed is told about once rather than once per press.
+pub fn an_open_circuit_answers_for_the_engine_test() {
+  let s = opening(#(3, 1))
+  let assert Error(err) =
+    handler.rolls_json(
+      with_asking(grids_ctx([]), analysis_caps.Down(42)),
+      guest(),
+      rolls_body(s, []),
+    )
+  assert error.status(err) == 503
+  assert error.code(err) == handler.engine_down_code
+  assert recorded("asked") == []
+  assert recorded("allow") == []
+  // A full line is a 429, as it is for a position.
+  let assert Error(busy) =
+    handler.rolls_json(
+      with_asking(grids_ctx([]), analysis_caps.Full),
+      guest(),
+      rolls_body(s, []),
+    )
+  assert error.status(busy) == 429
+}
+
+pub fn a_position_that_cannot_be_asked_is_refused_before_the_engine_test() {
+  let empty = Setup(..opening(#(3, 1)), points: list.repeat(0, 24))
+  let assert Error(err) =
+    handler.rolls_json(grids_ctx([]), guest(), rolls_body(empty, []))
+  assert error.status(err) == 422
+  assert error.message(err) == setup.no_white_message
+  // A third play is not a comparison, and a cube question has no plays.
+  let assert Error(third) =
+    handler.rolls_json(
+      grids_ctx([]),
+      guest(),
+      rolls_body(opening(#(3, 1)), [after_31(), after_65(), after_31()]),
+    )
+  assert error.message(third) == handler.too_many_boards_message
+  let assert Error(cube) =
+    handler.rolls_json(
+      grids_ctx([]),
+      guest(),
+      rolls_body(Setup(..opening(#(3, 1)), ask: setup.Double), [after_31()]),
+    )
+  assert error.message(cube) == handler.no_candidates_message
+  assert recorded("asked") == []
+}
+
+/// A roll that plays nothing is refused an ask (`dances`) and is not refused a
+/// grid: the grid is about all 21 rolls, not about the one that is set.
+pub fn a_dancing_roll_still_has_a_grid_test() {
+  let s = Setup(..opening(#(6, 6)), points: barred_points(), white_bar: 1)
+  let assert Error(dances) = handler.prepare(grids_ctx([]), guest(), body(s))
+  assert error.code(dances) == handler.dances_code
+  let assert Ok(_) =
+    handler.rolls_json(grids_ctx([]), guest(), rolls_body(s, []))
+  assert recorded("asked") == ["1"]
+}
+
+/// White on the bar with every entry point held against them.
+fn barred_points() -> List(Int) {
+  list.range(1, 24)
+  |> list.map(fn(point) {
+    case point >= 19, point == 1 {
+      True, _ -> -2
+      _, True -> 2
+      _, _ -> 0
+    }
+  })
+}
+
+/// The board the opening 3-1 leaves (8/5 6/5), and one 6-5 leaves (24/13), in
+/// the setup's own shape.
+fn after_31() -> List(Int) {
+  opening_points() |> at(8, -1) |> at(6, -1) |> at(5, 2)
+}
+
+fn after_65() -> List(Int) {
+  opening_points() |> at(24, -1) |> at(13, 1)
+}
+
+fn opening_points() -> List(Int) {
+  let b = board.initial()
+  list.range(1, 24)
+  |> list.map(fn(p) {
+    board.count(b, White, board.Point(p))
+    - board.count(b, Black, board.Point(p))
+  })
+}
+
+fn at(points: List(Int), point: Int, by: Int) -> List(Int) {
+  list.index_map(points, fn(n, i) {
+    case i + 1 == point {
+      True -> n + by
+      False -> n
+    }
+  })
+}
+
+fn count(text: String, part: String) -> Int {
+  list.length(string.split(text, part)) - 1
 }

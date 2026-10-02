@@ -107,7 +107,7 @@ defmodule Oskol.RatingsTest do
     {:analysis_caps, _log, _stored, ratings, _summaries, _report, _save, _backfill_turns,
      _enqueue, _review, _report_turn, _charge, _replace, _grades, _forget_grades, _graded_for,
      _graded_rooms_for, _mistake_costs, _ask_budget, _asking, _submit, _allow_ask, _release_ask,
-     _stored_one} =
+     _stored_one, _cached_rolls, _ask_rolls} =
       Oskol.Gleam.Caps.Analysis.build()
 
     assert [{:stored, 1, :pending, 1, :none, false, false, 1}] = ratings.(game_id)

@@ -110,8 +110,9 @@ game or a room talks to it.
   `oskol/reviews/report.to_json` makes of the response: per turn the grade,
   the move played, the best and the top five with equity lost and each
   candidate's chances (win, gammon and backgammon, both ways), the cube
-  verdict with its three equities and the chances it was judged on, and
-  luck; per player PR, error, grade and mistake counts and luck. The
+  verdict with its three equities and the chances it was judged on, luck,
+  and the turn's **per-roll grid** (`rolls`: see below); per player PR, error,
+  grade and mistake counts and luck. The
   engine grades the cube only where the mover could have doubled (not
   the Crawford game, not the other side's cube), but it grades "no
   double" on the opening roll too; the report drops that one, and guards
@@ -128,6 +129,21 @@ game or a room talks to it.
   that touches neither body), and `GET .../reviews/<n>` sends that one
   game's stored `report` verbatim. Statuses: `done`, `pending`, `failed`,
   `empty` (no complete turn).
+- **Every turn carries its per-roll grid** (`rolls`, about 1 KB a turn): how
+  each of the 21 distinct rolls fares from the board that turn began on, as
+  cells -- each the roll's own cubeful equity (`src/oskol/analysis/rolls`, the
+  same shape `POST /papi/analysis/rolls` answers -- `docs/api.md`). It is free: the engine
+  computes it for the luck of the roll on every turn and used to throw it
+  away, so `rolls: true` on the request keeps what was already in hand (a
+  turn with no dice costs one 3-ply call). The grid is 3-ply where the
+  verdict above it is 4-ply, and the page has to say so.
+  `rolls` is `null` on every turn of every answer stored before this, and
+  those cannot be backfilled -- `mix oskol.reviews.rebuild` re-queues the
+  engine rather than re-rendering -- so the replay asks for such a turn's
+  grid on demand instead (one press, 0.2 s, cached).
+  **Adding the flag moved the turn-grade cache key**, which is the sha256 of
+  the request body: every grade stored before the deploy is a miss and is
+  asked again once, at the end of its game. A cache miss, not a loss.
 - `GET .../record` is assembled the same way: the head (players, match
   length, opening position) from starting the room's game and asking nobody
   to play it, plus one `game_records` row per game. It reads the live room

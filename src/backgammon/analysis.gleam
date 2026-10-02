@@ -1061,6 +1061,35 @@ pub fn request_json(g: GameTurns) -> Json {
   request_json_at(g, None, None)
 }
 
+/// The one depth a per-roll grid is ever asked at.
+///
+/// Never 4-ply: the engine's per-roll rows there are corrupt rather than
+/// imprecise -- nondeterministic between runs, biased low, and they flip
+/// cube decisions. Never 2-ply either: those rows are the bare network with
+/// no lookahead. The engine refuses both (a 422 before any engine time);
+/// this constant is so nothing here asks for them in the first place. See
+/// the `bg-roll-breakdown` and `bgsage-gotchas` docs for the measurements.
+pub const rolls_level = "3ply"
+
+/// The body of `POST /backgammon/rolls` for one board: how each of the 21
+/// distinct rolls fares for the player on roll, always at `rolls_level`.
+///
+/// The board is a `Position`'s, so it is already from the side of whoever is
+/// on roll in it -- for a candidate play's grid that is the opponent, and
+/// turning the position round is `oskol/analysis/rolls.opposite`.
+pub fn rolls_request(p: Position, jacoby: Bool) -> Json {
+  json.object([
+    #("board", json.array(p.board, json.int)),
+    #("cube_value", json.int(p.cube_value)),
+    #("cube_owner", json.string(p.cube_owner)),
+    #("away1", json.int(p.away1)),
+    #("away2", json.int(p.away2)),
+    #("is_crawford", json.bool(p.crawford)),
+    #("jacoby", json.bool(jacoby)),
+    #("level", json.string(rolls_level)),
+  ])
+}
+
 /// The same request at a named search depth (`move_level`, `cube_level`,
 /// as the engine names them: "4ply"), for asking a game again at the
 /// depth its stored answer was graded at. None leaves the engine's own
@@ -1075,6 +1104,7 @@ pub fn request_json_at(
     g.jacoby,
     move_level,
     cube_level,
+    True,
     True,
   )
 }
@@ -1099,6 +1129,7 @@ pub fn turns_request(
     move_level,
     cube_level,
     True,
+    True,
   )
 }
 
@@ -1113,6 +1144,7 @@ pub fn position_request(turn: Turn, index: Int, jacoby: Bool) -> Json {
     jacoby,
     None,
     None,
+    False,
     False,
   )
 }
@@ -1131,6 +1163,7 @@ fn body_json(
   move_level: Option(String),
   cube_level: Option(String),
   include_luck: Bool,
+  rolls: Bool,
 ) -> Json {
   let level = fn(name, value) {
     case value {
@@ -1145,6 +1178,7 @@ fn body_json(
         #("top_moves", json.int(5)),
         #("all_results", json.bool(True)),
         #("include_luck", json.bool(include_luck)),
+        #("rolls", json.bool(rolls)),
       ],
       level("move_level", move_level),
       level("cube_level", cube_level),
