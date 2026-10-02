@@ -255,7 +255,7 @@ assets/src/Page/Puzzle.elm       "/puzzles/:id" one puzzle: the question over th
                                  under the reveal holds KEEP GOING beside I'M DONE;
                                  the end of a run is
                                  the score (one is a whole session and says so), "N
-                                 practised today", the way on (KEEP GOING, PRACTICE
+                                 practiced today", the way on (KEEP GOING, PRACTICE
                                  ANYWAY) and the way back, or the sign-in for a guest
 assets/src/Games/Backgammon/Puzzle.elm  the puzzle wire: the question and tree decoders,
                                  the board on a tree node, and the reveal's decoders

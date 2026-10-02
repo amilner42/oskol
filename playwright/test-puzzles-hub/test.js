@@ -9,14 +9,15 @@
  *     and TRY ONE opens a puzzle with no NEXT (one puzzle is not a run).
  *  2. Alice, a guest holding the seat that made the mistakes, opens
  *     /puzzles: "12 mistakes from your 1 game", that nothing is saved,
- *     her worst tier in front with TRAIN. The run: that tier's
+ *     her worst tier open with TRAIN. The run: that tier's
  *     puzzles, PLAY and NEXT each, then the score and the sign-in ask. She signs in right there (the mail read
  *     from /dev/last-login) and CONTINUE lands her back on /puzzles with
  *     a deck: the counts line, and her timezone sent once.
- *  3. As an account: five decks, one in front -- the worst tier, by its
+ *  3. As an account: five decks as drawers, one open -- the worst tier, by its
  *     mark, with its grid (a square a mistake), today's ring and TRAIN
- *     -- and the others as rows; tapping a row and back leaves the page
- *     the height it was. TRAIN runs that tier -- the counter and the
+ *     -- and the others as rows. Each row tapped in turn opens in its own
+ *     slot: the five never reorder and nothing above the tapped row
+ *     moves; back to the lead, the page is the height it was. TRAIN runs that tier -- the counter and the
  *     marks watched over each of them -- and ends on the summary with the
  *     way back. I'M DONE ends a run after one. Once today's set is done
  *     the ring is full and the one button is still there: KEEP GOING (or
@@ -153,7 +154,7 @@ async function progressOf(page, seen) {
     ring,
     strip: await page.evaluate(() => { const r = document.querySelector('#pz-progress').getBoundingClientRect(); return { y: Math.round(r.y), h: Math.round(r.height) }; }),
     filled: await page.locator('#pz-marks [data-mark]:not([data-mark="blank"])').count(),
-    today: Number((count.match(/(\d+) practised today/) || [0, 0])[1]),
+    today: Number((count.match(/(\d+) practiced today/) || [0, 0])[1]),
   };
 }
 
@@ -223,7 +224,7 @@ async function run(browser, setup, errors) {
     must(!html.includes('name="robots"'), 'the practice home is indexable');
     await stranger.waitForSelector('#puzzles-hub #hub-try-one');
     must(await stranger.locator('#hub-about').count(), 'a stranger is told what this is');
-    must(!(await stranger.locator('#hub-card').count()), 'and nothing of hers is in front');
+    must(!(await stranger.locator('#hub-card').count()), 'and nothing of hers is open');
     const strangerRows = await stranger.locator('#hub-rows .dk-row').count();
     must(strangerRows >= 3, `the decks are rows, her tiers among them (${strangerRows})`);
     await stranger.click('#hub-try-one');
@@ -248,12 +249,12 @@ async function run(browser, setup, errors) {
     must(headline === `${KEPT} mistakes from your 1 game`, `a guest reads what is hers: "${headline}"`);
     must(await alice.locator('#hub-unsaved').count(), 'and that nothing is saved yet');
     must(posts.length === 0, 'a guest\'s timezone is nobody\'s to keep');
-    // Her worst tier is in front, and TRAIN runs that tier.
+    // Her worst tier is open, and TRAIN runs that tier.
     const guestTier = await alice.getAttribute('#hub-card', 'data-deck');
     const guestDecks = (await (await alice.request.get(`${BASE}/papi/practice/decks`)).json()).decks;
     const guestSize = guestDecks.find((d) => d.id === guestTier).size;
     const firstTier = guestDecks.find((d) => d.kind === 'mistakes' && d.size > 0).id;
-    must(guestTier === firstTier, `her worst tier with mistakes is in front: ${guestTier} (${guestSize})`);
+    must(guestTier === firstTier, `her worst tier with mistakes is open: ${guestTier} (${guestSize})`);
     const squares = await alice.locator('#hub-grid rect').count();
     must(squares === guestSize, `a square a mistake (${squares})`);
     await alice.click('#hub-go');
@@ -303,11 +304,11 @@ async function run(browser, setup, errors) {
     // ---- 3. as an account ----
     await alice.goto(`${BASE}/puzzles`);
     await alice.waitForSelector('#hub-go[data-action="fix-one"]');
-    // One deck in front: the worst tier, by the mark the replay draws, a
+    // One deck open: the worst tier, by the mark the replay draws, a
     // square a mistake, today's ring and one button.
     const decks = (await (await alice.request.get(`${BASE}/papi/practice/decks`)).json());
     const tier = await alice.getAttribute('#hub-card', 'data-deck');
-    must(tier === decks.lead && ['very_bad', 'bad', 'doubtful'].includes(tier), `the server's lead is in front: ${tier}`);
+    must(tier === decks.lead && ['very_bad', 'bad', 'doubtful'].includes(tier), `the server's lead is open: ${tier}`);
     const mark = { very_bad: '??', bad: '?', doubtful: '?!' }[tier];
     const front = decks.decks.find((d) => d.id === tier);
     must((await alice.textContent('#hub-card .dk-mark')).trim() === mark, `named by its mark: ${mark}`);
@@ -317,23 +318,51 @@ async function run(browser, setup, errors) {
     must(Number(ring) === front.standing.target_today, `today's ring is today's set (${ring})`);
     const fix = (await alice.textContent('#hub-go')).trim();
     must(fix === 'TRAIN', `one button, and it says what it is: "${fix}"`);
-    // The other decks are rows, and the one in front is not also a row.
+    // The other decks are rows, and the open one is not also a row: its
+    // card is in its own slot, in the catalog's order.
     const rows = await alice.locator('#hub-rows .dk-row').count();
     must(rows === decks.decks.length - 1, `every other deck is a row (${rows} of ${decks.decks.length - 1})`);
-    must(!(await alice.locator(`#hub-row-${tier}`).count()), 'and the deck in front is not also a row');
-    // Nothing moves: a row tapped in front and back leaves the page the
-    // height it was.
-    const tappable = alice.locator('#hub-rows button.dk-row');
-    if (await tappable.count()) {
-      const before = await alice.evaluate(() => document.querySelector('#puzzles-hub').getBoundingClientRect().height);
-      const other = await tappable.first().getAttribute('data-deck');
-      await tappable.first().click();
-      await alice.waitForSelector(`#hub-card[data-deck="${other}"]`);
-      await alice.click(`#hub-row-${tier}`);
-      await alice.waitForSelector(`#hub-card[data-deck="${tier}"]`);
-      const after = await alice.evaluate(() => document.querySelector('#puzzles-hub').getBoundingClientRect().height);
-      must(before === after, `the page is ${after}px before ${other} came in front and after ${tier} went back`);
+    must(!(await alice.locator(`#hub-row-${tier}`).count()), 'and the open deck is not also a row');
+    must(await alice.locator(`#hub-slot-${tier} #hub-card`).count(), 'the open card sits in its own slot');
+    // The drawers: tap every closed row in turn, top to bottom. The five
+    // slots never change order, and the top of every slot above the one
+    // tapped never moves; the card is always in the tapped one's slot.
+    const order = decks.decks.map((d) => d.id);
+    const slots = () => alice.evaluate(() => [...document.querySelectorAll('#hub-rows > .dk-slot')].map((el) => ({
+      id: el.dataset.deck,
+      top: el.getBoundingClientRect().top + window.scrollY,
+    })));
+    const settled = () => alice.evaluate(() => Promise.all(
+      [...document.querySelectorAll('.dk-drawer')].flatMap((el) => el.getAnimations()).map((a) => a.finished)));
+    const heightOf = () => alice.evaluate(() => document.querySelector('#puzzles-hub').getBoundingClientRect().height);
+    await settled();
+    const heightBefore = await heightOf();
+    let tapped = 0;
+    for (const id of order) {
+      const row = alice.locator(`#hub-row-${id}`);
+      if (!(await row.count()) || (await row.evaluate((el) => el.tagName)) !== 'BUTTON') continue;
+      must((await row.getAttribute('aria-expanded')) === 'false', `${id}'s row says it is closed`);
+      const before = await slots();
+      must(JSON.stringify(before.map((s) => s.id)) === JSON.stringify(order), `the slots are in the decks' order: ${before.map((s) => s.id)}`);
+      await row.click();
+      await alice.waitForSelector(`#hub-slot-${id} #hub-card[data-deck="${id}"]`);
+      await settled();
+      const after = await slots();
+      must(JSON.stringify(after.map((s) => s.id)) === JSON.stringify(order), `opening ${id} reordered nothing: ${after.map((s) => s.id)}`);
+      const at = order.indexOf(id);
+      for (let i = 0; i < at; i++) {
+        must(Math.abs(after[i].top - before[i].top) < 0.5, `opening ${id} left ${order[i]} above it where it was (${before[i].top} -> ${after[i].top})`);
+      }
+      tapped++;
     }
+    must(tapped >= 2, `the drawers were tapped open in turn (${tapped})`);
+    log(`opened ${tapped} drawers in turn: nothing reordered, nothing above moved`);
+    // And back to the lead: the page is the height it was.
+    await alice.click(`#hub-row-${tier}`);
+    await alice.waitForSelector(`#hub-slot-${tier} #hub-card[data-deck="${tier}"]`);
+    await settled();
+    const heightAfter = await heightOf();
+    must(heightBefore === heightAfter, `the page is ${heightAfter}px before the drawers were opened and after ${tier} was again`);
     await sleep(300);
     must(posts.length === 2, `the timezone goes once per load of the page, never per fetch (${posts.length} for 2 loads)`);
 
@@ -355,7 +384,7 @@ async function run(browser, setup, errors) {
     await alice.waitForSelector('#pz-keep-going[data-action="continue"]');
     log('I\'M DONE with today unfinished offers KEEP GOING, which goes on with it');
     const oneToday = (await alice.textContent('#pz-today')).trim();
-    must(oneToday === '1 practised today', `the day counts the one: "${oneToday}"`);
+    must(oneToday === '1 practiced today', `the day counts the one: "${oneToday}"`);
 
     // ---- 3c. the rest of the day's new ones, watching the strip ----
     // The answer that finishes today's set puts the celebration under its
@@ -443,7 +472,7 @@ async function run(browser, setup, errors) {
       must(cards === 0, 'and the card is never drawn twice in a run');
       await alice.waitForSelector('#pz-way[data-way]:not([data-way=""])');
       const endToday = (await alice.textContent('#pz-today')).trim();
-      must(endToday === `${NEW_PER_DAY + more} practised today`, `the day's count, under the score: "${endToday}"`);
+      must(endToday === `${NEW_PER_DAY + more} practiced today`, `the day's count, under the score: "${endToday}"`);
     } else {
       await alice.click('#pz-done');
       await alice.waitForSelector('#pz-end');

@@ -1,19 +1,19 @@
 /**
  * Screenshots of the practice home (/puzzles), five decks, for every
- * visitor and every state the deck in front can be in, at 390x844,
+ * visitor and every state the open deck can be in, at 390x844,
  * 320x568, 844x390 and 1440x900 -- with the page held still: every shot
  * also measures what must not move and fails if it did.
  *
  *   01 account, the very bad moves with work today: TRAIN, the ring part
  *      full, every colour of the grid, the cost lines and what patching won
  *      back
- *   02 the same with the replies tapped into the front (a 15x21 grid)
+ *   02 the same with the replies tapped open in their own slot (a 15x21 grid)
  *   03 account, today's set done: KEEP GOING
  *   04 account, everything started and nothing due: PRACTICE ANYWAY
- *   05 a fresh account: nothing of theirs yet, the openings in front, START
+ *   05 a fresh account: nothing of theirs yet, the openings open, START
  *   06 a guest with games: their worst tier, TRAIN, nothing kept
- *   07 a stranger: what this is, TRY ONE, the five as rows
- *   08 a stranger with the openings tapped in front: TRY
+ *   07 a stranger: what this is, TRY ONE, the five closed
+ *   08 a stranger with the openings tapped open: TRY
  *   09 (no shot) OPEN on the hub's card sits inside the eyebrow's line
  *
  * And each deck's own page (/practice/<slug>):
@@ -106,7 +106,7 @@ async function land(page, what) {
   must(same(hubFirst, hubSettled), `${what}: the page as it lands and once it has settled (${hubSettled.h}px)`);
 }
 
-/** Tap a row in, and the one that was in front back: the page is the
+/** Open a row, and the one that was open again: the page is the
  * height it was. */
 async function tapAndBack(page, what) {
   const was = await page.getAttribute('#hub-card', 'data-deck');
@@ -117,9 +117,11 @@ async function tapAndBack(page, what) {
   await page.waitForSelector(`#hub-card[data-deck="${other}"]`);
   await page.click(`#hub-row-${was}`);
   await page.waitForSelector(`#hub-card[data-deck="${was}"]`);
-  await sleep(100);
+  // The drawer slides open; measure once it has.
+  await page.evaluate(() => Promise.all(
+    [...document.querySelectorAll('.dk-drawer')].flatMap((el) => el.getAnimations()).map((a) => a.finished)));
   const after = await box(page, '#puzzles-hub');
-  must(same(before, after), `${what}: #puzzles-hub is ${after.h}px before ${other} came in front and after ${was} went back`);
+  must(same(before, after), `${what}: #puzzles-hub is ${after.h}px before ${other} was opened and after ${was} was again`);
 }
 
 /** Press the card's button with its answer held back: the card is the
@@ -276,7 +278,7 @@ async function openHolds(context, what) {
     const account = await context(setup.guest);
     shape('ladder');
     await shoot(account, '01-account-fix-one', null, { tap: true, press: true });
-    await shoot(account, '02-account-replies-in-front', async (page) => {
+    await shoot(account, '02-account-replies-open', async (page) => {
       await page.click('#hub-row-opening_replies');
       await page.waitForSelector('#hub-card[data-deck="opening_replies"]');
     });

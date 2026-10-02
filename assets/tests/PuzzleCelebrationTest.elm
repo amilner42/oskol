@@ -476,11 +476,11 @@ goingOn =
         , test "a press that finds nothing says why where the line is" <|
             \_ ->
                 offered (Page.MoreNew 3)
-                    |> Page.offering (Page.Stopped "Every one of these practised.")
+                    |> Page.offering (Page.Stopped "Every one of these practiced.")
                     |> rendered
                     |> card
                     |> Query.find [ id "pz-today-way-line" ]
-                    |> Query.has [ text "Every one of these practised." ]
+                    |> Query.has [ text "Every one of these practiced." ]
         ]
 
 

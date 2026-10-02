@@ -16,16 +16,18 @@ module Ui.Deck exposing
     , row
     )
 
-{-| One deck in front of you, and the others as rows: the card and the
-row the practice home draws, and that a deck's own page will draw too.
+{-| A deck as an open drawer (the card) or a closed one (the row): what
+the practice home draws, and the card a deck's own page draws too.
 
 A deck is one of five -- a tier of the player's own mistakes (`??`, `?`,
 `?!`) or a universal set (the openings, the replies to them) -- in the
-one shape the server gives all five (`Api.PracticeDecks`). The card is:
+one shape the server gives all five (`Api.PracticeDecks`). Card and row
+both start with the deck's icon: a tier's mark in the replay's colour
+for its grade, a set's dice. The card is:
 
-  - **the head**: the mark big (a tier) or the name big (a set), what it
-    is under it in the eyebrow style, and to the right today's ring
-    ("3/5", a check once today's set is done);
+  - **the head**: the icon, the tier's name (or the set's name big with
+    its size in the eyebrow style under it), and to the right today's
+    ring ("3/5", a check once today's set is done);
   - **the mastery grid**: a square per position, coloured by its rung,
     so a deck's size and how much of it is learnt are one picture, and
     the square an answer lit is the thing that changed;
@@ -33,7 +35,7 @@ one shape the server gives all five (`Api.PracticeDecks`). The card is:
     · 20 learning · 12 to learn · of 44";
   - for a tier, **what it cost**: "These cost you 11.3 points over 11
     games. Without them your PR would be 4.8, not 8.3.";
-  - **one button**, never absent where there is anything to practise:
+  - **one button**, never absent where there is anything to practice:
     TRAIN while today has work, KEEP GOING once today's set is done
     and something is still unstarted, PRACTICE ANYWAY once everything
     is, START / TRAIN / TRY on a set; and under it one quiet line for
@@ -53,6 +55,8 @@ import Api.PracticeDecks as PracticeDecks exposing (Deck, Kind(..), Standing)
 import Html exposing (Html)
 import Html.Attributes as Attr exposing (class, id)
 import Html.Events exposing (onClick)
+import Svg
+import Svg.Attributes as SvgAttr
 import Ui.Charts as Charts
 import Ui.Decks as Decks
 import Ui.Mistakes as Mistakes
@@ -167,7 +171,7 @@ action who deck =
 
 
 {-| Today's work first, then more of the pace, then practice that moves
-nothing. Never nothing: there is always a way to keep practising.
+nothing. Never nothing: there is always a way to keep practicing.
 -}
 onwards : Action -> Standing -> Action
 onwards working standing =
@@ -344,18 +348,21 @@ head config =
             config.deck
     in
     Html.div [ class "dk-head" ]
-        [ Html.div [ class "dk-title" ]
-            (case deck.kind of
-                Tier ->
-                    [ Html.p [ class "dk-mark", Attr.attribute "aria-hidden" "true" ] [ Html.text deck.mark ]
-                    , nameRow config [ Html.h2 [ class "dk-name", id (config.prefix ++ "-name") ] [ Html.text deck.name ] ]
-                    ]
+        [ Html.div [ class "dk-head-id" ]
+            [ icon Large deck
+            , Html.div [ class "dk-title" ]
+                (case deck.kind of
+                    Tier ->
+                        [ Html.h2 [ class "dk-name is-tier", id (config.prefix ++ "-name") ] [ Html.text deck.name ]
+                        , nameRow config []
+                        ]
 
-                Set ->
-                    [ Html.h2 [ class "dk-setname", id (config.prefix ++ "-name") ] [ Html.text deck.name ]
-                    , nameRow config [ Html.p [ class "dk-name" ] [ Html.text (Decks.sizeEyebrow deck.size) ] ]
-                    ]
-            )
+                    Set ->
+                        [ Html.h2 [ class "dk-setname", id (config.prefix ++ "-name") ] [ Html.text deck.name ]
+                        , nameRow config [ Html.p [ class "dk-name" ] [ Html.text (Decks.sizeEyebrow deck.size) ] ]
+                        ]
+                )
+            ]
         , case deck.standing of
             Just standing ->
                 if config.who == Account && (deck.kind == Tier || deck.joined) then
@@ -374,6 +381,92 @@ head config =
             Nothing ->
                 Html.text ""
         ]
+
+
+type IconSize
+    = Small
+    | Large
+
+
+{-| What a deck is, at a glance, in a small tinted tile: a tier's own
+mark in the replay's colour for that grade (`Mistakes.markClass`), on a
+wash of the same colour; a set's die (two for the replies) on a neutral
+paper, which is no grade's. A row's is the row's height less its
+padding; the card's is the head's.
+-}
+icon : IconSize -> Deck -> Html msg
+icon size deck =
+    let
+        sizeClass =
+            case size of
+                Small ->
+                    "is-small"
+
+                Large ->
+                    "is-large"
+    in
+    case deck.kind of
+        Tier ->
+            Html.span
+                [ class ("dk-icon " ++ sizeClass ++ " is-" ++ deck.id)
+                , Attr.attribute "data-band" deck.id
+                , Attr.attribute "aria-hidden" "true"
+                ]
+                [ Html.span [ class ("dk-mark " ++ Mistakes.markClass deck.id) ] [ Html.text deck.mark ] ]
+
+        Set ->
+            Html.span
+                [ class ("dk-icon " ++ sizeClass ++ " is-set")
+                , Attr.attribute "aria-hidden" "true"
+                ]
+                [ dice deck ]
+
+
+{-| One die for the openings (a roll, and that is the whole position),
+two for the replies (a roll after a roll).
+-}
+dice : Deck -> Html msg
+dice deck =
+    let
+        die x y pips =
+            Svg.g []
+                (Svg.rect
+                    [ SvgAttr.x (String.fromFloat x)
+                    , SvgAttr.y (String.fromFloat y)
+                    , SvgAttr.width "16"
+                    , SvgAttr.height "16"
+                    , SvgAttr.rx "3.5"
+                    , SvgAttr.fill "#fff"
+                    , SvgAttr.stroke "currentColor"
+                    , SvgAttr.strokeWidth "1.6"
+                    ]
+                    []
+                    :: List.map
+                        (\( px, py ) ->
+                            Svg.circle
+                                [ SvgAttr.cx (String.fromFloat (x + px))
+                                , SvgAttr.cy (String.fromFloat (y + py))
+                                , SvgAttr.r "1.6"
+                                , SvgAttr.fill "currentColor"
+                                ]
+                                []
+                        )
+                        pips
+                )
+
+        five =
+            [ ( 4.5, 4.5 ), ( 11.5, 4.5 ), ( 8, 8 ), ( 4.5, 11.5 ), ( 11.5, 11.5 ) ]
+
+        three =
+            [ ( 4.5, 4.5 ), ( 8, 8 ), ( 11.5, 11.5 ) ]
+    in
+    Svg.svg [ SvgAttr.viewBox "0 0 28 28", SvgAttr.class "dk-dice" ]
+        (if deck.id == "openings" then
+            [ die 6 6 five ]
+
+         else
+            [ die 2 9 three, die 10 3 five ]
+        )
 
 
 {-| The eyebrow under the mark or the name, with OPEN beside it where the
@@ -666,10 +759,10 @@ type alias RowConfig msg =
     }
 
 
-{-| A deck that is not in front: its mark (or the blank of one), its
-name, today's ring at row size, how many are left, and a chevron.
-Tapping it puts it in front. A tier with nothing of the visitor's in it
-is a quiet line and nothing to tap.
+{-| A deck whose drawer is closed: its icon, its name, today's ring at
+row size, how many are left, and a chevron. Tapping it opens it where it
+is (`aria-controls` names its slot). A tier with nothing of the
+visitor's in it is a quiet line and nothing to tap.
 -}
 row : RowConfig msg -> Html msg
 row config =
@@ -697,7 +790,7 @@ row config =
                     Html.text ""
 
         inside =
-            [ Html.span [ class "dk-row-mark", Attr.attribute "aria-hidden" "true" ] [ Html.text deck.mark ]
+            [ Html.span [ class "dk-row-mark" ] [ icon Small deck ]
             , Html.span [ class "dk-row-name" ] [ Html.text deck.name ]
             , Html.span [ class "dk-row-ring" ] [ ring ]
             , Html.span [ class "dk-row-left" ] [ Html.text (left config.who deck) ]
@@ -718,8 +811,15 @@ row config =
             ]
     in
     if tappable then
+        -- A closed drawer: pressed, its own slot opens to the card.
         Html.button
-            (Attr.type_ "button" :: class "dk-row" :: onClick (config.onPick deck.id) :: common)
+            (Attr.type_ "button"
+                :: class "dk-row"
+                :: Attr.attribute "aria-expanded" "false"
+                :: Attr.attribute "aria-controls" (config.prefix ++ "-slot-" ++ deck.id)
+                :: onClick (config.onPick deck.id)
+                :: common
+            )
             inside
 
     else

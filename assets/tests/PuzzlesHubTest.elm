@@ -1,14 +1,17 @@
 module PuzzlesHubTest exposing (suite)
 
-{-| The practice home on `GET /papi/practice/decks`: five decks, one in
-front and four behind it, for an account, a guest and a stranger.
+{-| The practice home on `GET /papi/practice/decks`: five decks as
+drawers in their own fixed order, one open as its card in its own slot,
+for an account, a guest and a stranger.
 
-For an account: the deck in front (the server's lead, or the one tapped),
+For an account: the open deck (the server's lead, or the one tapped),
 its button in each of its states -- FIX ONE, KEEP GOING, PRACTICE ANYWAY,
 START, PRACTICE -- and what each press asks the server for and hands the
-shell; the rows, and tapping one; the cost lines there and not there; the
-grid and the ring. A fresh account has the openings in front. A guest has
-their worst tier and PRACTICE; a stranger TRY ONE and the five as rows.
+shell; the rows, and tapping one open in place; the cost lines there and
+not there; the grid and the ring. A fresh account has the openings open.
+A guest has their worst tier and PRACTICE; a stranger TRY ONE and the
+five closed. Whatever is tapped, the order never changes; a tier's mark
+is in the replay's colour for its grade.
 -}
 
 import Api
@@ -37,6 +40,8 @@ suite =
         , aFreshAccount
         , aGuest
         , aStranger
+        , drawers
+        , marks
         ]
 
 
@@ -412,8 +417,8 @@ anAccount =
                 loaded accountJson
                     |> rendered
                     |> Query.find [ id "hub-day" ]
-                    |> Query.has [ text "5 days running · 2 practised today" ]
-        , test "the lead in front: its mark, its name, its ring, FIX ONE" <|
+                    |> Query.has [ text "5 days running · 2 practiced today" ]
+        , test "the lead open: its mark, its name, its ring, FIX ONE" <|
             \_ ->
                 card accountJson
                     |> Expect.all
@@ -452,7 +457,7 @@ anAccount =
                         , Query.find [ id "hub-row-opening_replies" ] >> Query.has [ text "315 left" ]
                         , Query.findAll [ id "hub-row-very_bad" ] >> Query.count (Expect.equal 0)
                         ]
-        , test "tapping a row puts that deck in front, and the lead goes back to the rows" <|
+        , test "tapping a row opens that deck in its own slot, and the lead closes to a row" <|
             \_ ->
                 let
                     model =
@@ -475,7 +480,7 @@ anAccount =
                                 ]
                     ]
                     ()
-        , test "a set in front is its name, its size and a grid of its own shape" <|
+        , test "a set open is its name, its size and a grid of its own shape" <|
             \_ ->
                 loaded accountJson
                     |> send (PickedDeck "opening_replies")
@@ -656,7 +661,7 @@ costs =
 aFreshAccount : Test
 aFreshAccount =
     describe "a fresh account"
-        [ test "is told where its mistakes will come from, and has the openings in front with START" <|
+        [ test "is told where its mistakes will come from, and has the openings open with START" <|
             \_ ->
                 loaded freshJson
                     |> rendered
@@ -664,7 +669,7 @@ aFreshAccount =
                         [ Query.find [ id "hub-fresh" ] >> Query.has [ text Mistakes.freshLine ]
                         , Query.find [ id "hub-card" ] >> Query.has [ dataAttr "data-deck" "openings" ]
                         , Query.find [ id "hub-go" ] >> Query.has [ text "START" ]
-                        , Query.find [ id "hub-day" ] >> Query.has [ text "Nothing practised yet today" ]
+                        , Query.find [ id "hub-day" ] >> Query.has [ text "Nothing practiced yet today" ]
                         ]
         , test "its tiers are quiet rows with nothing to tap" <|
             \_ ->
@@ -685,7 +690,7 @@ aFreshAccount =
 aGuest : Test
 aGuest =
     describe "a guest with games"
-        [ test "reads what is theirs, that nothing is kept, and has their worst tier in front" <|
+        [ test "reads what is theirs, that nothing is kept, and has their worst tier open" <|
             \_ ->
                 loaded guestJson
                     |> rendered
@@ -709,7 +714,7 @@ aGuest =
                     |> out (GotTierRun (deckOf guestJson "bad") Practice (Api.parseBody Practice.practiceDecoder bandJson))
                     -- A guest has no day, so the run draws no ring.
                     |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "bad") { deckToday = Nothing, anyway = False, slug = "bad" })
-        , test "a set in front says TRY" <|
+        , test "a set open says TRY" <|
             \_ ->
                 loaded guestJson
                     |> send (PickedDeck "openings")
@@ -737,7 +742,7 @@ aGuest =
 aStranger : Test
 aStranger =
     describe "a stranger"
-        [ test "is told what this is, offered one to try, and nothing is in front" <|
+        [ test "is told what this is, offered one to try, and nothing is open" <|
             \_ ->
                 loaded strangerJson
                     |> rendered
@@ -754,7 +759,7 @@ aStranger =
                         [ Query.findAll [ class "dk-row" ] >> Query.count (Expect.equal 5)
                         , Query.findAll [ tag "button", class "dk-row" ] >> Query.count (Expect.equal 2)
                         ]
-        , test "a set tapped comes in front with TRY" <|
+        , test "a set tapped opens with TRY" <|
             \_ ->
                 loaded strangerJson
                     |> send (PickedDeck "openings")
@@ -785,4 +790,160 @@ aStranger =
                     |> rendered
                     |> Query.findAll [ id "hub-loading" ]
                     |> Query.count (Expect.equal 1)
+        ]
+
+
+
+-- THE DRAWERS
+
+
+order : List String
+order =
+    [ "very_bad", "bad", "doubtful", "openings", "opening_replies" ]
+
+
+{-| The five slots, read top to bottom, as the ids of the decks in them.
+-}
+slotsInOrder : Hub.Model -> Expect.Expectation
+slotsInOrder model =
+    rendered model
+        |> Query.find [ id "hub-rows" ]
+        |> Query.findAll [ class "dk-slot" ]
+        |> Expect.all
+            (Query.count (Expect.equal 5)
+                :: List.indexedMap
+                    (\i deckId -> Query.index i >> Query.has [ id ("hub-slot-" ++ deckId) ])
+                    order
+            )
+
+
+{-| The one card there is, and the slot it is in.
+-}
+openIn : String -> Hub.Model -> Expect.Expectation
+openIn deckId model =
+    rendered model
+        |> Expect.all
+            [ Query.findAll [ id "hub-card" ] >> Query.count (Expect.equal 1)
+            , Query.findAll [ class "dk-card" ] >> Query.count (Expect.equal 1)
+            , Query.find [ id ("hub-slot-" ++ deckId) ] >> Query.find [ id "hub-card" ] >> Query.has [ dataAttr "data-deck" deckId ]
+            , Query.find [ id ("hub-slot-" ++ deckId) ] >> Query.has [ class "is-open" ]
+            , Query.findAll [ id ("hub-row-" ++ deckId) ] >> Query.count (Expect.equal 0)
+            ]
+
+
+drawers : Test
+drawers =
+    describe "the drawers"
+        [ test "an account: the five in their own order whichever is open, one card, in its own slot" <|
+            \_ ->
+                let
+                    model =
+                        loaded accountJson
+                in
+                Expect.all
+                    (always (slotsInOrder model)
+                        :: always (openIn "very_bad" model)
+                        :: List.concatMap
+                            (\deckId ->
+                                [ \_ -> slotsInOrder (send (PickedDeck deckId) model)
+                                , \_ -> openIn deckId (send (PickedDeck deckId) model)
+                                ]
+                            )
+                            order
+                    )
+                    ()
+        , test "taps one after another never reorder anything" <|
+            \_ ->
+                List.foldl send (loaded accountJson) (List.map PickedDeck [ "opening_replies", "bad", "openings", "doubtful" ])
+                    |> Expect.all [ slotsInOrder, openIn "doubtful" ]
+        , test "a closed drawer is a button that says it is closed and names its slot" <|
+            \_ ->
+                loaded accountJson
+                    |> rendered
+                    |> Query.find [ id "hub-row-openings" ]
+                    |> Expect.all
+                        [ Query.has [ tag "button", dataAttr "aria-expanded" "false", dataAttr "aria-controls" "hub-slot-openings" ]
+                        , Event.simulate Event.click >> Event.expect (PickedDeck "openings")
+                        ]
+        , test "every closed drawer says so, and the open one is a region named by its deck" <|
+            \_ ->
+                loaded accountJson
+                    |> rendered
+                    |> Expect.all
+                        [ Query.findAll [ tag "button", class "dk-row" ] >> Query.count (Expect.equal 4)
+                        , Query.findAll [ tag "button", class "dk-row", dataAttr "aria-expanded" "false" ] >> Query.count (Expect.equal 4)
+                        , Query.find [ dataAttr "role" "region" ]
+                            >> Expect.all
+                                [ Query.has [ dataAttr "aria-labelledby" "hub-name" ]
+                                , Query.find [ id "hub-card" ] >> Query.has [ dataAttr "data-deck" "very_bad" ]
+                                ]
+                        ]
+        , test "a guest: the same order, their worst tier open" <|
+            \_ ->
+                loaded guestJson
+                    |> Expect.all [ slotsInOrder, openIn "bad", send (PickedDeck "openings") >> openIn "openings", send (PickedDeck "openings") >> slotsInOrder ]
+        , test "a stranger: the same order, nothing open until a set is tapped, then that set in its own slot" <|
+            \_ ->
+                loaded strangerJson
+                    |> Expect.all
+                        [ slotsInOrder
+                        , rendered >> Query.findAll [ id "hub-card" ] >> Query.count (Expect.equal 0)
+                        , send (PickedDeck "opening_replies") >> openIn "opening_replies"
+                        , send (PickedDeck "opening_replies") >> slotsInOrder
+                        ]
+        ]
+
+
+
+-- THE MARKS
+
+
+marks : Test
+marks =
+    describe "a tier's mark is in the replay's colour for its grade"
+        [ test "on the open card, in a tile of the same wash" <|
+            \_ ->
+                card accountJson
+                    |> Query.find [ class "dk-icon" ]
+                    |> Expect.all
+                        [ Query.has [ class "is-large", class "is-very_bad", dataAttr "data-band" "very_bad" ]
+                        , Query.find [ class "dk-mark" ] >> Query.has [ class "g-mark-very_bad", text "??" ]
+                        ]
+        , test "on every row: ?? very bad, ? bad, ?! dubious" <|
+            \_ ->
+                loaded strangerJson
+                    |> rendered
+                    |> Expect.all
+                        (List.map
+                            (\( grade, mark ) ->
+                                Query.find [ id ("hub-row-" ++ grade) ]
+                                    >> Query.find [ class "dk-icon" ]
+                                    >> Expect.all
+                                        [ Query.has [ class "is-small", class ("is-" ++ grade) ]
+                                        , Query.find [ class "dk-mark" ] >> Query.has [ class ("g-mark-" ++ grade), text mark ]
+                                        ]
+                            )
+                            [ ( "very_bad", "??" ), ( "bad", "?" ), ( "doubtful", "?!" ) ]
+                        )
+        , test "the colour is the one class the replay's grades are named by" <|
+            \_ ->
+                List.map Mistakes.markClass [ "very_bad", "bad", "doubtful" ]
+                    |> Expect.equal [ "g-mark g-mark-very_bad", "g-mark g-mark-bad", "g-mark g-mark-doubtful" ]
+        , test "a set's tile is its dice, on no grade's colour" <|
+            \_ ->
+                loaded strangerJson
+                    |> rendered
+                    |> Expect.all
+                        (List.map
+                            (\( setId, dice ) ->
+                                Query.find [ id ("hub-row-" ++ setId) ]
+                                    >> Query.find [ class "dk-icon" ]
+                                    >> Expect.all
+                                        [ Query.has [ class "is-set" ]
+                                        , Query.findAll [ class "g-mark" ] >> Query.count (Expect.equal 0)
+                                        , Query.findAll [ tag "rect" ] >> Query.count (Expect.equal dice)
+                                        ]
+                            )
+                            [ ( "openings", 1 ), ( "opening_replies", 2 ) ]
+                        )
         ]

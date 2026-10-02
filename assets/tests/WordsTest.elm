@@ -373,7 +373,7 @@ responderSentences =
         , test "taking a double the engine says should be taken, as the favourite" <|
             \_ ->
                 Expect.equal
-                    "P2 correctly took. P2 is the favourite here, double or not: an easy take."
+                    "P2 correctly took. P2 is the favorite here, double or not: an easy take."
                     (Words.answerInWords "P2" (answered Replay.Take (winning DoubleTake 0.45)) right)
         , test "taking a double the engine says should be taken, from behind" <|
             \_ ->
@@ -383,7 +383,7 @@ responderSentences =
         , test "taking when the engine says no double is still a take" <|
             \_ ->
                 Expect.equal
-                    "P2 correctly took. P2 is the favourite here, double or not: an easy take."
+                    "P2 correctly took. P2 is the favorite here, double or not: an easy take."
                     (Words.answerInWords "P2" (answered Replay.Take (winning NoDouble 0.4)) right)
         , test "taking a position that was too good to double is a mistake" <|
             \_ ->
@@ -396,7 +396,7 @@ responderSentences =
         , test "passing a take is sized by its grade" <|
             \_ ->
                 Expect.equal
-                    "P2 passed, a very bad mistake. P2 is the favourite here, double or not: an easy take."
+                    "P2 passed, a very bad mistake. P2 is the favorite here, double or not: an easy take."
                     (Words.answerInWords "P2"
                         (answered Replay.Pass (winning DoubleTake 0.45))
                         (verdict "very_bad" (Just "wrong_pass"))
@@ -409,7 +409,7 @@ responderSentences =
         , test "no answer recorded reads as a take" <|
             \_ ->
                 Expect.equal
-                    "P2 correctly took. P2 is the favourite here, double or not: an easy take."
+                    "P2 correctly took. P2 is the favorite here, double or not: an easy take."
                     (Words.answerInWords "P2" (winning DoubleTake 0.45) right)
         ]
 

@@ -53,7 +53,7 @@ suite =
 {-| A player with everything: two live games (the second one theirs to
 move), three rooms of graded games -- a match to seven and two single
 games -- a streak, a deck with cards at three levels and two days
-practised, and more rooms behind the first page.
+practiced, and more rooms behind the first page.
 -}
 fullJson : String
 fullJson =
@@ -485,7 +485,7 @@ practice =
                 in
                 render model
                     |> Query.find [ id "home-practice-note" ]
-                    |> Query.has [ text "Nothing to practise right now." ]
+                    |> Query.has [ text "Nothing to practice right now." ]
         ]
 
 

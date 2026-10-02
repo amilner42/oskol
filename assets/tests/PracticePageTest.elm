@@ -551,8 +551,8 @@ theDetails =
                 rendered veryBadJson
                     |> Query.find [ id "practice-month" ]
                     |> Expect.all
-                        [ Query.has [ text "Practised on 9 days of the last 30." ]
-                        , Query.find [ tag "svg" ] >> Query.has [ dataAttr "data-practised" "9" ]
+                        [ Query.has [ text "Practiced on 9 days of the last 30." ]
+                        , Query.find [ tag "svg" ] >> Query.has [ dataAttr "data-practiced" "9" ]
                         ]
         , test "a tier with graded games behind it says what it cost, and what patching won back" <|
             \_ ->

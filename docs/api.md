@@ -76,7 +76,7 @@ arrive at any of them cold, and moving between them afterwards is a
   both sides). The
   head (`SpaController.puzzle`, words from `handlers/puzzles.head`) is the
   question as the title and og:title, the score and cube as the
-  description ("Match play, 3 away against 5. Cube centred."; no score is
+  description ("Match play, 3 away against 5. Cube centered."; no score is
   "Unlimited play", one point each way "Single game" unless Crawford, the
   picture's own words), the board's picture as og:image, nothing else; an
   id nobody stored is a 404. Not in the sitemap: too many. There is one

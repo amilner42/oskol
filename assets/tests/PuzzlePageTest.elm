@@ -281,7 +281,7 @@ staging =
                     |> Expect.all
                         [ has [ id "pz-board" ]
                         , \q -> q |> Query.find [ id "pz-prompt" ] |> Query.has [ text "White to play 6-4. What's your play?" ]
-                        , \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "White 3 away, Black 5 away · cube centred" ]
+                        , \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "White 3 away, Black 5 away · cube centered" ]
                         , hasNot [ id "pz-reveal" ]
                         , hasNot [ id "pz-share" ]
                         ]
@@ -306,9 +306,9 @@ staging =
                                 Query.fromHtml (Html.text (D.errorToString e))
                 in
                 Expect.all
-                    [ \_ -> scoreLineOf (scored "1" "1" "false") |> Query.has [ text "Single game · cube centred" ]
-                    , \_ -> scoreLineOf (scored "1" "1" "true") |> Query.has [ text "White 1 away, Black 1 away · Crawford · cube centred" ]
-                    , \_ -> scoreLineOf (String.replace "\"score\":{\"mover_away\":3,\"opponent_away\":5}" "\"score\":null" (question "move")) |> Query.has [ text "Unlimited · cube centred" ]
+                    [ \_ -> scoreLineOf (scored "1" "1" "false") |> Query.has [ text "Single game · cube centered" ]
+                    , \_ -> scoreLineOf (scored "1" "1" "true") |> Query.has [ text "White 1 away, Black 1 away · Crawford · cube centered" ]
+                    , \_ -> scoreLineOf (String.replace "\"score\":{\"mover_away\":3,\"opponent_away\":5}" "\"score\":null" (question "move")) |> Query.has [ text "Unlimited · cube centered" ]
                     ]
                     ()
         , test "a tap walks to a child and UNDO walks back" <|
@@ -1452,7 +1452,7 @@ wayOn =
                     |> inBand
                     |> Expect.all
                         [ Query.find [ id "pz-anyway" ] >> Query.has [ text "PRACTICE ANYWAY" ]
-                        , Query.find [ id "pz-way-line" ] >> Query.has [ text "Everything here is scheduled. Practising early moves nothing." ]
+                        , Query.find [ id "pz-way-line" ] >> Query.has [ text "Everything here is scheduled. Practicing early moves nothing." ]
                         , Query.hasNot [ id "pz-keep-going" ]
                         ]
         , test "I'M DONE with some of today left: KEEP GOING goes on with it" <|
@@ -1836,8 +1836,8 @@ runProgress =
                         [ Query.find [ id "pz-progress-label" ] >> Query.has [ text "??" ]
                         , Query.find [ id "pz-ring" ] >> Query.has [ dataAttr "data-done" "2", dataAttr "data-target" "5" ]
                         , Query.find [ id "pz-ring-count" ] >> Query.has [ text "2/5" ]
-                        , Query.find [ id "pz-progress-count" ] >> Query.has [ text "3 practised today" ]
-                        , Query.has [ dataAttr "aria-label" "?? · 2 of today's 5 done · 3 practised today" ]
+                        , Query.find [ id "pz-progress-count" ] >> Query.has [ text "3 practiced today" ]
+                        , Query.has [ dataAttr "aria-label" "?? · 2 of today's 5 done · 3 practiced today" ]
                         , Query.hasNot [ attribute (Html.Attributes.attribute "role" "progressbar") ]
                         ]
         , test "the ring draws its check once today's set is done" <|
@@ -1898,7 +1898,7 @@ runProgress =
                 rendered { model | deck = Just { id = "openings", name = "Openings" } }
                     |> Expect.all
                         [ Query.find [ id "pz-progress-label" ] >> Query.has [ text "Openings" ]
-                        , Query.find [ id "pz-progress-count" ] >> Query.has [ text "3 practised today" ]
+                        , Query.find [ id "pz-progress-count" ] >> Query.has [ text "3 practiced today" ]
 
                         -- a set's position came from no game: no why, and
                         -- so one reserved line rather than two
@@ -1939,7 +1939,7 @@ runProgress =
             \_ ->
                 rendered (inRun 0 (blanks 3) (Just { done = 1 }))
                     |> Expect.all
-                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "1 practised today" ]
+                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "1 practiced today" ]
                         , Query.hasNot [ id "pz-ring" ]
                         ]
         , test "a guest in a run has no day of theirs, so it is the mark alone" <|
@@ -1976,14 +1976,14 @@ runProgress =
                     [ \_ ->
                         rendered model
                             |> Query.find [ id "pz-progress-count" ]
-                            |> Query.has [ text "4 practised today" ]
+                            |> Query.has [ text "4 practiced today" ]
                     , \_ ->
                         model
                             |> answerWith "move_pass"
                             |> rendered
                             |> Query.find [ id "pz-progress" ]
                             |> Expect.all
-                                [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "5 practised today" ]
+                                [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "5 practiced today" ]
                                 , Query.find [ id "pz-ring-count" ] >> Query.has [ text "3/5" ]
                                 ]
                     ]
@@ -1998,7 +1998,7 @@ runProgress =
                     |> rendered
                     |> Query.find [ id "pz-progress" ]
                     |> Expect.all
-                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "5 practised today" ]
+                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "5 practiced today" ]
                         , Query.find [ id "pz-ring-count" ] >> Query.has [ text "1/3" ]
                         ]
         , test "a run of early answers says it is practice only, and counts nothing" <|
@@ -2055,7 +2055,7 @@ runProgress =
                         rendered model
                             |> Query.find [ id "pz-progress" ]
                             |> Expect.all
-                                [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "3 practised today" ]
+                                [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "3 practiced today" ]
                                 , Query.find [ id "pz-ring-count" ] >> Query.has [ text "3/5" ]
                                 ]
                 in

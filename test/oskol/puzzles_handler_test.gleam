@@ -552,7 +552,7 @@ pub fn the_head_is_the_question_and_the_score_test() {
   let assert Ok(handler.Head(title, description)) = handler.head(ctx, "p1", "")
   assert title == "White to play 6-4. What's your play?"
   assert description
-    == "Match play, 3 away against 5. Cube centred. A backgammon puzzle: play it on the board."
+    == "Match play, 3 away against 5. Cube centered. A backgammon puzzle: play it on the board."
   let assert Ok(handler.Head(take_title, take_description)) =
     handler.head(ctx, "t1", "")
   assert take_title == "White is doubled. Take?"
@@ -581,7 +581,7 @@ pub fn a_money_game_says_so_in_the_head_test() {
   // One point each way is a single game, not a match at 1 away against 1.
   assert string.starts_with(
     handler.describe(puzzles.Question(..q, away_mover: 1, away_opponent: 1)),
-    "Single game. Cube centred.",
+    "Single game. Cube centered.",
   )
   assert string.starts_with(
     handler.describe(
@@ -591,7 +591,7 @@ pub fn a_money_game_says_so_in_the_head_test() {
   )
   assert string.starts_with(
     handler.describe(puzzles.Question(..q, crawford: True)),
-    "Match play, 3 away against 5, Crawford. Cube centred.",
+    "Match play, 3 away against 5, Crawford. Cube centered.",
   )
 }
 
@@ -1545,7 +1545,7 @@ pub fn the_head_of_a_story_link_names_the_sharer_test() {
   assert recorded("shares") == ["tok-ok"]
   assert recorded("records") == []
   assert description
-    == "Match play, 3 away against 5. Cube centred. A backgammon puzzle: play it on the board."
+    == "Match play, 3 away against 5. Cube centered. A backgammon puzzle: play it on the board."
   let assert Ok(handler.Head(plain, _)) = handler.head(ctx, "p1", "tok-nope")
   assert plain == "White to play 6-4. What's your play?"
   let assert Ok(handler.Head(other, _)) = handler.head(ctx, "p1", "tok-other")

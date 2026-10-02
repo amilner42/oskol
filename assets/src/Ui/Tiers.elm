@@ -102,7 +102,7 @@ card config band =
     Html.div
         [ id (config.prefix ++ "-tier"), class "tier-card", Attr.attribute "data-tier" band.grade ]
         (Html.div [ class "tier-head" ]
-            [ Html.span [ class "tier-mark", Attr.attribute "aria-hidden" "true" ]
+            [ Html.span [ class ("tier-mark " ++ Mistakes.markClass band.grade), Attr.attribute "aria-hidden" "true" ]
                 [ Html.text (Mistakes.mark band.grade) ]
             , Html.div [ class "tier-head-words" ] (headWords config band)
             ]
@@ -248,7 +248,7 @@ row : Config msg -> Band -> Html msg
 row config band =
     let
         inside =
-            [ Html.span [ class "tier-row-mark", Attr.attribute "aria-hidden" "true" ]
+            [ Html.span [ class ("tier-row-mark " ++ Mistakes.markClass band.grade), Attr.attribute "aria-hidden" "true" ]
                 [ Html.text (Mistakes.mark band.grade) ]
             , Html.span [ class "tier-row-name" ] [ Html.text (Mistakes.tierName band.grade) ]
             , Html.span [ class "tier-row-left" ]

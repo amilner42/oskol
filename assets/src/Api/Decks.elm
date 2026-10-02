@@ -21,7 +21,7 @@ openings first -- as the practice home reads them:
     set gets its queue, anybody else walks it in order, unsaved
   - `POST /papi/decks/:id/join` add it (an account's), then the same
 
-Which sets exist and how they are practised is the server's; this only
+Which sets exist and how they are practiced is the server's; this only
 reads what it said.
 
 -}

@@ -21,7 +21,7 @@ module Api.PracticeDecks exposing
     , keepGoingSet
     )
 
-{-| The five decks a player practises -- the three tiers of their own
+{-| The five decks a player practices -- the three tiers of their own
 mistakes and the two universal sets -- in the one shape the server gives
 all five:
 

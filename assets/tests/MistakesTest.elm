@@ -18,6 +18,8 @@ or "learned".
 
 import Expect
 import Test exposing (Test, describe, test)
+import Ui.Charts as Charts
+import Ui.Decks as Decks
 import Ui.Mistakes as Mistakes
 
 
@@ -116,7 +118,7 @@ aRun =
                         ]
         , test "a way on that found nothing more" <|
             \_ ->
-                Mistakes.everyOnePractised
+                Mistakes.everyOnePracticed
                     |> Expect.equal "That's every one of these for now. The ones you get wrong come back on their day."
         ]
 
@@ -235,20 +237,20 @@ today : Test
 today =
     describe "the day, wherever the ring used to be"
         [ test "a plain count, with nothing to measure it against" <|
-            \_ -> Mistakes.practisedToday 3 |> Expect.equal "3 practised today"
+            \_ -> Mistakes.practicedToday 3 |> Expect.equal "3 practiced today"
         , test "one is one, not a fraction of anything" <|
-            \_ -> Mistakes.practisedToday 1 |> Expect.equal "1 practised today"
+            \_ -> Mistakes.practicedToday 1 |> Expect.equal "1 practiced today"
         , test "a day not started yet says so without a goal" <|
-            \_ -> Mistakes.practisedToday 0 |> Expect.equal "Nothing practised yet today"
+            \_ -> Mistakes.practicedToday 0 |> Expect.equal "Nothing practiced yet today"
         , test "with the streak, on the practice home's head line" <|
-            \_ -> Mistakes.dayStreakLine { streak = 5, done = 2 } |> Expect.equal "5 days running · 2 practised today"
+            \_ -> Mistakes.dayStreakLine { streak = 5, done = 2 } |> Expect.equal "5 days running · 2 practiced today"
 
         -- A count of answers counts misses too: it never says "mastered",
         -- which only a mistake over the top rung has earned.
         , test "no count of answers says mastered" <|
             \_ ->
-                [ Mistakes.practisedToday 0
-                , Mistakes.practisedToday 8
+                [ Mistakes.practicedToday 0
+                , Mistakes.practicedToday 8
                 , Mistakes.dayStreakLine { streak = 0, done = 3 }
                 , Mistakes.dayStreakLine { streak = 5, done = 0 }
                 , Mistakes.runSummary { right = 1, total = 1 }
@@ -381,6 +383,24 @@ noJargon =
             \_ ->
                 List.filter (\word -> String.contains word everything) [ "fix", "patched", "learned", "in progress", "to start" ]
                     |> Expect.equal []
+
+        -- American spelling in everything a player reads: practiced,
+        -- never practised.
+        , test "practiced, never practised: no sentence about practice says practis-" <|
+            \_ ->
+                [ everything
+                , String.toLower (Decks.doneToday 0)
+                , String.toLower (Decks.doneToday 3)
+                , String.toLower (Charts.daysSentence [ True, False, True ])
+                , String.toLower (Mistakes.practicedToday 0)
+                , String.toLower (Mistakes.dayStreakLine { streak = 1, done = 0 })
+                ]
+                    |> List.filter (String.contains "practis")
+                    |> Expect.equal []
+        , test "and the words it is said in are the American ones" <|
+            \_ ->
+                [ Mistakes.practicedToday 3, Mistakes.practicedToday 0, Decks.doneToday 3, Charts.daysSentence [ True, False, True ] ]
+                    |> Expect.equal [ "3 practiced today", "Nothing practiced yet today", "3 practiced today", "Practiced on 2 days of the last 30." ]
         ]
 
 
@@ -393,7 +413,7 @@ everything =
                             ([ Mistakes.bandName "very_bad"
                              , Mistakes.line (band "bad" 3 1 1)
                              , Mistakes.milestone 4
-                             , Mistakes.practisedToday 3
+                             , Mistakes.practicedToday 3
                              , Mistakes.tierName "very_bad"
                              , Mistakes.leftToMaster (band "very_bad" 61 30 23)
                              , Mistakes.goodShapeLine "very_bad"
@@ -429,7 +449,7 @@ everything =
                              , Mistakes.earlyLineUndated
                              , Mistakes.practiceOnlyTag
                              , Mistakes.practiceOnlyRun
-                             , Mistakes.everyOnePractised
+                             , Mistakes.everyOnePracticed
                              , Mistakes.ladderLine { patchedLevel = 4, started = [ 2, 8, 5, 3, 6, 0, 0, 0 ] }
                              , Mistakes.dueLine { due = 0, newLeft = 0, nextInDays = Just 3 }
                              , Mistakes.strangerTierLine
@@ -489,10 +509,10 @@ theHome =
         , test "the day: the streak left off at zero, the count said in words at zero" <|
             \_ ->
                 Expect.all
-                    [ \_ -> Mistakes.dayStreakLine { streak = 5, done = 3 } |> Expect.equal "5 days running · 3 practised today"
-                    , \_ -> Mistakes.dayStreakLine { streak = 1, done = 0 } |> Expect.equal "1 day running · nothing practised yet today"
-                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 0 } |> Expect.equal "Nothing practised yet today"
-                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 2 } |> Expect.equal "2 practised today"
+                    [ \_ -> Mistakes.dayStreakLine { streak = 5, done = 3 } |> Expect.equal "5 days running · 3 practiced today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 1, done = 0 } |> Expect.equal "1 day running · nothing practiced yet today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 0 } |> Expect.equal "Nothing practiced yet today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 2 } |> Expect.equal "2 practiced today"
                     ]
                     ()
         , test "the line under each button" <|
@@ -503,7 +523,7 @@ theHome =
                     , \_ -> Mistakes.workLine { due = 2, newLeft = 0 } |> Expect.equal "2 due now"
                     , \_ -> Mistakes.keepGoingLine { done = 5, adds = 3 } |> Expect.equal "Today's 5 done. Keep going adds 3 more."
                     , \_ -> Mistakes.keepGoingLine { done = 0, adds = 3 } |> Expect.equal "Nothing due here today. Keep going adds 3 more."
-                    , \_ -> Mistakes.scheduledLine |> Expect.equal "Everything here is scheduled. Practising early moves nothing."
+                    , \_ -> Mistakes.scheduledLine |> Expect.equal "Everything here is scheduled. Practicing early moves nothing."
                     , \_ -> Mistakes.unsavedLine |> Expect.equal "Your progress is not saved until you sign in."
                     , \_ -> Mistakes.rowLeft 23 |> Expect.equal "23 left"
                     , \_ -> Mistakes.rowLeft 0 |> Expect.equal "None yet"

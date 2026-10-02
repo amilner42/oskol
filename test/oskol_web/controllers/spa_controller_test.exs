@@ -204,7 +204,7 @@ defmodule OskolWeb.SpaControllerTest do
       assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/puzzles/#{id}")
 
       assert html =~
-               ~s(<meta name="description" content="Match play, 3 away against 5. Cube centred.)
+               ~s(<meta name="description" content="Match play, 3 away against 5. Cube centered.)
 
       # The board as the picture, so a pasted link unfurls with it.
       assert html =~

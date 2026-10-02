@@ -82,16 +82,16 @@ startLabel who =
         "TRY"
 
 
-{-| The day, in a run through a set: "3 practised today".
+{-| The day, in a run through a set: "3 practiced today".
 -}
 doneToday : Int -> String
 doneToday done =
     case max 0 done of
         0 ->
-            "Nothing practised yet today"
+            "Nothing practiced yet today"
 
         n ->
-            String.fromInt n ++ " practised today"
+            String.fromInt n ++ " practiced today"
 
 
 {-| The end of a run through a set. As with mistakes, one is a whole

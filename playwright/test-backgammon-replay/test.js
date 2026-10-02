@@ -5,7 +5,7 @@
  * games, found by random play and replayed into a real room). Then:
  *
  * 1. Desktop 1440x900: the replay opens on the match's last game at the
- *    start; the analysis says it is running ("Analysing game N at 4-ply…")
+ *    start; the analysis says it is running ("Analyzing game N at 4-ply…")
  *    while `/reviews` answers pending; stepping with the buttons and the
  *    arrow keys moves one line at a time; when the analysis lands (the
  *    page polls) the grades fill in and the viewer stays on the same step;
@@ -228,7 +228,7 @@ async function main() {
     await page.waitForSelector('#bg-match-sheet', { state: 'detached' });
     if (!REAL) {
       await page.waitForSelector('#rp-analysis-state.is-pending', { timeout: 5000 });
-      must(/Analysing game \d+ at 4-ply… this can take a few minutes/.test(await page.textContent('#rp-analysis-state')), 'a pending analysis says so, and that it takes a while');
+      must(/Analyzing game \d+ at 4-ply… this can take a few minutes/.test(await page.textContent('#rp-analysis-state')), 'a pending analysis says so, and that it takes a while');
       await page.screenshot({ path: `${SHOTS}/01-desktop-pending.png` });
     }
 

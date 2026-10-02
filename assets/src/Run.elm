@@ -17,7 +17,7 @@ module Run exposing
     , keptGoing
     , nextId
     , offersWays
-    , practiseAnyway
+    , practiceAnyway
     , progress
     , queueUrl
     , refetch
@@ -431,8 +431,8 @@ keptGoing fetched run =
 {-| PRACTICE ANYWAY from the end card: the rotation past what this run
 has been handed of it (from its front, if it was not already through it).
 -}
-practiseAnyway : Session -> Run -> (Result Api.Error (List String) -> msg) -> Cmd msg
-practiseAnyway session run toMsg =
+practiceAnyway : Session -> Run -> (Result Api.Error (List String) -> msg) -> Cmd msg
+practiceAnyway session run toMsg =
     if run.anyway then
         refetch session run toMsg
 

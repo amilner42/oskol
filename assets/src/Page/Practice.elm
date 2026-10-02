@@ -399,7 +399,7 @@ body model page =
         -- Nothing of theirs here: a stranger, or an account with no
         -- mistake of this kind yet. One line and the way back.
         [ Html.div [ class "dp-empty", id "practice-empty" ]
-            [ Html.p [ class "dk-mark", Attr.attribute "aria-hidden" "true" ] [ Html.text deck.mark ]
+            [ Html.p [ class ("dk-mark " ++ Mistakes.markClass deck.id), Attr.attribute "aria-hidden" "true" ] [ Html.text deck.mark ]
             , Html.h2 [ class "dk-name" ] [ Html.text deck.name ]
             , Html.p [ class "pz-hub-line dp-empty-line", id "practice-empty-line" ]
                 [ Html.text

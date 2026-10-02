@@ -134,7 +134,7 @@ words =
                     , \_ -> Ui.Decks.runSummary { right = 0, total = 1 } |> Expect.equal "One played. It comes back tomorrow."
                     , \_ -> Ui.Decks.masteredRun 0 |> Expect.equal Nothing
                     , \_ -> Ui.Decks.masteredRun 2 |> Expect.equal (Just "You mastered 2 of them.")
-                    , \_ -> Ui.Decks.doneToday 3 |> Expect.equal "3 practised today"
+                    , \_ -> Ui.Decks.doneToday 3 |> Expect.equal "3 practiced today"
                     ]
                     ()
         , test "a set's page: learned at the top of its legend and its ladder, and the sign-in" <|
