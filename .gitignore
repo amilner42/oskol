@@ -48,6 +48,9 @@ package-lock.json
 
 # Elm build artifacts
 /assets/elm-stuff/
+# The ROLLS review harness compiles itself (playwright/review-rolls/run.sh).
+/playwright/review-rolls/elm-stuff/
+/playwright/review-rolls/harness.js
 
 # Gleam build artifacts
 /build/

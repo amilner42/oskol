@@ -160,6 +160,20 @@ server's cube call on equities at, above and below each line,
   verdicts -- every move grade with its gains and costs, every cube call
   from both sides of the cube, the too-good rule, and the too-close-to-call
   words at, above and below each line (0.003, 0.019, 0.021).
+- `RollsTest`: a position's thirty-six rolls (`Games.Backgammon.Rolls`,
+  `Ui.Rolls`) on the opening grid, four of whose rows are the engine's own
+  and pinned (6-6 at +0.489, 4-4 at +0.4163, 1-4 at -0.007, 1-2 at -0.004
+  under a grid equity of 0.096737): the decoder and its three refusals (not
+  21 rolls, dice the wrong way round, a weight that is not the roll's); the
+  invariant that the rows' weighted mean is the grid's own equity exactly;
+  the seven bands at each boundary and either side of it, including one
+  that arrives from arithmetic rather than as a literal; 21 rolls mirrored
+  into 36 cells, each non-double twice and in the right two places; the
+  sort, best first; the map's band classes, the outlined roll in both its
+  cells, NUMBERS hiding and showing the values; the bars' widths (a double
+  8.41, a non-double 18.02 -- exactly twice, gap included), zero the line;
+  and the spoken cell, with MOVES adding the play. If a change puts 2-1
+  above 6-6, these fail: the scale is inverted.
 - `XgidTest`: the position id pinned by vectors (the opening, Black to
   play, a cube owned by each side, a match with Crawford, a take, the bar
   and borne off, ids published by gnubg's bug list and backgammonforums),
@@ -357,6 +371,24 @@ playwright/review-analysis/run.sh               # the Analysis milestone whole, 
                                                # serves its own port (4487) and database.
                                                # review-analysis/serve.sh serves the same data and
                                                # engine until Ctrl-C, for walking it by hand
+playwright/review-rolls/run.sh                  # Ui.Rolls at 390, 320 and 844x390: the 6x6
+                                               # temperature map, NUMBERS, MOVES, a tapped cell, the
+                                               # best-to-worst bars, and a grid walking all seven
+                                               # bands on two board themes. No server, no database
+                                               # and no engine: the component is pure and has no
+                                               # page until the ROLLS tab lands (rolls-replay), so
+                                               # test.js compiles playwright/review-rolls/Harness.elm
+                                               # -- the real Ui.Rolls.view in the real .rp-panel
+                                               # classes, with the fixture read out of
+                                               # assets/tests/RollsTest.elm -- and serves it with the
+                                               # built app.css and the real fonts out of priv/static
+                                               # on ROLLS_HARNESS_PORT (4489). It asserts as it goes:
+                                               # 36 cells, 21 bars, a non-double's bar exactly twice
+                                               # a double's, no sideways scroll, and the panel not
+                                               # moving when NUMBERS is pressed.
+                                               # screenshots/review-rolls-<size>-<state>.png. The
+                                               # harness goes away when the screens move onto the
+                                               # real page
 node playwright/test-spa-landing/test.js        # the guest home: the sentence and its menus,
                                                # PLAY NOW against Sage and a friend, old links
                                                # redirect, a full create -> play click-through
