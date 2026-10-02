@@ -310,6 +310,38 @@ pub fn by_game(oldest_first: List(Entry)) -> List(List(Entry)) {
   list.reverse([list.reverse(open), ..done])
 }
 
+/// Whether a game of a match is the Crawford game, from the score before
+/// each game so far: `scores_before` holds one score per game, oldest
+/// first, ending with the game asked about (the first game's is empty, or
+/// every seat at 0). It is the rule `state.next_game` applies, so a client
+/// can name the game without knowing it: the first game after somebody
+/// reaches one away is the Crawford game, and only that one; the match's
+/// first game never is (no game came before it), and unlimited play
+/// (`target` 0) has none.
+pub fn crawford_game(
+  target: Int,
+  scores_before: List(List(#(PlayerId, Int))),
+) -> Bool {
+  let one_away = fn(scores: List(#(PlayerId, Int))) {
+    target > 0 && list.any(scores, fn(s) { s.1 == target - 1 })
+  }
+  case scores_before {
+    [] | [_] -> False
+    [_, ..later] -> {
+      // The games after the first, in order: the first of them to start
+      // one away is the Crawford game. Is it the last one?
+      let n = list.length(later)
+      case
+        list.index_map(later, fn(scores, i) { #(i, one_away(scores)) })
+        |> list.find(fn(pair) { pair.1 })
+      {
+        Ok(#(i, _)) -> i == n - 1
+        Error(_) -> False
+      }
+    }
+  }
+}
+
 /// The finished games' result lines, oldest first.
 pub fn results(entries: List(Entry)) -> List(Entry) {
   list.filter(entries, fn(e) {

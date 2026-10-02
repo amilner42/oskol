@@ -26,6 +26,7 @@ import Json.Encode as E
 import Page.Puzzle as Page exposing (Attempt(..), Msg(..))
 import PuzzleApiFixtures
 import PuzzleRevealFixtures
+import Route
 import Session
 import Test exposing (Test, describe, test)
 import Test.Html.Query as Query
@@ -284,6 +285,7 @@ staging =
                         , \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "White 3 away, Black 5 away · cube centered" ]
                         , hasNot [ id "pz-reveal" ]
                         , hasNot [ id "pz-share" ]
+                        , hasNot [ id "pz-analysis" ]
                         ]
         , test "one point each way is a single game; marked Crawford it is a match; no score is unlimited" <|
             \_ ->
@@ -540,6 +542,18 @@ revealing =
                         , hasNot [ id "bg-action-undo" ]
                         , has [ id "pz-share" ]
                         , hasNot [ id "pz-level" ]
+                        ]
+        , test "after the reveal, OPEN IN ANALYSIS beside SHARE opens this puzzle on the analysis board in a new tab" <|
+            \_ ->
+                rendered (after "move_dubious")
+                    |> Query.find [ id "pz-analysis" ]
+                    |> Query.has
+                        [ tag "a"
+                        , attribute (Html.Attributes.href (Route.href (Route.analysisPuzzle "fixmove1")))
+                        , attribute (Html.Attributes.href "/analysis?p=fixmove1")
+                        , attribute (Html.Attributes.target "_blank")
+                        , attribute (Html.Attributes.rel "noopener")
+                        , text "OPEN IN ANALYSIS"
                         ]
         , test "a pass and a miss wear their colours" <|
             \_ ->

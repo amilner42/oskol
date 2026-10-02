@@ -1,5 +1,7 @@
 # A finished match to 3 of more than one game, played into a real room and
-# left in the database for the replay page to open.
+# left in the database for the replay page to open. The match has every
+# kind of step OPEN IN ANALYSIS carries: a turn, a double, a take, the
+# Crawford game and a game after it.
 #
 # The match is found by random legal play against the engine (fast, no
 # room, no clock), then exactly those actions are replayed through a real
@@ -35,8 +37,20 @@ action_for = fn schema ->
   %{"name" => schema["name"], "params" => Map.new(schema["params"], &{&1["name"], value.(&1)})}
 end
 
-games_played = fn instance ->
-  length(GameKit.player_update(instance, "p1")["scene"]["data"]["games"])
+results = fn instance ->
+  GameKit.player_update(instance, "p1")["scene"]["data"]["games"]
+end
+
+# The Crawford game is the one after somebody first reaches one away (2 of
+# 3); a game after it is post-Crawford. Both happen when a result short of
+# the last leaves a player on 2 and at least two more games follow.
+crawford_and_after? = fn results ->
+  befores = Enum.map(results, fn r -> Map.values(r["scores"]) end)
+
+  case Enum.find_index(befores, fn scores -> 2 in scores end) do
+    nil -> false
+    i -> length(results) >= i + 3
+  end
 end
 
 # Random legal play, never resigning, to the end of the match.
@@ -46,7 +60,7 @@ search = fn seed ->
 
   Enum.reduce_while(1..4000, {instance, []}, fn _, {instance, taken} ->
     if GameKit.finished?(instance) do
-      {:halt, {:finished, games_played.(instance), Enum.reverse(taken)}}
+      {:halt, {:finished, results.(instance), Enum.reverse(taken)}}
     else
       choices =
         for player_id <- ["p1", "p2"],
@@ -71,10 +85,17 @@ end
 {seed, actions} =
   Enum.find_value(1..300, fn seed ->
     case search.(seed) do
-      {:finished, games, actions} when games > 1 -> {seed, actions}
-      _ -> nil
+      {:finished, results, actions} ->
+        names = MapSet.new(actions, fn {_, action} -> action["name"] end)
+
+        if length(results) > 1 and crawford_and_after?.(results) and
+             MapSet.subset?(MapSet.new(["double", "take"]), names),
+           do: {seed, actions}
+
+      _ ->
+        nil
     end
-  end) || raise "no finished match of several games in 300 seeds"
+  end) || raise "no finished match with a take, the Crawford game and a game after it in 300 seeds"
 
 game_id = "replay-" <> (:crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower))
 {:ok, _} = Game.start_game(game_id, "backgammon")

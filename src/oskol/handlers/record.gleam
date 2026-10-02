@@ -5,7 +5,9 @@
 //// board (so every update stays bounded by one game). The client asks for
 //// it when a player opens a finished game; replay and analysis will read
 //// it too. What it holds is the game's to decide (`Game.record`, public to
-//// every seat); who may read it is decided here.
+//// every seat); who may read it is decided here. The one thing added here
+//// is each game's `crawford` (`record_body`), so the replay can carry it to
+//// the analysis board.
 ////
 //// Every game of a room is written down as it ends, one row per game
 //// (`oskol/handlers/reviews`). For a room nobody is at, that is what this
@@ -21,6 +23,7 @@
 //// until it ends. A replay only ever reads the games that finished, so
 //// either answer serves it.
 
+import backgammon/record as bg_record
 import gamekit/host
 import gamekit/instance.{type Instance}
 import gleam/dict
@@ -84,10 +87,11 @@ fn stored_json(
   })
   use head <- result.try(case ctx.records.stored(game_id) {
     [] -> Error(Nil)
-    rows -> head_fields(setup) |> result.map(fn(head) { #(head, rows) })
+    rows -> head_of(setup) |> result.map(fn(head) { #(head, rows) })
   })
-  let #(fields, rows) = head
+  let #(head, rows) = head
   let #(player_id, seated) = stored_viewer(setup, session)
+  let games = list.map(rows, fn(row) { #(row.game_number, row.entries_json) })
   Ok(
     envelope.ok([
       #("slug", json.string(slug)),
@@ -96,24 +100,109 @@ fn stored_json(
       #("seated", json.bool(seated)),
       #("accounts", accounts_json(Some(setup))),
       #("names", names_json(Some(setup))),
-      #(
-        "record",
-        json.object(
-          list.append(fields, [
-            #(
-              "games",
-              json.array(rows, fn(row) {
-                json.object([
-                  #("number", json.int(row.game_number)),
-                  #("entries", raw.json(row.entries_json)),
-                ])
-              }),
-            ),
-          ]),
-        ),
-      ),
+      #("record", record_body(Head(..head, games: games))),
     ]),
   )
+}
+
+/// A record taken apart: everything but its games (`fields`, as they
+/// were, in key order), the match length, and each game as its number and
+/// its entries as JSON text, oldest first.
+type Head {
+  Head(
+    fields: List(#(String, json.Json)),
+    target: Int,
+    games: List(#(Int, String)),
+  )
+}
+
+/// A record's own JSON (`Game.record`) taken apart. Error(Nil) for one
+/// that is not an object.
+fn split(record: json.Json) -> Result(Head, Nil) {
+  use fields <- result.try(
+    json.parse(
+      json.to_string(record),
+      decode.dict(decode.string, decode.dynamic),
+    )
+    |> result.replace_error(Nil),
+  )
+  let target =
+    dict.get(fields, "target")
+    |> result.try(fn(t) {
+      decode.run(t, decode.int) |> result.replace_error(Nil)
+    })
+    |> result.unwrap(0)
+  let game = {
+    use number <- decode.field("number", decode.int)
+    use entries <- decode.field("entries", decode.dynamic)
+    decode.success(#(number, raw.text(entries)))
+  }
+  let games =
+    dict.get(fields, "games")
+    |> result.try(fn(g) {
+      decode.run(g, decode.list(game)) |> result.replace_error(Nil)
+    })
+    |> result.unwrap([])
+  Ok(Head(
+    fields: fields
+      |> dict.to_list
+      |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
+      |> list.filter(fn(pair) { pair.0 != "games" })
+      |> list.map(fn(pair) { #(pair.0, raw.json(raw.text(pair.1))) }),
+    target: target,
+    games: games,
+  ))
+}
+
+/// The record on the wire: its fields, then its games, each with its
+/// number, whether it is the Crawford game, and its entries verbatim.
+/// Crawford is `backgammon/record.crawford_game`, the rule the match itself
+/// applies, over the score each game began at (the result line of the game
+/// before it); a client reads it and never works it out.
+fn record_body(head: Head) -> json.Json {
+  let #(games, _, _) =
+    list.fold(head.games, #([], [], []), fn(acc, game) {
+      let #(done, befores, last) = acc
+      let #(number, entries) = game
+      let befores = list.append(befores, [last])
+      let line =
+        json.object([
+          #("number", json.int(number)),
+          #(
+            "crawford",
+            json.bool(bg_record.crawford_game(head.target, befores)),
+          ),
+          #("entries", raw.json(entries)),
+        ])
+      #([line, ..done], befores, scores_after(entries) |> result.unwrap(last))
+    })
+  json.object(
+    list.append(head.fields, [
+      #("games", json.preprocessed_array(list.reverse(games))),
+    ]),
+  )
+}
+
+/// The match score a game's result line left, if it has one (a game still
+/// being played has none).
+fn scores_after(entries: String) -> Result(List(#(String, Int)), Nil) {
+  let line = {
+    use kind <- decode.optional_field("kind", "", decode.string)
+    use scores <- decode.optional_field(
+      "scores",
+      [],
+      decode.dict(decode.string, decode.int) |> decode.map(dict.to_list),
+    )
+    decode.success(#(kind, scores))
+  }
+  json.parse(entries, decode.list(line))
+  |> result.replace_error(Nil)
+  |> result.try(fn(lines) {
+    lines
+    |> list.filter(fn(l) { l.0 == "game_over" })
+    |> list.last
+    |> result.map(fn(l) { l.1 })
+  })
 }
 
 /// The seats an account owns, by player id: what puts the badge beside a
@@ -150,7 +239,7 @@ fn names_json(setup: Option(Setup)) -> json.Json {
 /// which colour, the match length, the position it opened from. It is the
 /// same for the first turn and the last, so it comes from the room's game
 /// started and left alone, never from its log.
-fn head_fields(setup: Setup) -> Result(List(#(String, json.Json)), Nil) {
+fn head_of(setup: Setup) -> Result(Head, Nil) {
   use started <- result.try(
     host.start(
       setup.slug,
@@ -163,20 +252,7 @@ fn head_fields(setup: Setup) -> Result(List(#(String, json.Json)), Nil) {
     |> result.replace_error(Nil),
   )
   use record <- result.try(instance.record(started) |> option.to_result(Nil))
-  use fields <- result.try(
-    json.parse(
-      json.to_string(record),
-      decode.dict(decode.string, decode.dynamic),
-    )
-    |> result.replace_error(Nil),
-  )
-  Ok(
-    fields
-    |> dict.to_list
-    |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
-    |> list.filter(fn(pair) { pair.0 != "games" })
-    |> list.map(fn(pair) { #(pair.0, raw.json(raw.text(pair.1))) }),
-  )
+  split(record)
 }
 
 /// Which way the board faces for a room read from its rows: the seat this
@@ -234,7 +310,10 @@ fn live_json(
           #("seated", json.bool(seated)),
           #("accounts", accounts_json(setup)),
           #("names", names_json(setup)),
-          #("record", record),
+          #("record", case split(record) {
+            Ok(head) -> record_body(head)
+            Error(Nil) -> record
+          }),
         ]),
       )
   }

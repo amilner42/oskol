@@ -288,7 +288,8 @@ assets/src/Games/Backgammon/Replay.elm  the record and reviews as the replay rea
 assets/src/Games/Backgammon/Setup.elm   a position set up on the analysis board: the
                                  twin of src/oskol/analysis/setup.gleam (its wire shape,
                                  `check`'s sentences), `opening`, `empty`, `flip`, a
-                                 puzzle as its page shows it (`fromQuestion`), and the
+                                 puzzle as its page shows it (`fromQuestion`), a replay
+                                 step's decision (`fromReplay`, OPEN IN ANALYSIS), and the
                                  board the slab draws for it (`snapshot`)
 assets/src/Games/Backgammon/Xgid.elm    eXtreme Gammon's position id in and out of a
                                  Setup, pinned by vectors (XgidTest); the field meanings,
