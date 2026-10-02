@@ -3242,3 +3242,60 @@ oskol-demo-board {
   /* no room above the sentence: a menu is the bottom sheet, as on a phone */
   .lh-pick-menu { position: fixed; left: auto; right: 12px; bottom: 12px; width: min(340px, calc(100vw - 24px)); transform: none; min-width: 0; max-height: calc(100svh - 24px); overflow-y: auto; }
 }
+
+/* ---------- EXPERIMENT (local only): the practice home as five cards ----------
+   Page/Puzzles.elm `compactCard`. Each deck is its own card on the paper,
+   in a fixed order, with a soft border of its own colour (--accent); the
+   grid stays behind "Show grid" until asked for. */
+.pz-cards { max-width: 56rem; padding: 0 16px; margin-top: 28px; }
+.pz-cards-head { max-width: 40rem; margin: 0 auto 18px; }
+.pz-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (min-width: 900px) {
+  .pz-cards-grid { grid-template-columns: 1fr 1fr; }
+}
+.pz-cc {
+  background: #fff;
+  border: 2px solid var(--accent);
+  border-radius: 18px;
+  padding: 18px 18px 14px;
+  box-shadow: 0 1px 0 rgba(35, 36, 58, 0.04), 0 8px 24px -12px rgba(35, 36, 58, 0.18);
+  transition: box-shadow 160ms ease;
+}
+.pz-cc:hover { box-shadow: 0 1px 0 rgba(35, 36, 58, 0.04), 0 12px 28px -12px rgba(35, 36, 58, 0.26); }
+.pz-cc-head { display: flex; align-items: center; gap: 14px; }
+.pz-cc-icon {
+  flex: none;
+  width: 48px; height: 48px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  display: flex; align-items: center; justify-content: center;
+}
+.pz-cc-mark { font-family: 'Press Start 2P', monospace; font-size: 14px; color: var(--pen); letter-spacing: -1px; }
+.pz-cc-title { flex: 1; min-width: 0; }
+.pz-cc-name { display: block; font-weight: 700; font-size: 18px; color: var(--ink); line-height: 1.2; text-decoration: none; }
+.pz-cc-name:hover { text-decoration: underline; text-underline-offset: 3px; }
+.pz-cc-count { font-size: 13.5px; color: var(--pencil); margin-top: 2px; }
+.pz-cc-ring { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; font-family: 'Press Start 2P', monospace; font-size: 8px; color: var(--ink); }
+.pz-cc-bar { margin-top: 14px; }
+.pz-cc-track { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #e4ddcd; }
+.pz-cc-track > span { display: block; height: 100%; }
+.pz-cc-track > .is-mastered { background: #1f7a45; }
+.pz-cc-track > .is-learning { background: #e5b93a; }
+.pz-cc-cost .is-won, .pz-cc-cost [class*="won"] { color: #1f7a45; }
+.pz-cc-state { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px; font-size: 13px; color: var(--ink); }
+.pz-cc-dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-left: 6px; }
+.pz-cc-dot:first-child { margin-left: 0; }
+.pz-cc-dot.is-mastered { background: #1f7a45; }
+.pz-cc-dot.is-learning { background: #e5b93a; }
+.pz-cc-of { color: var(--pencil); margin-left: 6px; }
+.pz-cc-cost { margin-top: 12px; font-size: 14px; }
+.pz-cc-grid { margin-top: 14px; }
+.pz-cc-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+.pz-cc-train { padding: 10px 22px; font-size: 14px; }
+.pz-cc-toggle { font-size: 13px; color: var(--pen); background: none; border: 0; padding: 6px 2px; cursor: pointer; }
+.pz-cc-toggle:hover { text-decoration: underline; text-underline-offset: 3px; }
