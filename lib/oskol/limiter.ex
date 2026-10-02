@@ -1,17 +1,18 @@
-defmodule Oskol.Auth.Limiter do
+defmodule Oskol.Limiter do
   @moduledoc """
-  The counters behind the sign-in rate limits: one ETS table of
-  `{key, window_start, count}`, incremented through the `allow_mail`
-  capability.
+  The counters behind every rate limit: one ETS table of
+  `{key, window_start, count, window_s}`. Sign-in mail reserves through the
+  auth capability's `allow_mail` (`start:*` buckets), the analysis board
+  through the analysis capability's `allow_ask` (`analysis:*` buckets).
 
-  The Gleam handler chooses which buckets a send reserves; application
-  configuration supplies their limits and windows through the auth capability.
+  A Gleam handler chooses which buckets a request reserves; application
+  configuration supplies their limits and windows through its capability.
   Counters use fixed windows that reset when they run out.
 
   **Per node and uptime.** A restart clears ETS, and a second node would get
   its own allowance. This is a best-effort spend guard, not a durable billing
-  cap. Nothing here is a security control on its own: a token is still hashed,
-  single use, fifteen minutes and five tries.
+  cap. Nothing here is a security control on its own: a sign-in token is
+  still hashed, single use, fifteen minutes and five tries.
   """
 
   use GenServer
@@ -25,18 +26,28 @@ defmodule Oskol.Auth.Limiter do
   end
 
   @doc """
-  Atomically reserve one message from every `{key, limit, window}` bucket.
-  Nothing is incremented unless all buckets have room, which prevents a
-  refused guest from consuming the node-global budget or another address's.
+  Atomically reserve one use from every `{:limit_bucket, key, limit,
+  window_s}` bucket. Nothing is incremented unless all buckets have room,
+  which prevents a refused guest from consuming the node-global budget or
+  another address's.
+
+  `{:ok, nil}`, or `{:error, {:refused, key, retry_after_s}}` naming the
+  full bucket that frees up last and how long until it does: the shape of
+  Gleam's `Result(Nil, caps/analysis.Refused)`.
   """
-  def allow_mail(buckets) when is_list(buckets) do
-    GenServer.call(__MODULE__, {:allow_mail, buckets}, @call_timeout)
+  def allow(buckets) when is_list(buckets) do
+    GenServer.call(__MODULE__, {:allow, buckets}, @call_timeout)
   rescue
-    # An unavailable in-memory limiter must not turn login into a 500. The
-    # process normally lives for the whole application.
-    _ -> true
+    # An unavailable in-memory limiter must not turn a request into a 500.
+    # The process normally lives for the whole application.
+    _ -> {:ok, nil}
   catch
-    :exit, _ -> true
+    :exit, _ -> {:ok, nil}
+  end
+
+  @doc "Sign-in mail's reservation, as the auth capability takes it: a boolean."
+  def allow_mail(buckets) when is_list(buckets) do
+    match?({:ok, _}, allow(buckets))
   end
 
   @doc "Forget every count. Tests only."
@@ -58,7 +69,7 @@ defmodule Oskol.Auth.Limiter do
   end
 
   @impl true
-  def handle_call({:allow_mail, buckets}, _from, state) do
+  def handle_call({:allow, buckets}, _from, state) do
     now = System.system_time(:second)
     buckets = Enum.map(buckets, &bucket(&1, now))
 
@@ -67,11 +78,16 @@ defmodule Oskol.Auth.Limiter do
         :ets.insert(@table, {key, started, count + 1, window_s})
       end)
 
-      {:reply, true, state}
+      {:reply, {:ok, nil}, state}
     else
       log_limited(buckets)
 
-      {:reply, false, state}
+      {key, started, _limit, window_s, _count} =
+        buckets
+        |> Enum.filter(fn {_key, _started, limit, _window_s, count} -> count >= limit end)
+        |> Enum.max_by(fn {_key, started, _limit, window_s, _count} -> started + window_s end)
+
+      {:reply, {:error, {:refused, key, max(started + window_s - now, 1)}}, state}
     end
   end
 
@@ -123,13 +139,18 @@ defmodule Oskol.Auth.Limiter do
     {key, started, limit, window_s, count}
   end
 
-  # Values after these prefixes are guest ids, addresses, or opaque source
-  # hashes. Logs name only the exhausted policy bucket.
-  defp bucket_name({"start:global", _started, _limit, _window_s, _count}), do: "global"
-  defp bucket_name({"start:guest:" <> _, _started, _limit, _window_s, _count}), do: "guest"
-  defp bucket_name({"start:address:" <> _, _started, _limit, _window_s, _count}), do: "address"
-  defp bucket_name({"start:source:" <> _, _started, _limit, _window_s, _count}), do: "source"
-  defp bucket_name({_key, _started, _limit, _window_s, _count}), do: "unknown"
+  # Values after these prefixes are guest ids, account ids, addresses, or
+  # opaque source hashes. Logs name only the exhausted policy bucket, under
+  # the limit it belongs to: "auth mail limited: source", "analysis limited:
+  # user".
+  defp policy("start:global"), do: {"auth mail", "global"}
+  defp policy("start:guest:" <> _), do: {"auth mail", "guest"}
+  defp policy("start:address:" <> _), do: {"auth mail", "address"}
+  defp policy("start:source:" <> _), do: {"auth mail", "source"}
+  defp policy("analysis:global:" <> _), do: {"analysis", "global"}
+  defp policy("analysis:guest:" <> _), do: {"analysis", "guest"}
+  defp policy("analysis:user:" <> _), do: {"analysis", "user"}
+  defp policy(_key), do: {"auth mail", "unknown"}
 
   # A refusal must be observable without becoming an attacker-controlled log
   # stream. Each policy kind writes at most one anonymous warning per its
@@ -137,15 +158,20 @@ defmodule Oskol.Auth.Limiter do
   defp log_limited(buckets) do
     buckets
     |> Enum.filter(fn {_key, _started, limit, _window_s, count} -> count >= limit end)
-    |> Enum.group_by(&bucket_name/1)
-    |> Enum.each(fn {name, exhausted} ->
+    |> Enum.group_by(fn {key, _started, _limit, _window_s, _count} -> policy(key) end)
+    |> Enum.each(fn {{limit, name}, exhausted} ->
       {_key, started, _limit, window_s, _count} =
         Enum.min_by(exhausted, fn {_key, started, _limit, _window_s, _count} -> started end)
 
-      marker = {:limit_log, name, started, window_s}
+      # Sign-in's markers keep the shape they had, so a node upgraded with
+      # a live table does not log a window twice.
+      marker =
+        if limit == "auth mail",
+          do: {:limit_log, name, started, window_s},
+          else: {:limit_log, limit, name, started, window_s}
 
       if :ets.insert_new(@table, {marker, started, 1, window_s}) do
-        Logger.warning("auth mail limited: #{name}")
+        Logger.warning("#{limit} limited: #{name}")
       end
     end)
   end

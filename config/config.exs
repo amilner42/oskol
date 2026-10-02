@@ -52,6 +52,27 @@ config :oskol, :auth_mail_budget,
   source: [limit: 20, window_s: 3_600],
   global: [limit: 200, window_s: 86_400]
 
+# The analysis board: positions asked of the engine on a player's press
+# (`oskol/handlers/analysis`). A guest an hour and a day, an account an hour
+# and a day, everybody a day; a position already analyzed costs nothing.
+# 600 a day is at most 30 engine-minutes. Per node and in memory, like the
+# sign-in limits: a restart starts the day's counts again.
+config :oskol, :analysis_budget,
+  guest_hour: 10,
+  guest_day: 30,
+  user_hour: 30,
+  user_day: 150,
+  global_day: 600
+
+# The line those asks wait in (`Oskol.Analysis.Asker`): two at once, twenty
+# waiting, a minute's pause after the engine fails.
+config :oskol, Oskol.Analysis.Asker,
+  enabled: true,
+  in_flight: 2,
+  waiting: 20,
+  circuit_ms: 60_000,
+  ask_timeout_ms: 60_000
+
 # The puzzle deck's spaced repetition (the `retain` library): our repo, our
 # tables, no processes to start.
 #

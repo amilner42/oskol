@@ -21,7 +21,7 @@ defmodule OskolWeb.Api.AuthOwnershipApiTest do
 
   setup do
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
-    Oskol.Auth.Limiter.reset()
+    Oskol.Limiter.reset()
 
     on_exit(fn ->
       Persister.flush()

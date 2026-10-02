@@ -582,7 +582,9 @@ Signed in, the page POSTs the browser's zone
 `/papi/practice/tz` once per visit, never for a guest. Decisions on the
 server: `handlers/practice` and `handlers/puzzles_hub` (TRY ONE's
 clear-answer rule, on the `puzzles.sample` cap: up to 40 complete puzzles in
-the database's random order, the first that qualifies).
+the database's random order, the first that qualifies). TRY ONE and the
+status page draw only rows whose `origin` is `game` or `set`, never a
+position somebody set up on the analysis board (`docs/analysis.md`).
 
 **A deck's page** (`/practice/<slug>`, `assets/src/Page/Practice.elm`) is
 `GET /papi/practice/decks/:slug`: the same card at page size

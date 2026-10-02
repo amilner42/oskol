@@ -142,13 +142,98 @@ pub fn puzzle_body(stored: caps.Stored) -> Result(String, ApiError) {
 }
 
 fn body(id: String, question: Question, tree: Json) -> String {
-  envelope.ok([
+  envelope.ok(fields(id, question, tree))
+}
+
+fn fields(id: String, question: Question, tree: Json) -> List(#(String, Json)) {
+  [
     #("id", json.string(id)),
     #("kind", json.string(puzzles.kind_name(question.kind))),
     #("question", question_json(shown(question))),
     #("tree", tree),
     #("prompt", json.string(prompt(question))),
-  ])
+  ]
+}
+
+/// The puzzle as `GET /papi/puzzles/:id` sends it, as one object rather
+/// than an envelope, for an answer that carries a puzzle inside it (the
+/// analysis board's): the page can play on it at once.
+pub fn puzzle_object(ctx: Ctx, stored: caps.Stored) -> Result(Json, ApiError) {
+  use question <- result.try(question_of(stored))
+  Ok(
+    json.object(fields(stored.id, question, tree_of(ctx, stored.id, question))),
+  )
+}
+
+// ---------- The reveal with no attempt in it ----------
+
+/// What the engine says about a puzzle, with nobody's answer in it:
+/// `{best, top, cube, n_legal, levels}`. The analysis board's verdict. The
+/// first three are rendered by the very functions an attempt's reveal uses
+/// (`answer_fields`), so the two can never disagree about one puzzle;
+/// `n_legal` is how many ways the roll could be played (null for a cube
+/// question) and `levels` the depths the engine searched at (`{moves,
+/// cube}`, or null where the row does not say).
+pub fn reveal_json(
+  stored: caps.Stored,
+  evaluated_by_json: String,
+) -> Result(Json, ApiError) {
+  use question <- result.try(question_of(stored))
+  use answer <- result.try(answer_of(stored))
+  Ok(
+    json.object(
+      list.flatten([
+        answer_fields(question, answer),
+        [
+          #("n_legal", case answer {
+            MoveAnswer(n_legal: n, ..) -> json.int(n)
+            CubeAnswer(..) -> json.null()
+          }),
+          #("levels", levels_json(evaluated_by_json)),
+        ],
+      ]),
+    ),
+  )
+}
+
+/// The engine's best play, its top five and its cube verdict, as a reveal
+/// shows them -- the part of a reveal that is the puzzle's and not the
+/// player's.
+fn answer_fields(question: Question, answer: Answer) -> List(#(String, Json)) {
+  case answer {
+    MoveAnswer(..) -> [
+      #("best", case grade.best(answer) {
+        Some(c) -> candidate_json(question, c)
+        None -> json.null()
+      }),
+      #("top", json.array(grade.top_five(answer), candidate_json(question, _))),
+      #("cube", json.null()),
+    ]
+    CubeAnswer(..) -> [
+      #("best", json.null()),
+      #("top", json.array([], fn(_) { json.null() })),
+      #("cube", case grade.engine_band(question.kind, answer) {
+        Some(engine) -> cube_json(answer, engine)
+        None -> json.null()
+      }),
+    ]
+  }
+}
+
+fn levels_json(evaluated_by_json: String) -> Json {
+  let levels = {
+    use moves <- decode.field("moves", decode.string)
+    use cube <- decode.field("cube", decode.string)
+    decode.success(
+      json.object([#("moves", json.string(moves)), #("cube", json.string(cube))]),
+    )
+  }
+  json.parse(
+    evaluated_by_json,
+    decode.optionally_at(["levels"], None, decode.optional(levels))
+      |> decode.map(option.unwrap(_, json.null())),
+  )
+  |> result.unwrap(json.null())
 }
 
 // ---------- The head of /puzzles/:id ----------
@@ -589,12 +674,7 @@ fn judge_move(
         Some(c) -> c
         None -> json.null()
       }),
-      #("best", case best {
-        Some(c) -> candidate_json(question, c)
-        None -> json.null()
-      }),
-      #("top", json.array(grade.top_five(answer), candidate_json(question, _))),
-      #("cube", json.null()),
+      ..answer_fields(question, answer)
     ],
     json.to_string(
       json.object([
@@ -714,9 +794,7 @@ fn judge_cube(
       #("band", json.string(grade.band_name(cost))),
       #("cost", json.nullable(cost, json.float)),
       #("yours", json.null()),
-      #("best", json.null()),
-      #("top", json.array([], fn(_) { json.null() })),
-      #("cube", cube_json(answer, engine)),
+      ..answer_fields(question, answer)
     ],
     json.to_string(json.object([#("band", json.int(answered))])),
   ))

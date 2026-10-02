@@ -3,11 +3,16 @@
 ////   {"ok": true, ...payload}
 ////   {"ok": false, "error": {"code": "...", "message": "..."}}
 ////
+//// A refusal that will pass with time (429, 503) adds `retry_after_s` to
+//// the error.
+////
 //// Handlers return rendered JSON strings so the shape of a response is a
 //// decision Gleam owns; the Elixir controller only picks the status and
 //// writes the body.
 
 import gleam/json.{type Json}
+import gleam/list
+import gleam/option.{None, Some}
 import oskol/core/error.{type ApiError}
 
 /// A success envelope: `ok` plus the handler's own fields.
@@ -23,10 +28,18 @@ pub fn error(err: ApiError) -> #(Int, String) {
       #("ok", json.bool(False)),
       #(
         "error",
-        json.object([
-          #("code", json.string(error.code(err))),
-          #("message", json.string(error.message(err))),
-        ]),
+        json.object(
+          list.flatten([
+            [
+              #("code", json.string(error.code(err))),
+              #("message", json.string(error.message(err))),
+            ],
+            case error.retry_after_s(err) {
+              Some(seconds) -> [#("retry_after_s", json.int(seconds))]
+              None -> []
+            },
+          ]),
+        ),
       ),
     ])
     |> json.to_string

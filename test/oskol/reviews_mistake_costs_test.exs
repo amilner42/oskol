@@ -139,7 +139,8 @@ defmodule Oskol.ReviewsMistakeCostsTest do
     # the holder rule can be asked of.
     {:analysis_caps, _log, _stored, _ratings, _summaries, _report, _save, _backfill_turns,
      _enqueue, _review, _report_turn, _charge, _replace, _grades, _forget_grades, _graded_for,
-     _graded_rooms_for, mistake_costs} = Oskol.Gleam.Caps.Analysis.build()
+     _graded_rooms_for, mistake_costs, _ask_budget, _asking, _submit, _allow_ask} =
+      Oskol.Gleam.Caps.Analysis.build()
 
     assert [
              {:mistake_cost, "p-mc0001-1", "very_bad", "mc0001", 1,
