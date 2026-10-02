@@ -663,6 +663,15 @@ answering =
                         , Query.hasNot [ id "an-candidates" ]
                         , Query.find [ id "an-depth" ] >> Query.has [ text "4-ply · already analyzed" ]
                         ]
+        , test "a double too close to call (the reported ND +0.221, D/T +0.224): a double in ink, and close in words" <|
+            \_ ->
+                sendAll [ PickedDouble, PressedAnalyze, GotAsk 1 (done "double_close") ] page
+                    |> panel
+                    |> Expect.all
+                        [ Query.find [ class "rp-cube-eq", class "is-pick" ] >> Query.has [ text "Double, take" ]
+                        , Query.has [ text "Too close to call: doubling gains just 0.003, so either is fine. If doubled, Black takes." ]
+                        , Query.hasNot [ text "The game is close here: not a double yet." ]
+                        ]
         , test "a take: the taker's sentence" <|
             \_ ->
                 sendAll [ PickedTake, PressedAnalyze, GotAsk 1 (done "take") ] page

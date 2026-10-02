@@ -58,6 +58,7 @@ pub fn stored_sample(name: String) -> Stored {
     "doubles" -> move_puzzle("fixdbl01", doubles_board(), #(3, 3))
     "double" -> cube_puzzle(Double)
     "take" -> cube_puzzle(Take)
+    "double_close" -> close_double()
     "old" -> old_move_puzzle("fixold01", hit_board(), #(6, 4))
     _ -> move_puzzle("fixmove1", hit_board(), #(6, 4))
   }
@@ -84,6 +85,10 @@ pub fn reveals() -> List(#(String, String)) {
     // A coin flip: taking and passing are within 0.02 of each other, so
     // either answer passes, the wrong side giving up a hair.
     #("take_close", attempted(close_take(), [], Some(1))),
+    // The same coin flip asked of the doubler, from both sides: doubling
+    // gains 0.003, and DOUBLE and NO DOUBLE read alike.
+    #("double_close_yes", attempted(close_double(), [], Some(1))),
+    #("double_close_no", attempted(close_double(), [], Some(-1))),
     // `held_days` as `config :retain, intervals` has it: 7 days at level
     // 3, 1 at level 1.
     #("schedule_amendable", handler.schedule_json(2, 3, due, True, False, 7)),
@@ -102,6 +107,7 @@ pub fn analyses() -> List(#(String, String)) {
     #("move", analysed("move", levels)),
     #("double", analysed("double", levels)),
     #("take", analysed("take", levels)),
+    #("double_close", analysed("double_close", levels)),
     #("move_no_levels", analysed("move", "{\"levels\":null}")),
   ]
 }
@@ -414,6 +420,81 @@ fn close_take() -> Stored {
       )),
     ),
   )
+}
+
+/// The double reported from prod (`cube-verdict-from-equities`): ND
+/// +0.221, D/T +0.224, D/P +1.000. Doubling gains 0.003 -- a double by the
+/// equities, band 0 on the puzzles' scale -- and the page once said "not a
+/// double yet" beside those very numbers.
+fn close_double() -> Stored {
+  let Stored(id: _, kind: kind, question_json: question, answer_json: _) =
+    cube_puzzle(Double)
+  Stored(
+    id: "fixdoubc",
+    kind: kind,
+    question_json: question,
+    answer_json: json.to_string(
+      puzzles.answer_json(cube_answer_of(0.221, 0.224, 1.0)),
+    ),
+  )
+}
+
+/// A cube answer as an extraction writes it: the call and the flag read
+/// off the equities.
+fn cube_answer_of(nd: Float, dt: Float, dp: Float) -> Answer {
+  CubeAnswer(
+    no_double: nd,
+    double_take: dt,
+    double_pass: dp,
+    probs: Some(probs()),
+    optimal: puzzles.cube_call(nd, dt, dp),
+    too_good: puzzles.too_good(nd, dp),
+  )
+}
+
+/// The cube call on equities at, above and below each of its lines, as the
+/// server decides it: `mix oskol.fixtures payloads` writes these into
+/// `assets/tests/CubeCallFixtures.elm`, and `CubeCallTest` holds the Elm
+/// twin (`Replay.cubeCall`, `Replay.tooGood`, `Replay.takes`) to every one.
+/// Each is `{no_double, double_take, double_pass, call, too_good, takes}`.
+pub fn cube_calls() -> List(#(String, String)) {
+  [
+    #("the reported double", 0.221, 0.224, 1.0),
+    #("its mirror, a no double", 0.224, 0.221, 1.0),
+    #("on the double line", 0.5, 0.5, 1.0),
+    #("a hair over the double line", 0.5, 0.5001, 1.0),
+    #("a hair under the double line", 0.5, 0.4999, 1.0),
+    #("on the take line", 0.5, 1.0, 1.0),
+    #("a hair under the take line", 0.5, 0.9999, 1.0),
+    #("a hair over the take line, a pass", 0.5, 1.0001, 1.0),
+    #("double, pass by a hair over waiting", 0.9999, 1.4, 1.0),
+    #("on the too-good line", 1.0, 1.4, 1.0),
+    #("a hair too good", 1.0001, 1.4, 1.0),
+    #("too good, and a take if doubled", 1.2, 0.9, 1.0),
+    #("losing", -0.3, -0.5, 1.0),
+    #("a clear double, take", 0.5, 0.7, 1.0),
+    #("a clear double, pass", 0.31, 1.12, 1.0),
+    #("the stand-in engine's pass with the game close", 0.62, 1.31, 1.0),
+  ]
+  |> list.map(fn(c) {
+    let #(name, nd, dt, dp) = c
+    #(
+      name,
+      json.to_string(
+        json.object([
+          #("no_double", json.float(nd)),
+          #("double_take", json.float(dt)),
+          #("double_pass", json.float(dp)),
+          #(
+            "call",
+            json.string(puzzles.optimal_name(puzzles.cube_call(nd, dt, dp))),
+          ),
+          #("too_good", json.bool(puzzles.too_good(nd, dp))),
+          #("takes", json.bool(puzzles.takes(dt, dp))),
+        ]),
+      ),
+    )
+  })
 }
 
 fn probs() -> Probs {

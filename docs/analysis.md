@@ -569,7 +569,11 @@ columns. Tests: `AnalysisPageTest` (on `AnalysisFixtures`, the server's own
   (`#an-candidates`). For a double, `Words.cubeLine` (the three equities,
   the pick in green), `Words.cubeChances` and `doubleWhy` / `noDoubleWhy`
   with the real colours (the one asked, then the other); for a take,
-  `answerWhy`. Under it the quiet line (`#an-depth`): "4-ply · asked just
+  `answerWhy`. The pick and the words are the call read off those very
+  equities (`Puzzle.optimalOf` on `Replay.cubeCall`; docs/puzzles.md), so
+  ND +0.221, D/T +0.224 is a double/take in ink and, being under 0.02,
+  "Too close to call: doubling gains just 0.003, so either is fine. If
+  doubled, Black takes." -- never "not a double". Under it the quiet line (`#an-depth`): "4-ply · asked just
   now", or "already analyzed" when the POST answered at once, the depth
   from `reveal.levels` (moves for a move, cube for a cube; "Already
   analyzed" alone when the row does not say), and SHARE's word on its

@@ -2506,17 +2506,22 @@ viewVerdict reveal =
         mark =
             Words.gradeMark reveal.band
 
+        -- A cube the engine calls too close (band 0): either answer is
+        -- right and neither gave anything up, so both read the same.
+        tooClose =
+            Maybe.map .band reveal.cube == Just 0
+
         ( word, sentence, band ) =
             case ( reveal.verdict, reveal.cost ) of
-                ( Pass, Just cost ) ->
-                    if cost > 0 then
+                ( Pass, _ ) ->
+                    if tooClose then
+                        ( "RIGHT", Words.eitherIsRight, "" )
+
+                    else if Maybe.withDefault 0 reveal.cost > 0 then
                         ( "RIGHT", Words.nearlyBest, "" )
 
                     else
                         ( "RIGHT", "That is the play.", "" )
-
-                ( Pass, Nothing ) ->
-                    ( "RIGHT", "That is the play.", "" )
 
                 ( Hold, _ ) ->
                     ( "CLOSE", "Not far off the best.", "" )

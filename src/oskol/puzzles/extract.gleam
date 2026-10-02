@@ -359,17 +359,21 @@ fn gradeable(cube: report.CubeReview, turn: Turn, number: Int) -> Bool {
 }
 
 /// The engine's cube verdict as a stored answer: its three equities, the
-/// chances, its pick, and whether it is too good to double. The same for a
-/// double and a take, which are one position asked of two players.
+/// chances, and the call and too-good flag read off those equities
+/// (`puzzle.cube_call`, never the engine's label). The same for a double
+/// and a take, which are one position asked of two players.
 pub fn cube_answer(cube: report.CubeReview) -> puzzle.Answer {
-  let optimal = puzzle.optimal_from_engine(cube.optimal)
   puzzle.CubeAnswer(
     no_double: cube.no_double,
     double_take: cube.double_take,
     double_pass: cube.double_pass,
     probs: option.map(cube.probs, probs),
-    optimal: optimal,
-    too_good: puzzle.too_good(optimal, cube.no_double, cube.double_pass),
+    optimal: puzzle.cube_call(
+      cube.no_double,
+      cube.double_take,
+      cube.double_pass,
+    ),
+    too_good: puzzle.too_good(cube.no_double, cube.double_pass),
   )
 }
 

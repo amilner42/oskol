@@ -28,10 +28,14 @@
 //// A margin becomes one of five bands -- big (0.08 and up), plain (0.02 and
 //// up), or borderline -- on either side of zero, numbered -2..+2, with +1
 //// and +2 always the aggressive answer (double, take). The right side
-//// passes and the wrong side misses. Borderline (band 0) passes either
-//// side: the wrong side there gives up under 0.02, which is not a mistake
-//// by the same rule a checker play is graded by. What the wrong side gave
-//// up is the margin itself (`cube_cost`).
+//// passes and the wrong side misses. Borderline (band 0) is too close to
+//// call: either side passes and neither gave anything up, since under 0.02
+//// is inside the 4-ply engine's own noise on a cube decision. Outside it,
+//// what the wrong side gave up is the margin itself (`cube_cost`).
+////
+//// The margins are `puzzles.double_margin` and `puzzles.take_margin`, the
+//// very ones the cube call is read off (`puzzles.cube_call`), so a band and
+//// the call beside it can never disagree about which side is right.
 
 import gleam/float
 import gleam/list
@@ -208,8 +212,8 @@ fn margin(kind: Kind, answer: Answer) -> Option(Float) {
   case answer {
     CubeAnswer(no_double: nd, double_take: dt, double_pass: dp, ..) ->
       case kind {
-        Double -> Some(float.min(dt, dp) -. nd)
-        Take -> Some(dp -. dt)
+        Double -> Some(puzzles.double_margin(nd, dt, dp))
+        Take -> Some(puzzles.take_margin(dt, dp))
         Move -> None
       }
     MoveAnswer(..) -> None
@@ -217,11 +221,14 @@ fn margin(kind: Kind, answer: Answer) -> Option(Float) {
 }
 
 /// What a side gave up: nothing on the side the margin leans to, the whole
-/// margin on the other. Inside band 0 that is under 0.02, which is why
-/// either side passes there.
+/// margin on the other -- except inside band 0, where the call is too close
+/// to call and both sides are equally right: nothing either way. The 4-ply
+/// cube equities are not good to 0.02, so a reveal that called one side
+/// "best" and the other merely "ok" over a margin of 0.003 would be grading
+/// the engine's noise.
 pub fn cube_cost(kind: Kind, answer: Answer, answered: Int) -> Option(Float) {
   use m <- option.map(margin(kind, answer))
-  case m == 0.0 || { answered > 0 } == { m >. 0.0 } {
+  case band_of(m) == 0 || { answered > 0 } == { m >. 0.0 } {
     True -> 0.0
     False -> float.absolute_value(m)
   }

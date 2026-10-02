@@ -42,10 +42,13 @@ for the first steps of a playout) are derived, gitignored, and embedded in
 same for the puzzle wire: `PuzzleApiFixtures.elm` (the question, per kind)
 and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
 `handlers/puzzles.attempt_body`: `move_pass`, `move_dubious`, `move_fail`,
-`move_unknown`, `double_pass`, `double_fail`, `take_pass`, `take_close`, and
-the three schedule shapes), and `AnalysisFixtures.elm` (the analysis board's
-`done` answer, from `handlers/analysis.done_fixture`: `move`, `double`,
-`take`, and `move_no_levels`).
+`move_unknown`, `double_pass`, `double_fail`, `take_pass`, `take_close`,
+`double_close_yes`, `double_close_no`, and the three schedule shapes),
+`AnalysisFixtures.elm` (the analysis board's `done` answer, from
+`handlers/analysis.done_fixture`: `move`, `double`, `take`,
+`double_close` and `move_no_levels`), and `CubeCallFixtures.elm` (the
+server's cube call on equities at, above and below each line,
+`fixture.cube_calls`, which `CubeCallTest` holds `Replay.cubeCall` to).
 
 **Elm (`elm-test`)**
 - `ProtocolTest`: every fixture payload decodes; cross-checks that hold for
@@ -155,9 +158,8 @@ the three schedule shapes), and `AnalysisFixtures.elm` (the analysis board's
   viewer; polling only while something is pending.
 - `WordsTest`: the verdict sentences where they are written, on made-up
   verdicts -- every move grade with its gains and costs, every cube call
-  from both sides of the cube, the too-good rule the Gleam twin shares,
-  and the engine's three words read into `Optimal` (a fourth falls back
-  rather than being guessed at).
+  from both sides of the cube, the too-good rule, and the too-close-to-call
+  words at, above and below each line (0.003, 0.019, 0.021).
 - `XgidTest`: the position id pinned by vectors (the opening, Black to
   play, a cube owned by each side, a match with Crawford, a take, the bar
   and borne off, ids published by gnubg's bug list and backgammonforums),

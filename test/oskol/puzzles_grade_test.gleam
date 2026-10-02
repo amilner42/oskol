@@ -214,18 +214,13 @@ pub fn a_margin_becomes_one_of_five_bands_test() {
 /// A cube answer whose equities put the engine on a named band. All three
 /// are the doubler's payoff, whichever side is asked.
 fn cube(nd: Float, dt: Float, dp: Float) -> puzzles.Answer {
-  let optimal = case dt >. dp, nd >=. dt, nd >=. dp {
-    _, True, True -> NoDouble
-    True, _, _ -> DoublePass
-    False, _, _ -> DoubleTake
-  }
   CubeAnswer(
     no_double: nd,
     double_take: dt,
     double_pass: dp,
     probs: Some(probs()),
-    optimal: optimal,
-    too_good: puzzles.too_good(optimal, nd, dp),
+    optimal: puzzles.cube_call(nd, dt, dp),
+    too_good: puzzles.too_good(nd, dp),
   )
 }
 
@@ -314,7 +309,7 @@ pub fn the_whole_cube_matrix_test() {
 
 /// What a cube answer gave up, in numbers: at band +1 (a margin of 0.05
 /// for the doubler) doubling costs nothing and not doubling 0.05; at band
-/// 0 the wrong side costs its margin, which is under 0.02.
+/// 0 neither side gave anything up.
 pub fn what_a_cube_answer_gave_up_test() {
   let assert Some(cost) = grade.cube_cost(Double, doubler_at(1), 1)
   assert cost == 0.0
@@ -323,10 +318,82 @@ pub fn what_a_cube_answer_gave_up_test() {
   assert float.loosely_equals(cost, 0.05, 0.000001)
   assert grade.band_name(Some(cost)) == "doubtful"
   let assert Some(cost) = grade.cube_cost(Double, doubler_at(0), -1)
-  assert grade.band_name(Some(cost)) == "ok"
+  assert cost == 0.0
+  assert grade.band_name(Some(cost)) == "best"
   let assert Some(cost) = grade.cube_cost(Take, responder_at(-2), 1)
   assert grade.band_name(Some(cost)) == "very_bad"
   assert grade.cube_cost(Move, doubler_at(1), 1) == None
+}
+
+/// Too close to call is correct either way: inside 0.02, on either side of
+/// the line, both answers pass, cost nothing and read "best" -- for the
+/// doubler and for the responder. 0.021 is the control: a plain call, where
+/// the side against it misses and gives up the margin.
+pub fn too_close_to_call_is_right_either_way_test() {
+  // The margin each side is asked about, as the equities that make it.
+  let doubler = fn(m: Float) { cube(0.2, 0.2 +. m, 1.0) }
+  let responder = fn(m: Float) { cube(0.0, 1.0 -. m, 1.0) }
+  list.each([0.003, -0.003, 0.019, -0.019, 0.0], fn(m) {
+    list.each([#(Double, doubler(m)), #(Take, responder(m))], fn(asked) {
+      let assert Some(engine) = grade.engine_band(asked.0, asked.1)
+      assert engine == 0
+      list.each([1, -1], fn(answered) {
+        assert grade.cube_verdict(answered, engine) == Pass
+        assert grade.cube_cost(asked.0, asked.1, answered) == Some(0.0)
+        assert grade.band_name(grade.cube_cost(asked.0, asked.1, answered))
+          == "best"
+      })
+    })
+  })
+  list.each([0.021, -0.021], fn(m) {
+    list.each([#(Double, doubler(m)), #(Take, responder(m))], fn(asked) {
+      let assert Some(engine) = grade.engine_band(asked.0, asked.1)
+      let right = case m >. 0.0 {
+        True -> 1
+        False -> -1
+      }
+      assert engine == right
+      assert grade.cube_verdict(right, engine) == Pass
+      assert grade.cube_cost(asked.0, asked.1, right) == Some(0.0)
+      assert grade.cube_verdict(-right, engine) == Fail
+      let assert Some(cost) = grade.cube_cost(asked.0, asked.1, -right)
+      assert float.loosely_equals(cost, 0.021, 0.000001)
+      assert grade.band_name(Some(cost)) == "doubtful"
+    })
+  })
+}
+
+/// The cube call, read off the three equities and nothing else: double iff
+/// min(DT, DP) > ND, take iff DT <= DP, too good iff ND > DP. At, just
+/// above and just below each line, for each of the four calls.
+pub fn the_cube_call_reads_off_the_equities_test() {
+  // No double / double: the line is min(DT, DP) = ND.
+  assert puzzles.cube_call(0.221, 0.224, 1.0) == DoubleTake
+  assert puzzles.cube_call(0.224, 0.221, 1.0) == NoDouble
+  assert puzzles.cube_call(0.5, 0.5, 1.0) == NoDouble
+  assert puzzles.cube_call(0.5, 0.501, 1.0) == DoubleTake
+  assert puzzles.cube_call(0.5, 0.499, 1.0) == NoDouble
+  // Take / pass, with the double clear: the line is DT = DP.
+  assert puzzles.cube_call(0.5, 1.0, 1.0) == DoubleTake
+  assert puzzles.cube_call(0.5, 0.999, 1.0) == DoubleTake
+  assert puzzles.cube_call(0.5, 1.001, 1.0) == DoublePass
+  // Double/pass against no double: doubling is worth the point, so the
+  // line is DP = ND.
+  assert puzzles.cube_call(0.999, 1.4, 1.0) == DoublePass
+  assert puzzles.cube_call(1.0, 1.4, 1.0) == NoDouble
+  // Too good: the line is ND = DP, and too good is always a no double.
+  assert puzzles.too_good(1.001, 1.0)
+  assert puzzles.cube_call(1.001, 1.4, 1.0) == NoDouble
+  assert !puzzles.too_good(1.0, 1.0)
+  assert !puzzles.too_good(0.999, 1.0)
+  // The take is the responder's own, whatever the doubler should do.
+  assert puzzles.takes(1.0, 1.0)
+  assert puzzles.takes(0.999, 1.0)
+  assert !puzzles.takes(1.001, 1.0)
+  // And the margins are the grade's: a call is a double exactly when the
+  // doubler's band is on the positive side or a positive band 0.
+  assert puzzles.double_margin(0.221, 0.224, 1.0) >. 0.0
+  assert grade.engine_band(Double, cube(0.221, 0.224, 1.0)) == Some(0)
 }
 
 /// The rule in the player's words: nobody fails a coin flip, and a plain
@@ -396,7 +463,7 @@ pub fn every_fixture_means_what_it_says_test() {
           DoubleTake -> band > 0
           _ -> True
         }
-        assert too_good == puzzles.too_good(optimal, nd, dp)
+        assert too_good == puzzles.too_good(nd, dp)
       }
       _ -> Nil
     }

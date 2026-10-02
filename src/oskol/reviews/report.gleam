@@ -21,6 +21,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import oskol/core/raw
+import oskol/puzzles
 
 // ---------- The engine's review ----------
 
@@ -58,7 +59,9 @@ pub type CubeReview {
   CubeReview(
     action: String,
     response: Option(String),
-    optimal: String,
+    /// The three equities, the doubler's payoff. The call is read off
+    /// these (`puzzles.cube_call`); the engine's own label,
+    /// `optimal_action`, is not read at all.
     no_double: Float,
     double_take: Float,
     double_pass: Float,
@@ -613,7 +616,6 @@ fn cube_decoder() -> Decoder(CubeReview) {
     None,
     decode.optional(decode.string),
   )
-  use optimal <- decode.subfield(["analysis", "optimal_action"], decode.string)
   use nd <- decode.subfield(["analysis", "equity_nd"], number())
   use dt <- decode.subfield(["analysis", "equity_dt"], number())
   use dp <- decode.subfield(["analysis", "equity_dp"], number())
@@ -631,7 +633,6 @@ fn cube_decoder() -> Decoder(CubeReview) {
   decode.success(CubeReview(
     action: action,
     response: response,
-    optimal: optimal,
     no_double: nd,
     double_take: dt,
     double_pass: dp,
@@ -938,7 +939,20 @@ fn turn_json(
             json.object([
               #("action", json.string(cube.action)),
               #("response", nullable_string(cube.response)),
-              #("optimal", json.string(cube.optimal)),
+              // The call from the equities beside it. A report written
+              // before this carries the engine's label here instead
+              // ("No Double"); the page reads neither and works the call
+              // out from the equities (`Replay.cubeCall`).
+              #(
+                "optimal",
+                json.string(
+                  puzzles.optimal_name(puzzles.cube_call(
+                    cube.no_double,
+                    cube.double_take,
+                    cube.double_pass,
+                  )),
+                ),
+              ),
               #(
                 "equities",
                 json.object([
