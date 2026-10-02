@@ -92,7 +92,9 @@ src/oskol/puzzles.gleam         a puzzle's stored shape: the question, its canon
 src/oskol/puzzles/extract.gleam which turns of a graded game are puzzles
 src/oskol/handlers/analysis.gleam POST/GET /papi/analysis: the cache by key, the
                                 budgets, the refusals, and `store` (an engine answer
-                                kept as an "analysis" puzzle); its controller is
+                                kept as an "analysis" puzzle); POST
+                                /papi/analysis/moves, a set-up roll's legal plays
+                                (the puzzle tree, never the engine); its controller is
                                 lib/oskol_web/controllers/api/analysis_controller.ex
 src/oskol/handlers/puzzles.gleam the puzzle pages: the question, the grade, the
                                  reveal, what an answer does to a deck, the
@@ -244,11 +246,15 @@ assets/src/Page/Analysis.elm     "/analysis" the analysis board: the brushes, th
                                  plate counting seconds, the poll), the answer's panel
                                  (`#an-panel`: the best play and the candidate table, or
                                  the cube's line; a candidate on the board), SHARE /
-                                 OPEN AS PUZZLE, the refusals and TRY AGAIN
+                                 OPEN AS PUZZLE, the refusals and TRY AGAIN; playing it
+                                 out: SET UP / PLAY, the puzzle table on a step's legal
+                                 plays, PLAY THIS, ROLL FOR ME, the cube's choices, the
+                                 line (`#an-line`) and its plates
 assets/src/Api/Analysis.elm      POST /papi/analysis and GET /papi/analysis/:key: the
                                  status decoder, the reveal ({best, top, cube, n_legal,
                                  levels}, through the puzzle reveal's own decoders) and
-                                 a refusal's `retry_after_s`
+                                 a refusal's `retry_after_s`; POST /papi/analysis/moves
+                                 (`moves`, `movesLevel`)
 assets/src/Ui/Candidates.elm     the engine's candidate table (`.rp-top`, `data-rank`
                                  rows: move and its mark, equity, win, gam+, gam-), one
                                  renderer for the replay, the puzzle reveal and the
@@ -306,8 +312,9 @@ assets/src/Games/Backgammon/Setup.elm   a position set up on the analysis board:
                                  twin of src/oskol/analysis/setup.gleam (its wire shape,
                                  `check`'s sentences), `opening`, `empty`, `flip`, a
                                  puzzle as its page shows it (`fromQuestion`), a replay
-                                 step's decision (`fromReplay`, OPEN IN ANALYSIS), and the
-                                 board the slab draws for it (`snapshot`)
+                                 step's decision (`fromReplay`, OPEN IN ANALYSIS), the
+                                 board the slab draws for it (`snapshot`), and a line's
+                                 next position (`Chosen`, `next`, `withBoard`)
 assets/src/Games/Backgammon/Xgid.elm    eXtreme Gammon's position id in and out of a
                                  Setup, pinned by vectors (XgidTest); the field meanings,
                                  checked against gnubg, in docs/analysis.md; the server

@@ -10,7 +10,7 @@ import gleam/dynamic/decode
 import gleam/int
 import gleam/json.{type Json}
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/string
 import oskol/analysis/setup.{type Setup, Double, Match, Move, Setup}
 import oskol/caps/analysis as analysis_caps
@@ -811,4 +811,136 @@ pub fn a_cube_reveal_is_the_attempts_own_rendering_test() {
     assert field_of(reveal, [name]) == field_of(attempt, [name])
   })
   assert field_of(reveal, ["n_legal"]) == field_of(reveal, ["levels"])
+}
+
+// ---------- The legal plays of a line's step (POST /papi/analysis/moves) ----------
+
+fn moves_body(s: Setup, node: Option(String)) -> String {
+  json.to_string(
+    json.object([
+      #("setup", setup.to_json(s)),
+      #("node", case node {
+        Some(n) -> json.string(n)
+        None -> json.null()
+      }),
+    ]),
+  )
+}
+
+fn tree_text(text: String) -> String {
+  let assert Ok(value) = json.parse(text, decode.at(["tree"], decode.dynamic))
+  string.inspect(value)
+}
+
+fn expected_tree(s: Setup, roll: #(Int, Int)) -> String {
+  let q = setup.question(s)
+  let assert Ok(b) = tree.from_engine(q.board)
+  let assert Ok(whole) = tree.build(b, tree.dice_of(roll), 100_000)
+  let text = envelope.ok([#("tree", tree.to_json(whole))])
+  tree_text(text)
+}
+
+pub fn the_moves_of_a_roll_are_the_puzzle_tree_and_never_the_engine_test() {
+  let ctx = fresh_ctx()
+  let s = opening(#(3, 1))
+  let assert Ok(text) = handler.moves_json(ctx, guest(), moves_body(s, None))
+  assert tree_text(text) == expected_tree(s, #(3, 1))
+  // charged to the caller's minute and everybody's, and nothing asked
+  assert recorded("buckets")
+    == [
+      "moves:guest:g1:minute=" <> int.to_string(handler.moves_per_minute),
+      "moves:global:minute=" <> int.to_string(handler.moves_global_per_minute),
+    ]
+  assert recorded("submit") == []
+}
+
+pub fn an_account_is_charged_its_own_minute_test() {
+  assert list.map(handler.moves_buckets(account()), fn(b) { b.key })
+    == ["moves:user:u1:minute", "moves:global:minute"]
+}
+
+pub fn black_to_play_is_the_tree_from_blacks_side_test() {
+  let ctx = fresh_ctx()
+  let white = opening(#(6, 4))
+  let assert Ok(as_white) =
+    handler.moves_json(ctx, guest(), moves_body(white, None))
+  let assert Ok(as_black) =
+    handler.moves_json(ctx, guest(), moves_body(setup.flip(white), None))
+  assert tree_text(as_black) == tree_text(as_white)
+}
+
+pub fn one_level_is_served_by_the_id_the_build_gave_it_test() {
+  let ctx = fresh_ctx()
+  let s = opening(#(3, 1))
+  let assert Ok(text) =
+    handler.moves_json(ctx, guest(), moves_body(s, Some("n1")))
+  let q = setup.question(s)
+  let assert Ok(b) = tree.from_engine(q.board)
+  let assert Ok(whole) = tree.build(b, tree.dice_of(#(3, 1)), 100_000)
+  let assert Some(n1) = tree.node_by_id(whole, "n1")
+  assert tree_text(text)
+    == tree_text(envelope.ok([#("tree", tree.node_json(n1))]))
+  let assert Error(err) =
+    handler.moves_json(ctx, guest(), moves_body(s, Some("n999999")))
+  assert error.status(err) == 404
+}
+
+pub fn a_roll_that_plays_nothing_is_a_turn_with_nothing_in_it_test() {
+  let closed =
+    Setup(
+      points: [
+        -3, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -2, -2, -2, -2,
+        -2, -2,
+      ],
+      white_bar: 1,
+      black_bar: 0,
+      to_play: White,
+      ask: Move(#(6, 4)),
+      cube_value: 1,
+      cube_owner: None,
+      match: None,
+    )
+  let assert Ok(text) =
+    handler.moves_json(fresh_ctx(), guest(), moves_body(closed, None))
+  let assert Ok(children) =
+    json.parse(
+      text,
+      decode.at(["tree", "nodes", "r", "children"], decode.list(decode.dynamic)),
+    )
+  assert children == []
+}
+
+pub fn a_cube_question_or_no_roll_has_no_moves_test() {
+  // Nothing is arranged: a refusal must come before the limiter is asked.
+  let ctx = fakes.ctx()
+  let assert Error(err) =
+    handler.moves_json(
+      ctx,
+      guest(),
+      moves_body(Setup(..opening(#(3, 1)), ask: Double), None),
+    )
+  assert error.status(err) == 422
+  assert error.message(err) == handler.no_moves_message
+  let assert Error(err) =
+    handler.moves_json(ctx, guest(), moves_body(opening(setup.no_roll), None))
+  assert error.message(err) == setup.no_roll_message
+  let assert Error(err) =
+    handler.moves_json(ctx, guest(), body(opening(#(3, 1))))
+  assert error.message(err) == handler.not_a_position_message
+}
+
+pub fn too_many_moves_in_a_minute_is_429_test() {
+  let base = fresh_ctx()
+  let ctx =
+    Ctx(
+      ..base,
+      analysis: analysis_caps.AnalysisCaps(..base.analysis, allow_ask: fn(_) {
+        Error(analysis_caps.Refused("moves:guest:g1:minute", 42))
+      }),
+    )
+  let assert Error(err) =
+    handler.moves_json(ctx, guest(), moves_body(opening(#(3, 1)), None))
+  assert error.status(err) == 429
+  assert error.message(err) == handler.moves_limited_message
+  assert error.retry_after_s(err) == Some(42)
 }

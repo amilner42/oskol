@@ -9,6 +9,7 @@ module Games.Backgammon.Setup exposing
     , toJson, decoder
     , fromQuestion, fromReplay
     , snapshot, colorId, colorName
+    , Chosen(..), next, sameChoice, withBoard
     )
 
 {-| A position a player sets up on the analysis board: the checkers, who
@@ -429,6 +430,136 @@ colorName color =
 
         Black ->
             "Black"
+
+
+
+-- PLAYING IT OUT
+
+
+{-| What was done at one step of a line played out on the analysis board
+(analysis-play-it-out).
+
+  - `Played`: a checker play, as the board it leaves -- the mover's,
+    drawn as White, as a candidate's position and a move tree's node are
+    -- and how it reads ("8/5 6/5"; "" for a roll that played nothing).
+  - `Doubled` and `NoDouble` answer a `Double`; `Took` and `Passed` a
+    `Take`.
+
+-}
+type Chosen
+    = Played { notation : String, board : Puzzle.Board }
+    | Doubled
+    | NoDouble
+    | Took
+    | Passed
+
+
+{-| Two choices are the same choice: the same play is the same board,
+however it was reached or written.
+-}
+sameChoice : Chosen -> Chosen -> Bool
+sameChoice a b =
+    case ( a, b ) of
+        ( Played x, Played y ) ->
+            x.board == y.board
+
+        _ ->
+            a == b
+
+
+{-| The position after `chosen`, by the game's own rules, or the sentence
+that ends the line:
+
+  - a play: the other colour to play, no roll picked yet; or, when it bore
+    the mover's last checker off, "White has borne off."
+  - NO DOUBLE: the same colour to play, no roll picked yet
+  - DOUBLE: the other colour asked to take, the cube as it stood (a take
+    keeps the cube before the double, as `Setup` always does)
+  - TAKE: the cube doubled and the taker's, the doubler to play
+  - PASS: "Black passes. White wins 2 points." -- the cube's value
+
+A choice that does not answer the position's question is the empty
+sentence; the page never offers one.
+
+-}
+next : Chosen -> Setup -> Result String Setup
+next chosen setup =
+    let
+        mover =
+            setup.toPlay
+
+        rolled =
+            { setup | ask = Move Nothing }
+    in
+    case ( chosen, setup.ask ) of
+        ( Played p, Move (Just _) ) ->
+            let
+                placed =
+                    withBoard p.board setup
+            in
+            if onBoard mover placed == 0 then
+                Err (colorName mover ++ " has borne off.")
+
+            else
+                Ok { placed | toPlay = other mover, ask = Move Nothing }
+
+        ( NoDouble, Double ) ->
+            Ok rolled
+
+        ( Doubled, Double ) ->
+            Ok { setup | toPlay = other mover, ask = Take }
+
+        ( Took, Take ) ->
+            Ok
+                { rolled
+                    | cubeValue = setup.cubeValue * 2
+                    , cubeOwner = Just mover
+                    , toPlay = other mover
+                }
+
+        ( Passed, Take ) ->
+            Err
+                (colorName mover
+                    ++ " passes. "
+                    ++ colorName (other mover)
+                    ++ " wins "
+                    ++ String.fromInt setup.cubeValue
+                    ++ (if setup.cubeValue == 1 then
+                            " point."
+
+                        else
+                            " points."
+                       )
+                )
+
+        _ ->
+            Err ""
+
+
+{-| The checkers of a board drawn from the mover's side (the mover as
+White, running 24 -> 1, as a candidate's position and a move tree's nodes
+are), placed into `setup` for `setup.toPlay`: straight across for White,
+turned round for Black. Everything but the checkers is kept.
+-}
+withBoard : Puzzle.Board -> Setup -> Setup
+withBoard b setup =
+    let
+        asWhite =
+            { setup
+                | points = List.map2 (-) b.white.points b.black.points
+                , whiteBar = b.white.bar
+                , blackBar = b.black.bar
+            }
+
+        placed =
+            case setup.toPlay of
+                White ->
+                    asWhite
+
+                Black ->
+                    flip asWhite
+    in
+    { setup | points = placed.points, whiteBar = placed.whiteBar, blackBar = placed.blackBar }
 
 
 

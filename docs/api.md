@@ -280,6 +280,25 @@ GET  /papi/analysis/:key               {ok, status: "pending"} | {ok, status:
                                          answers and the asker has not seen (in ten
                                          minutes, or since a restart) is a 404.
                                          The page polls this once a second
+POST /papi/analysis/moves              {setup, node?} -> {ok, tree}: every legal
+                                         play of a set-up roll, for a step of the
+                                         line played out on the board. The puzzle
+                                         page's tree (GET /papi/puzzles/:id's
+                                         `tree`: the mover drawn as White, `lazy`
+                                         with the root alone past the wire budget),
+                                         worked out by move generation and never
+                                         the engine; nothing is written. With
+                                         `node`, {ok, node, tree: one node} as GET
+                                         /papi/puzzles/:id/tree?node= serves a
+                                         level (404 for an id the build never
+                                         minted). A roll that plays nothing is a
+                                         root with no children. 422
+                                         `validation_failed` with the setup's
+                                         sentence, or "Only a roll has moves to
+                                         play" for a cube question; 429
+                                         `rate_limited` past 120 a minute a caller
+                                         (3000 a minute everybody), kept by the
+                                         same limiter as the asks
 GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, else
                                        normalised: the one that answered comes back)
 POST /papi/auth/start                  {email, next?} -> {ok}  (always ok: no

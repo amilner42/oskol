@@ -350,6 +350,7 @@ type alias Table =
     , theme : String
     , swaps : Int
     , key : Int
+    , moverColor : String -- "white"; "black" where the mover really is Black (the analysis board's line)
     }
 
 
@@ -398,23 +399,57 @@ whose node has not arrived.
 playBoard : Table -> Node -> Bool -> View.PlayBoard
 playBoard table node current =
     let
+        -- A mover drawn as Black runs 1 -> 24 on the slab, which numbers
+        -- both colours White's way: every point the tree names from the
+        -- mover's side is 25 - p there, and the two sides change colour.
+        black =
+            table.moverColor == "black"
+
+        turn p =
+            if black then
+                25 - p
+
+            else
+                p
+
+        point loc =
+            String.toInt loc |> Maybe.map (turn >> String.fromInt) |> Maybe.withDefault loc
+
         stepsOf n =
-            n.children |> List.map (\c -> { move = { from = c.from, to = c.to, die = c.die }, node = c.node })
+            n.children |> List.map (\c -> { move = { from = point c.from, to = point c.to, die = c.die }, node = c.node })
+
+        ( moverColor, opponentColor ) =
+            if black then
+                ( "black", "white" )
+
+            else
+                ( "white", "black" )
+
+        drawn =
+            snapshot table.question.cube table.mover table.opponent node.board
+
+        turned side =
+            { side | points = List.reverse side.points }
     in
     { still =
         { players =
-            [ { id = table.mover.id, name = table.mover.name, color = "white" }
-            , { id = table.opponent.id, name = table.opponent.name, color = "black" }
+            [ { id = table.mover.id, name = table.mover.name, color = moverColor }
+            , { id = table.opponent.id, name = table.opponent.name, color = opponentColor }
             ]
         , viewer = table.mover.id
         , scores = table.scores
         , cube = not table.question.crawford
         , theme = table.theme
         , key = table.key
-        , position = snapshot table.question.cube table.mover table.opponent node.board
+        , position =
+            if black then
+                { white = turned drawn.black, black = turned drawn.white, cube = drawn.cube }
+
+            else
+                drawn
         , mover = Just table.mover.id
         , dice = table.question.dice
-        , landed = landedOn table.tree table.path
+        , landed = landedOn table.tree table.path |> List.map turn
         , offer = Nothing
         , accounts = Nothing
         }

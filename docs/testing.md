@@ -269,8 +269,18 @@ node playwright/test-analysis/test.js           # the analysis board. Part 1, se
                                                # opening 3-1 with 8/5 6/5 first, SHARE's link, a
                                                # stranger's unfurl (naming nobody) and play to the
                                                # reveal; DOUBLE?; a dance; the panel at four sizes
-                                               # with every box (the panel's too) held. PART=2 runs
-                                               # part 2 alone. Screenshots:
+                                               # with every box (the panel's too) held. Part 3,
+                                               # playing it out, at four sizes: PLAY BEST on the
+                                               # opening 3-1, ROLL FOR ME for Black, the table on
+                                               # its legal plays (Black at the bottom), ANALYZE;
+                                               # FIRST and NEXT with the answers kept and no ask;
+                                               # Black's roll played by hand, White's DOUBLE and
+                                               # Black's PASS ending the line in its sentence; a
+                                               # different play at step 0 dropping the rest; an
+                                               # edit at a later step starting a fresh line; the
+                                               # board, the row over it, the line, ANALYZE and the
+                                               # panel holding their boxes throughout. PART=2 runs
+                                               # parts 2 and 3, PART=3 part 3 alone. Screenshots:
                                                # screenshots/analysis-*.png.
                                                # `playwright/test-analysis/run.sh` serves its own
                                                # port and database around it; bin/check points its

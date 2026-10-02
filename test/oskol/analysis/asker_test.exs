@@ -386,4 +386,28 @@ defmodule Oskol.Analysis.AskerTest do
     refute_received {:engine, _}
     assert Repo.aggregate(from(p in Puzzles.Puzzle), :count) == 0
   end
+
+  # ---------- The legal plays of a line's step ----------
+
+  test "the moves of a roll are served with no engine and no row, a level by its id",
+       %{conn: conn} do
+    Req.Test.stub(Oskol.Reviews, fn _conn -> raise "the engine was asked for moves" end)
+
+    assert %{"ok" => true, "tree" => %{"root" => "r", "nodes" => nodes}} =
+             conn |> post(~p"/papi/analysis/moves", %{"setup" => opening()}) |> json_response(200)
+
+    assert [%{"node" => child} | _] = nodes["r"]["children"]
+
+    assert %{"ok" => true, "node" => ^child, "tree" => %{"board" => _}} =
+             conn
+             |> post(~p"/papi/analysis/moves", %{"setup" => opening(), "node" => child})
+             |> json_response(200)
+
+    assert %{"error" => %{"code" => "validation_failed"}} =
+             conn
+             |> post(~p"/papi/analysis/moves", %{"setup" => Map.put(opening(), "ask", "double")})
+             |> json_response(422)
+
+    assert Repo.aggregate(from(p in Puzzles.Puzzle), :count) == 0
+  end
 end

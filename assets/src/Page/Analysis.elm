@@ -3,6 +3,7 @@ port module Page.Analysis exposing
     , init, update, view, title, withSession, subscriptions
     , Off, paint, toPlace, offFrom, positionId, line, analyzable, rolls, longPressMs, defaultMatch
     , puzzleGone, pollLimit, tooLongMessage, depthLine, shownSetup
+    , Mode(..), Line, Step, Moves(..), lineNow, plate, ending, notation
     )
 
 {-| `/analysis` -- the analysis board. A position set up by tapping, with
@@ -55,6 +56,24 @@ just now or already analyzed, SHARE (the puzzle's clean link) and OPEN AS
 PUZZLE. When it cannot: the server's sentence, and TRY AGAIN once any wait
 it named has passed. Any change to the position clears the answer.
 
+**Playing it out** (analysis-play-it-out). From a complete position the
+board can be played on: PLAY THIS under a move's answer plays the
+candidate on the board (the best, with none shown); the head's PLAY
+(`#an-mode-play`) turns the board into the puzzle page's table on the
+roll's legal plays -- the answer's own tree, or for a position nobody has
+analyzed `POST /papi/analysis/moves`, move generation on the server and no
+engine -- with UNDO and PLAY in its band; the row over the board offers
+ROLL FOR ME (two dice from `elm/random`: a sandbox, not a game), DOUBLE /
+NO DOUBLE and TAKE / PASS. Each choice is a step of `line` and the next
+position follows by the game's rules (`Setup.next`); a pass, or a play
+that bears the last checker off, ends the line in a sentence. The strip
+under the board (`#an-line`) walks the line with no fetch, each step
+keeping its answer. A new roll or cube question at a step drops the steps
+after it (a line, not a tree); any other change to the position starts a
+fresh line from it. Nothing is persisted, and the URL keeps the position
+the page opened on. In PLAY the player acting sits at the bottom, in their
+own colour, as at a table.
+
 **Doors in.** `/analysis` is the opening position, White to play, no roll
 picked. `?xgid=` opens on that id, whoever is to play: an id with Black on
 roll stays Black to play, so COPY gives back the id that was pasted (FLIP
@@ -70,6 +89,8 @@ dialog float over the page.
 
 import Api
 import Api.Analysis as Analysis
+import Browser.Dom as Dom
+import Dict
 import Games.Backgammon.Puzzle as Puzzle
 import Games.Backgammon.Replay as Replay
 import Games.Backgammon.Setup as Setup exposing (Ask(..), Color(..), Match, Setup)
@@ -80,12 +101,15 @@ import Html exposing (Html, a, button, div, input, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, href, id, readonly, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Page.Play exposing (shareInvite, shareResult)
+import Json.Decode as D
 import Process
+import Random
 import Route
 import Session exposing (Session)
 import Task
 import Ui.Candidates as Candidates
 import Ui.Dialog
+import Ui.Scrub as Scrub
 
 
 {-| Write `text` to the clipboard, or, where the browser will not, select
@@ -126,8 +150,54 @@ type alias Model =
     , showing : Maybe Int -- the rank of the candidate whose play is on the board
     , shareNote : Maybe String -- "Link copied", for a moment after SHARE
     , shares : Int
-    , line : List Setup
+
+    -- The line played out from the position (analysis-play-it-out). The
+    -- step on the board lives in `setup`, `off` and `ask`; `lineNow` puts
+    -- it back into the line.
+    , line : Line
+    , mode : Mode
+    , moves : Moves -- the legal plays of the step on the board, in PLAY
+    , path : List String -- the table's walk through them, as the puzzle page's
+    , fetching : List String -- levels of a lazy tree on their way
+    , swaps : Int
+    , movesAsked : Int -- every fetch is numbered: a tree for an earlier step is dropped
     }
+
+
+{-| The board: being set up with the brushes, or played on.
+-}
+type Mode
+    = SetUp
+    | Play
+
+
+{-| The line played out from the position the page was set up with: a
+list, not a tree. `at` is the step on the board.
+-}
+type alias Line =
+    { steps : List Step, at : Int }
+
+
+{-| One position of the line, the engine's answer about it once asked, and
+what was done there.
+-}
+type alias Step =
+    { setup : Setup
+    , answer : Maybe { answer : Analysis.Answer, cached : Bool }
+    , chosen : Maybe Setup.Chosen
+    }
+
+
+{-| The legal plays of the step on the board, for the table in PLAY: none
+asked yet, on their way, here (`puzzle` names the answered puzzle whose
+tree it is, whose lazy levels come from its own page; `Nothing` is the
+analysis board's own `moves`), or the sentence of a request that failed.
+-}
+type Moves
+    = NoMoves
+    | MovesAsked
+    | MovesIn { tree : Puzzle.Tree, puzzle : Maybe String }
+    | MovesFailed String
 
 
 {-| What has been asked about the position on the board.
@@ -250,7 +320,13 @@ init session origin door =
             , showing = Nothing
             , shareNote = Nothing
             , shares = 0
-            , line = []
+            , line = { steps = [ { setup = Setup.opening, answer = Nothing, chosen = Nothing } ], at = 0 }
+            , mode = SetUp
+            , moves = NoMoves
+            , path = []
+            , fetching = []
+            , swaps = 0
+            , movesAsked = 0
             }
     in
     case ( door.xgid, door.puzzle ) of
@@ -404,6 +480,271 @@ rolls : List (List ( Int, Int ))
 rolls =
     List.range 1 6
         |> List.map (\high -> List.range 1 high |> List.map (\low -> ( high, low )))
+
+
+
+-- THE LINE
+
+
+{-| The line with the step on the board as it stands now: its setup and,
+once answered, the engine's answer.
+-}
+lineNow : Model -> Line
+lineNow model =
+    let
+        l =
+            model.line
+
+        answer =
+            case model.ask of
+                Answered a ->
+                    Just a
+
+                _ ->
+                    Nothing
+    in
+    { l
+        | steps =
+            List.indexedMap
+                (\i s ->
+                    if i == l.at then
+                        { s | setup = model.setup, answer = answer }
+
+                    else
+                        s
+                )
+                l.steps
+    }
+
+
+stepAt : Int -> List Step -> Maybe Step
+stepAt i steps =
+    steps |> List.drop i |> List.head
+
+
+{-| The step on the board as the line holds it (what was chosen there).
+-}
+here : Model -> Maybe Step
+here model =
+    let
+        l =
+            lineNow model
+    in
+    stepAt l.at l.steps
+
+
+{-| The position is complete: every checker on the board or borne off, as
+the server reads a position. Only a complete position is played on.
+-}
+complete : Model -> Bool
+complete model =
+    not model.loading && placeLine model == Nothing
+
+
+{-| The sentence the line ends in, when its last step's choice ended the
+game: "Black passes. White wins 1 point.", "White has borne off."
+-}
+ending : Model -> Maybe String
+ending model =
+    case List.reverse (lineNow model).steps of
+        last :: _ ->
+            case last.chosen of
+                Just chosen ->
+                    case Setup.next chosen last.setup of
+                        Err sentence ->
+                            if sentence == "" then
+                                Nothing
+
+                            else
+                                Just sentence
+
+                        Ok _ ->
+                            Nothing
+
+                Nothing ->
+                    Nothing
+
+        [] ->
+            Nothing
+
+
+{-| The ending, while the board shows the step it came at.
+-}
+endingHere : Model -> Maybe String
+endingHere model =
+    let
+        l =
+            lineNow model
+    in
+    if l.at == List.length l.steps - 1 then
+        ending model
+
+    else
+        Nothing
+
+
+{-| One step as its plate in the strip reads: who, the roll, and what was
+played -- "W 3-1 · 8/5 6/5", "B 6-2", "W to roll", "W doubles", "B takes",
+"B passes".
+-}
+plate : Step -> String
+plate step =
+    let
+        s =
+            step.setup
+
+        who =
+            case s.toPlay of
+                White ->
+                    "W"
+
+                Black ->
+                    "B"
+
+        roll ( a, b ) =
+            String.fromInt a ++ "-" ++ String.fromInt b
+    in
+    who
+        ++ " "
+        ++ (case ( s.ask, step.chosen ) of
+                ( Move (Just r), Just (Setup.Played p) ) ->
+                    roll r
+                        ++ " · "
+                        ++ (if p.notation == "" then
+                                "no play"
+
+                            else
+                                p.notation
+                           )
+
+                ( Move (Just r), _ ) ->
+                    roll r
+
+                ( Move Nothing, _ ) ->
+                    "to roll"
+
+                ( Double, Just Setup.Doubled ) ->
+                    "doubles"
+
+                ( Double, Just Setup.NoDouble ) ->
+                    "no double"
+
+                ( Double, _ ) ->
+                    "double?"
+
+                ( Take, Just Setup.Took ) ->
+                    "takes"
+
+                ( Take, Just Setup.Passed ) ->
+                    "passes"
+
+                ( Take, _ ) ->
+                    "take?"
+           )
+
+
+{-| A walk through a move tree as it reads: "8/5 6/5", "24/18*/13",
+"6/off(2)", "bar/22"; "" for a walk of nothing. The points are the
+mover's own, as the tree numbers them. One checker's steps are joined
+(24/18 then 18/13 is 24/13, the stop written only where it hit) and the
+same move twice is written once with its count, as the record writes a
+turn (`backgammon/record.notation`). Formatting, not rules: the legal
+plays are the tree's.
+-}
+notation : Puzzle.Tree -> List String -> String
+notation tree path =
+    let
+        hitAt node =
+            Dict.get node tree.nodes |> Maybe.andThen .moved |> Maybe.map .hit |> Maybe.withDefault False
+
+        moves =
+            Puzzle.played tree path
+                |> Maybe.withDefault []
+                |> List.map (\c -> { from = c.from, to = c.to, hit = hitAt c.node })
+
+        endOf chain =
+            chain.stops |> List.reverse |> List.head |> Maybe.map Tuple.first |> Maybe.withDefault chain.from
+
+        addStep ( i, m ) chains =
+            case
+                chains
+                    |> List.filter (\c -> endOf c == m.from && m.from /= "off")
+                    |> List.sortBy (\c -> negate c.last)
+                    |> List.head
+            of
+                Just chain ->
+                    List.map
+                        (\c ->
+                            if c == chain then
+                                { c | stops = c.stops ++ [ ( m.to, m.hit ) ], last = i }
+
+                            else
+                                c
+                        )
+                        chains
+
+                Nothing ->
+                    chains ++ [ { from = m.from, stops = [ ( m.to, m.hit ) ], last = i } ]
+
+        chains_ =
+            List.foldl addStep [] (List.indexedMap Tuple.pair moves)
+
+        keyOf chain =
+            ( chain.from
+            , chain.stops |> List.take (List.length chain.stops - 1) |> List.filter Tuple.second |> List.map Tuple.first
+            , endOf chain
+            )
+
+        landsHit chain =
+            chain.stops |> List.reverse |> List.head |> Maybe.map Tuple.second |> Maybe.withDefault False
+
+        groups =
+            List.foldl
+                (\chain gs ->
+                    let
+                        k =
+                            keyOf chain
+                    in
+                    if List.any (\g -> g.key == k) gs then
+                        List.map
+                            (\g ->
+                                if g.key == k then
+                                    { g | hit = g.hit || landsHit chain, n = g.n + 1 }
+
+                                else
+                                    g
+                            )
+                            gs
+
+                    else
+                        gs ++ [ { key = k, hit = landsHit chain, n = 1 } ]
+                )
+                []
+                chains_
+
+        written g =
+            let
+                ( from, onTheWay, to ) =
+                    g.key
+            in
+            from
+                ++ String.concat (List.map (\loc -> "/" ++ loc ++ "*") onTheWay)
+                ++ "/"
+                ++ to
+                ++ (if g.hit then
+                        "*"
+
+                    else
+                        ""
+                   )
+                ++ (if g.n > 1 then
+                        "(" ++ String.fromInt g.n ++ ")"
+
+                    else
+                        ""
+                   )
+    in
+    groups |> List.map written |> String.join " "
 
 
 
@@ -706,11 +1047,67 @@ type Msg
     | ShareReported String
     | ShareFaded Int
     | GotPuzzle (Result Api.Error Puzzle.Puzzle)
+    | PickedMode Mode
+    | PressedPlayCandidate
+    | Chose Setup.Chosen
+    | PressedRollForMe
+    | RolledForMe ( Int, Int )
+    | Walked Int
+    | GotMoves Int (Result Api.Error Puzzle.Tree)
+    | GotNode Int String (Result Api.Error Puzzle.Node)
+    | BoardOut Puzzle.Out
     | NoOp
 
 
+{-| Every message, and then in PLAY the legal plays of the step on the
+board asked for if nothing has asked yet; an incomplete position is set
+up, never played on.
+-}
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    updateOne msg model |> withMoves
+
+
+withMoves : ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+withMoves ( model, cmd ) =
+    if model.mode == Play && not (complete model) then
+        ( { model | mode = SetUp }, cmd )
+
+    else
+        case ( model.mode, model.setup.ask, model.moves ) of
+            ( Play, Move (Just _), NoMoves ) ->
+                if Setup.check model.setup /= Nothing then
+                    ( model, cmd )
+
+                else
+                    case model.ask of
+                        Answered { answer } ->
+                            case answer.puzzle.tree of
+                                Just tree ->
+                                    ( { model | moves = MovesIn { tree = tree, puzzle = Just answer.puzzle.id } }, cmd )
+
+                                Nothing ->
+                                    askMoves ( model, cmd )
+
+                        _ ->
+                            askMoves ( model, cmd )
+
+            _ ->
+                ( model, cmd )
+
+
+{-| The roll's legal plays for a position nobody has analyzed: move
+generation on the server, never the engine.
+-}
+askMoves : ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+askMoves ( model, cmd ) =
+    ( { model | moves = MovesAsked }
+    , Cmd.batch [ cmd, Analysis.moves model.session model.setup (GotMoves model.movesAsked) ]
+    )
+
+
+updateOne : Msg -> Model -> ( Model, Cmd Msg )
+updateOne msg model =
     case msg of
         PickedBrush brush ->
             ( { model | brush = brush }, Cmd.none )
@@ -737,7 +1134,19 @@ update msg model =
             ( edit (\s -> { s | toPlay = color }) model, Cmd.none )
 
         OpenedRolls ->
-            ( edit (\s -> { s | ask = Move model.lastRoll }) { model | rolling = True }, Cmd.none )
+            ( edit
+                (\s ->
+                    case s.ask of
+                        -- a roll to pick already: the sheet picks it
+                        Move _ ->
+                            s
+
+                        _ ->
+                            { s | ask = Move model.lastRoll }
+                )
+                { model | rolling = True }
+            , Cmd.none
+            )
 
         ClosedRolls ->
             ( { model | rolling = False }, Cmd.none )
@@ -1044,7 +1453,270 @@ update msg model =
             , Cmd.none
             )
 
+        PickedMode mode ->
+            if mode == Play && not (complete model) then
+                ( model, Cmd.none )
+
+            else
+                ( { model | mode = mode, press = Nothing }, Cmd.none )
+
+        PressedPlayCandidate ->
+            case playable model of
+                Just c ->
+                    choose c model
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        Chose chosen ->
+            if complete model && endingHere model == Nothing then
+                choose chosen model
+
+            else
+                ( model, Cmd.none )
+
+        PressedRollForMe ->
+            ( model, Random.generate RolledForMe (Random.pair (Random.int 1 6) (Random.int 1 6)) )
+
+        RolledForMe roll ->
+            updateOne (PickedRoll roll) model
+
+        Walked i ->
+            walk i model
+
+        GotMoves n result ->
+            if n /= model.movesAsked then
+                ( model, Cmd.none )
+
+            else
+                case result of
+                    Ok tree ->
+                        ( { model | moves = MovesIn { tree = tree, puzzle = Nothing } }, Cmd.none )
+
+                    Err err ->
+                        ( { model | moves = MovesFailed (Api.errorMessage err) }, Cmd.none )
+
+        GotNode n node result ->
+            if n /= model.movesAsked then
+                ( model, Cmd.none )
+
+            else
+                let
+                    left =
+                        { model | fetching = List.filter ((/=) node) model.fetching }
+                in
+                case ( result, model.moves ) of
+                    ( Ok fetched, MovesIn m ) ->
+                        let
+                            tree =
+                                m.tree
+                        in
+                        ( { left | moves = MovesIn { m | tree = { tree | nodes = Dict.insert node fetched tree.nodes } } }, Cmd.none )
+
+                    -- the board keeps the last position it holds, and UNDO
+                    -- backs out of the step
+                    _ ->
+                        ( left, Cmd.none )
+
+        BoardOut out ->
+            board out model
+
         NoOp ->
+            ( model, Cmd.none )
+
+
+{-| What PLAY THIS plays: the candidate on the board, or with none shown
+the best, as the board it leaves and how it reads.
+-}
+playable : Model -> Maybe Setup.Chosen
+playable model =
+    case model.ask of
+        Answered { answer } ->
+            let
+                candidate =
+                    case shownCandidate model of
+                        Just c ->
+                            Just c
+
+                        Nothing ->
+                            answer.reveal.top |> List.filter (\c -> c.rank == Just 1) |> List.head
+            in
+            candidate
+                |> Maybe.andThen
+                    (\c -> c.position |> Maybe.map (\b -> Setup.Played { notation = c.notation, board = b }))
+
+        _ ->
+            Nothing
+
+
+{-| A choice at the step on the board. The same choice as before walks on
+along the line as it was; a different one drops the steps after this one
+and makes the next from the game's rules -- or, where the game is over,
+ends the line here. Choosing is playing: the board is in PLAY after it.
+-}
+choose : Setup.Chosen -> Model -> ( Model, Cmd Msg )
+choose chosen model =
+    let
+        l =
+            lineNow model
+
+        playing =
+            { model | mode = Play, line = l }
+    in
+    case stepAt l.at l.steps of
+        Nothing ->
+            ( model, Cmd.none )
+
+        Just this ->
+            let
+                same =
+                    Maybe.map (Setup.sameChoice chosen) this.chosen == Just True
+
+                kept =
+                    List.take l.at l.steps ++ [ { this | chosen = Just chosen } ]
+            in
+            if same && l.at < List.length l.steps - 1 then
+                walk (l.at + 1) playing
+
+            else
+                case Setup.next chosen this.setup of
+                    Ok nextSetup ->
+                        let
+                            fresh =
+                                { setup = nextSetup, answer = Nothing, chosen = Nothing }
+                        in
+                        ( toStep (l.at + 1) fresh { playing | line = { steps = kept ++ [ fresh ], at = l.at } }
+                        , scrollTo (l.at + 1)
+                        )
+
+                    -- not an answer to this step's question: nothing chosen
+                    Err "" ->
+                        ( model, Cmd.none )
+
+                    Err _ ->
+                        ( { playing | line = { steps = kept, at = l.at } }, scrollTo l.at )
+
+
+{-| To step `i` of the line, with no fetch: its position, its answer, and
+what was chosen there.
+-}
+walk : Int -> Model -> ( Model, Cmd Msg )
+walk i model =
+    let
+        l =
+            lineNow model
+    in
+    case stepAt i l.steps of
+        Just s ->
+            if i == l.at then
+                ( model, Cmd.none )
+
+            else
+                ( toStep i s { model | line = l }, scrollTo i )
+
+        Nothing ->
+            ( model, Cmd.none )
+
+
+{-| Step `i` on the board. Whatever was being asked about the step before
+is dropped (an ask already out lands nowhere; asked again, the server has
+it); its answer is kept with it.
+-}
+toStep : Int -> Step -> Model -> Model
+toStep i s model =
+    let
+        l =
+            model.line
+    in
+    { model
+        | line = { l | at = i }
+        , setup = s.setup
+        , off = offFrom s.setup
+        , ask =
+            case s.answer of
+                Just a ->
+                    Answered a
+
+                Nothing ->
+                    NotAsked
+        , asks = model.asks + 1
+        , showing = Nothing
+        , notice = Nothing
+        , shareNote = Nothing
+        , rolling = False
+        , press = Nothing
+    }
+        |> freshMoves
+
+
+freshMoves : Model -> Model
+freshMoves model =
+    { model | moves = NoMoves, path = [], fetching = [], swaps = 0, movesAsked = model.movesAsked + 1 }
+
+
+{-| The plate of step `i` in view: the strip scrolls sideways under the
+arrows. After a moment, so a plate just added is on the page.
+-}
+scrollTo : Int -> Cmd Msg
+scrollTo i =
+    Process.sleep 30
+        |> Task.andThen
+            (\_ ->
+                Task.map3
+                    (\p c v -> v.viewport.x + (p.element.x - c.element.x) - (c.element.width - p.element.width) / 2)
+                    (Dom.getElement ("an-plate-" ++ String.fromInt i))
+                    (Dom.getElement "an-plates")
+                    (Dom.getViewportOf "an-plates")
+            )
+        |> Task.andThen (\x -> Dom.setViewportOf "an-plates" (max 0 x) 0)
+        |> Task.attempt (\_ -> NoOp)
+
+
+{-| What the table asked for: a step (or two) along the tree, a step back,
+the turn committed, the dice swapped -- as the puzzle page walks one. A
+step to a node a lazy tree does not hold yet fetches that level.
+-}
+board : Puzzle.Out -> Model -> ( Model, Cmd Msg )
+board out model =
+    case ( out, model.moves ) of
+        ( Puzzle.Stepped nodes, MovesIn m ) ->
+            let
+                missing =
+                    if m.tree.lazy then
+                        List.filter (\n -> not (Dict.member n m.tree.nodes) && not (List.member n model.fetching)) nodes
+
+                    else
+                        []
+
+                fetch node =
+                    case m.puzzle of
+                        Just id ->
+                            Api.get model.session ("/papi/puzzles/" ++ id ++ "/tree?node=" ++ node) (D.field "tree" Puzzle.nodeDecoder) (GotNode model.movesAsked node)
+
+                        Nothing ->
+                            Analysis.movesLevel model.session model.setup node (GotNode model.movesAsked node)
+            in
+            ( { model | path = model.path ++ nodes, fetching = model.fetching ++ missing }, Cmd.batch (List.map fetch missing) )
+
+        ( Puzzle.Undo, _ ) ->
+            ( { model | path = List.take (List.length model.path - 1) model.path }, Cmd.none )
+
+        ( Puzzle.Play, MovesIn m ) ->
+            case Puzzle.nodeAt m.tree model.path of
+                Just node ->
+                    if node.terminal && endingHere model == Nothing then
+                        choose (Setup.Played { notation = notation m.tree model.path, board = node.board }) model
+
+                    else
+                        ( model, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        ( Puzzle.Swapped, _ ) ->
+            ( { model | swaps = model.swaps + 1 }, Cmd.none )
+
+        _ ->
             ( model, Cmd.none )
 
 
@@ -1072,7 +1744,25 @@ editWith off change model =
         { model | notice = Nothing }
 
     else
-        { model | setup = setup, off = off, notice = Nothing, ask = NotAsked, showing = Nothing }
+        let
+            l =
+                lineNow model
+
+            fresh =
+                { setup = setup, answer = Nothing, chosen = Nothing }
+
+            -- Only the roll or the cube question of this step: the line
+            -- up to it stands, and what came after it is gone (a line, not
+            -- a tree). Anything else is another position, and a fresh line
+            -- starts from it.
+            line_ =
+                if { setup | ask = model.setup.ask } == model.setup && off == model.off then
+                    { steps = List.take l.at l.steps ++ [ fresh ], at = l.at }
+
+                else
+                    { steps = [ fresh ], at = 0 }
+        in
+        freshMoves { model | setup = setup, off = off, notice = Nothing, ask = NotAsked, showing = Nothing, line = line_ }
 
 
 {-| ANALYZE (or TRY AGAIN): ask about the position as it stands. Each
@@ -1358,24 +2048,27 @@ view model =
         , id "analysis"
         ]
         [ div [ class "rp-head" ]
-            [ span [ class "rp-tag pixel text-[7px] sm:text-[8px]" ] [ text "ANALYSIS" ] ]
+            [ span [ class "rp-tag pixel text-[7px] sm:text-[8px]" ] [ text "ANALYSIS" ]
+            , viewModes model
+            ]
         , div [ class "rp-main" ]
             [ div [ class "rp-stage" ]
-                [ viewBrushes model
+                [ case model.mode of
+                    SetUp ->
+                        viewBrushes model
+
+                    Play ->
+                        viewPlayRow model
                 , div
                     [ classList
                         [ ( "rp-board an-board", True )
+                        , ( "is-playing", model.mode == Play )
                         , ( "is-proposed", shown /= Nothing )
                         , ( "dice-played", shown /= Nothing )
                         ]
                     , id "an-board"
                     ]
-                    [ Board.viewEdit
-                        { still = still model
-                        , zoneId = zoneId
-                        , onEdit = Pointer
-                        , noop = NoOp
-                        }
+                    [ viewBoard model
                     , case shown of
                         Just c ->
                             span [ class "rp-proposed an-proposed pixel text-[7px]", id "an-proposed" ]
@@ -1398,7 +2091,7 @@ view model =
                                 [ type_ "button"
                                 , class
                                     ("rp-dice-toggle "
-                                        ++ (if model.setup.toPlay == White then
+                                        ++ (if model.setup.toPlay == viewer model then
                                                 "is-right"
 
                                             else
@@ -1415,6 +2108,7 @@ view model =
                         Nothing ->
                             text ""
                     ]
+                , viewLine model
                 ]
             , div [ class "rp-side an-side" ]
                 [ viewStrip model
@@ -1440,6 +2134,242 @@ view model =
 
           else
             text ""
+        ]
+
+
+{-| Who sits at the bottom: White while the position is set up; in PLAY
+the player acting, in their own colour, as at a table (the table can only
+be played from the bottom).
+-}
+viewer : Model -> Color
+viewer model =
+    case model.mode of
+        SetUp ->
+            White
+
+        Play ->
+            model.setup.toPlay
+
+
+scores : Model -> List ( String, Int )
+scores model =
+    case model.setup.match of
+        Just m ->
+            [ ( Setup.colorId White, m.white ), ( Setup.colorId Black, m.black ) ]
+
+        Nothing ->
+            []
+
+
+{-| The board: the editor while setting up; in PLAY the puzzle page's
+table on the roll's legal plays once they are here, else the position as
+a picture. A candidate shown is a picture either way.
+-}
+viewBoard : Model -> Html Msg
+viewBoard model =
+    case ( model.mode, shownCandidate model, ( model.setup.ask, model.moves ) ) of
+        ( SetUp, _, _ ) ->
+            Board.viewEdit
+                { still = still model
+                , zoneId = zoneId
+                , onEdit = Pointer
+                , noop = NoOp
+                }
+
+        ( Play, Nothing, ( Move (Just roll), MovesIn m ) ) ->
+            Html.map BoardOut (Puzzle.view (table model roll m.tree))
+
+        ( Play, _, _ ) ->
+            Board.viewStill NoOp (still model)
+
+
+{-| The roll on the puzzle page's table: the mover's seat in their own
+colour at the bottom, the tree as the server built it (from the mover's
+side), the cube and the score as the setup has them.
+-}
+table : Model -> ( Int, Int ) -> Puzzle.Tree -> Puzzle.Table
+table model ( a, b ) tree =
+    let
+        s =
+            model.setup
+
+        seat color =
+            { id = Setup.colorId color, name = Setup.colorName color }
+
+        emptySide =
+            { points = List.repeat 24 0, bar = 0, off = 0 }
+    in
+    { question =
+        { board =
+            Dict.get tree.root tree.nodes
+                |> Maybe.map .board
+                |> Maybe.withDefault { white = emptySide, black = emptySide }
+        , dice = [ a, b ]
+        , cube =
+            { value = s.cubeValue
+            , owner =
+                case s.cubeOwner of
+                    Nothing ->
+                        "center"
+
+                    Just owner ->
+                        if owner == s.toPlay then
+                            "mover"
+
+                        else
+                            "opponent"
+            }
+        , score = Nothing
+        , crawford = Maybe.map .crawford s.match == Just True
+        , jacoby = s.match == Nothing
+        }
+    , tree = tree
+    , path = model.path
+    , mover = seat s.toPlay
+    , opponent = seat (Setup.other s.toPlay)
+    , scores = scores model
+    , theme = theme model
+    , swaps = model.swaps
+    , key = model.movesAsked
+    , moverColor = Setup.colorId s.toPlay
+    }
+
+
+{-| SET UP or PLAY, at the head's right end. PLAY waits for a complete
+position.
+-}
+viewModes : Model -> Html Msg
+viewModes model =
+    let
+        seg segId mode label enabled =
+            button
+                [ type_ "button"
+                , id segId
+                , classList [ ( "an-seg an-mode", True ), ( "is-on", model.mode == mode ) ]
+                , attribute "aria-pressed" (boolString (model.mode == mode))
+                , disabled (not enabled)
+                , onClick (PickedMode mode)
+                ]
+                [ text label ]
+    in
+    div [ class "an-segs an-modes", id "an-modes" ]
+        [ seg "an-mode-setup" SetUp "SET UP" True
+        , seg "an-mode-play" Play "PLAY" (complete model)
+        ]
+
+
+{-| In PLAY, the row over the board (the brushes' own slot): what the step
+on the board asks for -- a roll (ROLL FOR ME), the checkers moved on the
+table, DOUBLE or NO DOUBLE, TAKE or PASS -- or the sentence the line
+ended in.
+-}
+viewPlayRow : Model -> Html Msg
+viewPlayRow model =
+    let
+        chosen =
+            here model |> Maybe.andThen .chosen
+
+        act actId label msg on =
+            button
+                [ type_ "button"
+                , id actId
+                , classList [ ( "q-btn plain an-act pixel", True ), ( "is-on", on ) ]
+                , disabled (Setup.check model.setup /= Nothing)
+                , onClick msg
+                ]
+                [ text label ]
+
+        hint words =
+            span [ class "an-hint an-play-hint", id "an-play-hint" ] [ text words ]
+    in
+    div [ class "an-brushes an-playrow", id "an-play-row" ]
+        (case endingHere model of
+            Just sentence ->
+                [ span [ class "an-play-end", id "an-line-end" ] [ text sentence ] ]
+
+            Nothing ->
+                case model.setup.ask of
+                    Move Nothing ->
+                        [ button [ type_ "button", id "an-roll-random", class "q-btn yellow an-act an-roll-random pixel", onClick PressedRollForMe ] [ text "ROLL FOR ME" ]
+                        , hint "or pick one with ROLL"
+                        ]
+
+                    Move (Just _) ->
+                        [ hint
+                            (case ( Setup.check model.setup, model.moves ) of
+                                ( Just reason, _ ) ->
+                                    reason
+
+                                ( Nothing, MovesIn m ) ->
+                                    case Dict.get m.tree.root m.tree.nodes of
+                                        Just root ->
+                                            if root.children == [] then
+                                                "No legal play: PLAY passes the turn"
+
+                                            else
+                                                "Move the checkers, then PLAY"
+
+                                        Nothing ->
+                                            "Move the checkers, then PLAY"
+
+                                ( Nothing, MovesFailed message ) ->
+                                    message
+
+                                _ ->
+                                    "Finding the legal plays…"
+                            )
+                        ]
+
+                    Double ->
+                        [ act "an-cube-yes" "DOUBLE" (Chose Setup.Doubled) (chosen == Just Setup.Doubled)
+                        , act "an-cube-no" "NO DOUBLE" (Chose Setup.NoDouble) (chosen == Just Setup.NoDouble)
+                        ]
+
+                    Take ->
+                        [ act "an-take" "TAKE" (Chose Setup.Took) (chosen == Just Setup.Took)
+                        , act "an-pass" "PASS" (Chose Setup.Passed) (chosen == Just Setup.Passed)
+                        ]
+        )
+
+
+{-| The line under the board: the four arrows outside, a plate per step
+between them, the one on the board marked. Always there, one plate or
+twenty, at the same height; the plates scroll sideways.
+-}
+viewLine : Model -> Html Msg
+viewLine model =
+    let
+        l =
+            lineNow model
+
+        last =
+            List.length l.steps - 1
+
+        to i =
+            if i /= l.at && i >= 0 && i <= last then
+                Just (Walked i)
+
+            else
+                Nothing
+
+        plateButton i s =
+            button
+                [ type_ "button"
+                , id ("an-plate-" ++ String.fromInt i)
+                , classList [ ( "an-plate", True ), ( "is-on", i == l.at ) ]
+                , attribute "aria-current" (boolString (i == l.at))
+                , onClick (Walked i)
+                ]
+                [ text (plate s) ]
+    in
+    div [ class "an-line-wrap" ]
+        [ Scrub.row { id = "an-line", stale = False }
+            { first = ( "an-first", to 0 )
+            , back = ( "an-prev", to (l.at - 1) )
+            , forward = ( "an-next", to (l.at + 1) )
+            , last = ( "an-last", to last )
+            }
+            [ div [ class "an-plates", id "an-plates" ] (List.indexedMap plateButton l.steps) ]
         ]
 
 
@@ -1469,14 +2399,8 @@ still model =
         [ { id = Setup.colorId White, name = "White", color = "white" }
         , { id = Setup.colorId Black, name = "Black", color = "black" }
         ]
-    , viewer = Setup.colorId White
-    , scores =
-        case setup.match of
-            Just m ->
-                [ ( Setup.colorId White, m.white ), ( Setup.colorId Black, m.black ) ]
-
-            Nothing ->
-                []
+    , viewer = Setup.colorId (viewer model)
+    , scores = scores model
     , cube = True
     , theme = theme model
     , key = 0
@@ -1995,11 +2919,12 @@ viewPanel model =
                             , span [ class "an-share-note", id "an-share-note" ] [ text (Maybe.withDefault "" model.shareNote) ]
                             ]
 
-                       -- PLAY THIS (analysis-play-it-out) and SAVE TO A SET
-                       -- (analysis-save-to-set) take the two slots before
-                       -- these, in this same row of fixed cells.
+                       -- PLAY THIS (or, for the cube, PLAY IT OUT) spans the
+                       -- first row of fixed cells for now; SAVE TO A SET
+                       -- (analysis-save-to-set) takes its second cell.
                        , div [ class "an-actions", id "an-actions" ]
-                            [ button [ type_ "button", id "an-share", class "q-btn plain an-action pixel", onClick PressedShare ] [ text "SHARE" ]
+                            [ viewPlayAction model answer
+                            , button [ type_ "button", id "an-share", class "q-btn plain an-action pixel", onClick PressedShare ] [ text "SHARE" ]
                             , a
                                 [ id "an-open-puzzle"
                                 , class "q-btn plain an-action pixel"
@@ -2012,6 +2937,43 @@ viewPanel model =
                        ]
                 )
             ]
+
+
+{-| The answer's door into the line. For a move, PLAY THIS: the candidate
+on the board, or the best with none shown (PLAY BEST). For the cube, PLAY
+IT OUT: the board into PLAY, where DOUBLE and TAKE are answered over it.
+One cell, whatever it says.
+-}
+viewPlayAction : Model -> Analysis.Answer -> Html Msg
+viewPlayAction model answer =
+    let
+        cell cellId label msg enabled =
+            button
+                [ type_ "button"
+                , id cellId
+                , class "q-btn yellow an-action an-action-wide pixel"
+                , disabled (not enabled)
+                , onClick msg
+                ]
+                [ text label ]
+
+        open =
+            endingHere model == Nothing
+    in
+    case answer.reveal.cube of
+        Nothing ->
+            cell "an-play-candidate"
+                (if model.showing == Nothing then
+                    "PLAY BEST"
+
+                 else
+                    "PLAY THIS"
+                )
+                PressedPlayCandidate
+                (open && playable model /= Nothing)
+
+        Just _ ->
+            cell "an-play-out" "PLAY IT OUT" (PickedMode Play) (open && model.mode == SetUp)
 
 
 {-| "42 s", "14 min".
@@ -2147,7 +3109,15 @@ viewAnswer model answer =
                             , equityLost = c.equityLost
                             , probs = c.probs
                             , on = on_
-                            , played = False
+
+                            -- the play chosen at this step of the line
+                            , played =
+                                case ( here model |> Maybe.andThen .chosen, c.position ) of
+                                    ( Just (Setup.Played p), Just b ) ->
+                                        p.board == b
+
+                                    _ ->
+                                        False
                             , badge = Nothing
                             , title =
                                 if on_ then

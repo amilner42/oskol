@@ -448,12 +448,13 @@ columns. Tests: `AnalysisPageTest` (on `AnalysisFixtures`, the server's own
   your play?"), the score and the cube, the picture drawn at the write; it
   names nobody, and an analyzed position has no source, so nobody can mint
   a story ("... got this wrong") for it. OPEN AS PUZZLE (`#an-open-puzzle`)
-  is the same link in a new tab. The row of buttons (`#an-actions`) is
-  where PLAY THIS (analysis-play-it-out) and SAVE TO A SET
-  (analysis-save-to-set) go.
+  is the same link in a new tab. The row of buttons (`#an-actions`) is a
+  grid of fixed cells: PLAY THIS (or PLAY IT OUT, below) spans its first
+  row for now, and SAVE TO A SET (analysis-save-to-set) takes the second
+  cell of that row.
 - **Nothing moves.** The plate is ANALYZE's box; the panel holds a
-  `min-height` (25rem) at every size, the tallest answer (a sentence over
-  five rows, the line and the buttons), so the page is as tall before the
+  `min-height` (28rem) at every size, the tallest answer (a sentence over
+  five rows, the line and the two rows of buttons), so the page is as tall before the
   answer as after it, and filling, showing a candidate or clearing moves
   nothing; the TRY AGAIN countdown is a fixed width. Before any press the
   panel says where the answer will land. A guest analyzes as an account
@@ -464,3 +465,79 @@ columns. Tests: `AnalysisPageTest` (on `AnalysisFixtures`, the server's own
   `Oskol.CompleteEngine` does (`prefer: ["8/5 6/5"]`, each answer held
   1.5 s), in a VM of its own; `run.sh` and `bin/check --browser` point the
   server's `ANALYSIS_URL` there, so no smoke reaches a real engine.
+
+## Playing it out (`Page.Analysis`, `Setup.next`, `POST /papi/analysis/moves`)
+
+From a complete position the board can be played on: a move, the next
+roll for the other side, ANALYZE again, and back along the line. It is
+all client state: a line, not a tree; nothing is a game, nothing is
+persisted, the URL keeps the position the page opened on, and the dice
+come from the browser (`elm/random`), since it is a sandbox. Tests:
+`AnalysisPageTest` (`theNextPosition`, `playingItOut`),
+`analysis_handler_test.gleam` (the moves), `asker_test.exs` (the route),
+`playwright/test-analysis` part 3.
+
+- **The line** (`Model.line : {steps, at}`, `Step = {setup, answer,
+  chosen}`). Step 0 is the position set up. The step on the board lives
+  in `setup`, `off` and `ask` as before, and `lineNow` writes it back, so
+  walking away from a step keeps its answer. `chosen` is a
+  `Setup.Chosen`: `Played {notation, board}` (the board the play leaves,
+  the mover drawn as White, as a candidate's position and a tree node
+  are), `Doubled`, `NoDouble`, `Took`, `Passed`.
+- **The next position** (`Setup.next : Chosen -> Setup -> Result String
+  Setup`, pure): a play puts the board in (turned round for Black,
+  `Setup.withBoard`) with the other colour to play and no roll yet; NO
+  DOUBLE is the same colour to roll; DOUBLE is the other colour asked to
+  take, the cube as it stood (as `Setup` keeps a take); TAKE is the cube
+  doubled and the taker's, the doubler to roll; PASS ends the line, "Black
+  passes. White wins 1 point." (the cube's value), and so does a play
+  that bears the mover's last checker off ("White has borne off.").
+- **Choosing.** Under a move's answer PLAY THIS (`#an-play-candidate`)
+  plays the candidate on the board, or with none shown the best (its
+  label then PLAY BEST). The head's SET UP / PLAY (`#an-mode-setup`,
+  `#an-mode-play`; PLAY only for a complete position) says what the board
+  does. In PLAY the board is the puzzle page's table (`Puzzle.view`) on
+  the roll's legal plays, with UNDO and PLAY in its band; PLAY commits the
+  board the walk reaches, written as the record writes a turn
+  (`Page.Analysis.notation`: one checker's steps joined, hits marked, the
+  same move counted). The row over the board (the brushes' box,
+  `#an-play-row`) says what the step asks: ROLL FOR ME (`#an-roll-random`)
+  for a roll not picked (the strip's ROLL picks one too), the table's
+  hint, DOUBLE / NO DOUBLE (`#an-cube-yes`, `#an-cube-no`), TAKE / PASS
+  (`#an-take`, `#an-pass`), or the sentence the line ended in
+  (`#an-line-end`). Under a cube's answer PLAY IT OUT (`#an-play-out`)
+  puts the board in PLAY. Every choice puts the board in PLAY. In PLAY the
+  player acting sits at the bottom in their own colour, as at a table:
+  the table can only be played from the bottom, so for Black the tree's
+  points are drawn turned round (`Puzzle.Table.moverColor`).
+- **The legal plays.** No move generator in Elm. An answered step plays
+  on its puzzle's own `tree` (lazy levels from `GET
+  /papi/puzzles/:id/tree?node=`); any other step asks `POST
+  /papi/analysis/moves` (`handlers/analysis.moves_json`): `setup.check`,
+  a roll and not a cube question, one charge to the caller's minute
+  (`moves:<who>:minute`, 120; `moves:global:minute`, 3000) in the same
+  limiter as the asks, then `handlers/puzzles.tree_of` on the setup's
+  question, kept under `setup:<key>` in the tree cache, so a lazy level
+  (`{setup, node}`, `level_json`) is a lookup. Never the engine, nothing
+  written; a roll that plays nothing is a root with no children, and PLAY
+  passes the turn ("no play" on its plate). Only ANALYZE asks the engine,
+  through the budgets, and every step is its own key, so a repeat is free.
+- **Walking and changing.** The strip under the board (`#an-line`,
+  `Ui.Scrub.row`: `#an-first`, `#an-prev`, `#an-next`, `#an-last` outside,
+  one plate `#an-plate-<i>` per step between, the one on the board marked)
+  reads "W 3-1 · 8/5 6/5", "B 6-2", "W to roll", "W doubles", "B takes",
+  "B passes"; the plates scroll sideways at a fixed height, the one on the
+  board scrolled into view. A tap walks with no fetch (an ask still out
+  for the step left is dropped; asked again, the server has it). The same
+  choice again walks on along the line as it was; a different one drops
+  the steps after it. A new roll or cube question at a step (ROLL, ROLL
+  FOR ME, DOUBLE?, TAKE?) drops the steps after it; any other change --
+  SET UP and a tap, the turn, the cube, the score, a quick start, IMPORT
+  -- is another position and starts a fresh line from it.
+- **Nothing moves.** The row over the board is the brushes' box in both
+  modes, SET UP / PLAY are fixed widths, every button in the row is, the
+  line is always there at one height with one plate or twenty, and the
+  board keeps its box whoever sits at the bottom. On a desktop the line is
+  under the board (the board's height allows for it); sideways it is in
+  the column under the row, where it can be seen. Part 3 of the smoke
+  asserts the boxes along the whole line at four sizes.

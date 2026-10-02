@@ -2076,6 +2076,7 @@ viewPuzzle model puzzle =
                             , theme = theme model
                             , swaps = model.swaps
                             , key = 1
+                            , moverColor = "white"
                             }
                         )
 
