@@ -130,6 +130,12 @@ if [[ "$mode" == "--browser" ]]; then
 
   port="${PORT:-4400}"
   export PORT="$port"
+  # The smokes' server asks its engine at a stand-in on its own port (PORT +
+  # 10000), which the analysis board's smoke starts (its setup.exs); for the
+  # other smokes nothing is listening there, as on CI. No smoke spends real
+  # engine time.
+  export ANALYSIS_STUB_PORT="${ANALYSIS_STUB_PORT:-$((port + 10000))}"
+  export ANALYSIS_URL="http://localhost:$ANALYSIS_STUB_PORT"
 
   step "server on $port"
   log="${TMPDIR:-/tmp}/oskol-check-server.log"

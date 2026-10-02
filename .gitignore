@@ -58,3 +58,4 @@ package-lock.json
 /assets/tests/Fixtures.elm
 /assets/tests/PuzzleApiFixtures.elm
 /assets/tests/PuzzleRevealFixtures.elm
+/assets/tests/AnalysisFixtures.elm

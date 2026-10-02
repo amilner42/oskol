@@ -3461,7 +3461,38 @@ oskol-demo-board {
   font-size: 13px; line-height: 1.35; font-weight: 600; color: var(--ink);
 }
 .an-analyze { flex: none; width: 100%; height: 44px; font-size: 11px; letter-spacing: 0.06em; border-radius: 10px; }
-.an-panel { flex: none; }
+/* While the press is out, ANALYZE's slot is a plate of its own size: the
+   seconds counting, and the loading bar (`.boot-fill`'s motion, slower). */
+.an-asking {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink); background: var(--paper-2); color: var(--ink); overflow: hidden;
+}
+.an-asking-text { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.an-asking-track { position: absolute; left: 14px; right: 14px; bottom: 7px; height: 3px; border-radius: 999px; background: rgba(35, 36, 58, 0.1); overflow: hidden; }
+.an-asking-fill {
+  display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--ink);
+  transform-origin: left center; transform: scaleX(0); animation: boot-fill 12s linear forwards;
+}
+/* The answer's place: a height of its own at every size, so the page is
+   as tall before the answer as after it, and filling or clearing it
+   moves nothing. The heights hold the tallest answer: a move's sentence
+   over five candidates, the depth line and the buttons. */
+.an-panel { flex: none; display: flex; flex-direction: column; min-height: 25rem; }
+.an-panel-hint { margin: 0; padding: 10px 12px; font-size: 13px; line-height: 1.4; color: var(--pencil); border: 1.5px dashed color-mix(in oklab, var(--ink) 30%, transparent); border-radius: 8px; }
+.an-answer.rp-note { min-height: 0; max-height: none; overflow: visible; padding: 8px 10px 10px; }
+.an-answer .rp-words:first-child { margin-top: 0; }
+.an-answer .rp-cube { margin-top: 6px; }
+.an-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; height: 1.5em; margin-top: 8px; font-size: 12px; color: var(--pencil); }
+.an-depth { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-share-note { flex: none; font-weight: 700; color: var(--ink); white-space: nowrap; }
+.an-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
+.an-action { height: 36px; padding: 0 6px; font-size: 8px; border-radius: 8px; box-shadow: 2px 2px 0 0 var(--ink); white-space: nowrap; text-decoration: none; }
+.an-refused { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 3px solid var(--ink); background: #fff; box-shadow: 3px 3px 0 0 var(--ink); }
+.an-refused-text { margin: 0; font-size: 14px; line-height: 1.4; font-weight: 600; color: var(--ink); }
+/* A fixed width, so the countdown in its label never changes its size. */
+.an-retry { width: 11.5rem; height: 38px; font-size: 8px; border-radius: 8px; box-shadow: 2px 2px 0 0 var(--ink); }
+.an-retry:disabled { box-shadow: 2px 2px 0 0 #a9a9b2; }
+.an-board .an-proposed { pointer-events: none; }
 .an-import-error { margin: 0; height: 1.3em; font-size: 13px; font-weight: 600; color: var(--red); }
 
 /* The 21 rolls: a sheet from the bottom on a phone, a card in the middle

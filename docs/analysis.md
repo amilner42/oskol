@@ -314,9 +314,10 @@ and the column is beside both.
   puzzle…" while `?p=` is read, a door's refusal ("That puzzle is gone.",
   "That is not a position id") until the first edit, else the first
   sentence of `Setup.check`. ANALYZE (`#an-analyze`) is disabled while
-  `check` says anything; pressing it is `PressedAnalyze`, which does
-  nothing yet (analysis-page-verdict). Every edit goes through one
-  function (`edit`) that clears the notice and the `ask` slot.
+  `check` says anything; pressing it is the next section. Every edit goes
+  through one function (`edit`) that clears the notice, and, when the
+  position really changed, the answer (a control that changes nothing, the
+  turn already White, leaves it up).
 - **Doors in.** `/analysis` is `Setup.opening`. `?xgid=` opens on the id
   as it is: an id with Black on roll stays Black to play (the board is
   not turned round, so COPY gives back the id that was pasted; FLIP turns
@@ -368,3 +369,76 @@ pastes anywhere). Neither spends engine time.
   take, a turn of the Crawford game and one after it, and checks the new
   tab's 24 points (read from the editor's targets), bars, dice, cube and
   owner, score and Crawford against the record.
+
+## The answer (`Page.Analysis`, `Api.Analysis`, `Ui.Candidates`)
+
+ANALYZE asks the engine about the position on the board, and the panel
+under it (`#an-panel`) says what it answered, in the replay's words and
+columns. Tests: `AnalysisPageTest` (on `AnalysisFixtures`, the server's own
+`done` bodies), `WordsTest`, and `playwright/test-analysis` part 2.
+
+- **The press.** `Api.Analysis.ask` posts `Setup.toJson`. A 200 is the
+  answer at once (a position asked before: free). A 202 names the key, and
+  ANALYZE's slot becomes a plate of the same size (`#an-asking`, "ASKING
+  THE ENGINE… 3 s", the thin loading bar) while the page asks `GET
+  /papi/analysis/:key` once a second (`Api.Analysis.status`, one request
+  out at a time), for up to `pollLimit` (90) seconds, then says "The engine
+  is taking too long. Try again in a minute." Every press is numbered, so
+  whatever comes back for an earlier one (the position edited meanwhile)
+  is dropped. A poll lost on the way is asked again at the next tick; a
+  404 (the server forgot the key in a restart) posts again, which a stored
+  answer serves at once.
+- **When it cannot** (`#an-refused`): the server's sentence, word for
+  word -- "6-4 cannot be played from here" (409 `dances`, nothing asked, no
+  TRY AGAIN), a budget's sentence and its wait (429), "The engine is
+  asleep. Try again in a minute." (503, or a `failed` key the circuit
+  failed), the asker's own for a key that failed. TRY AGAIN (`#an-retry`,
+  a fixed width) waits out `error.retry_after_s` (`Api.Analysis.Refusal`
+  reads it off the envelope; `Api.send` is the request with the page's own
+  expect), its label counting down ("TRY AGAIN · 42 s", "· 14 min").
+- **The panel** (`#an-answer`, the replay's `.rp-note` box): for a move,
+  `Words.bestInWords` -- "The best play is 8/5 6/5: 54.1% wins, 15.3%
+  gammons, 10.2% gammons against." -- over the candidate table
+  (`#an-candidates`). For a double, `Words.cubeLine` (the three equities,
+  the pick in green), `Words.cubeChances` and `doubleWhy` / `noDoubleWhy`
+  with the real colours (the one asked, then the other); for a take,
+  `answerWhy`. Under it the quiet line (`#an-depth`): "4-ply · asked just
+  now", or "already analyzed" when the POST answered at once, the depth
+  from `reveal.levels` (moves for a move, cube for a cube; "Already
+  analyzed" alone when the row does not say), and SHARE's word on its
+  right (`#an-share-note`).
+- **The candidate table is one renderer** (`Ui.Candidates`): the replay's
+  note, the puzzle reveal and this panel each build `Row`s (which is on the
+  board, which was played, what a tap does) and it draws them the same way
+  (`.rp-top`, `button.rp-cand` with `data-rank`; the replay's ids and the
+  reveal's `#pz-candidates` / `data-yours` unchanged). A row puts its play
+  on the board (`showing`): the board glows as the replay's does, with
+  "BEST PLAY" / "ENGINE'S #3" over it, and the panel's sentence is that
+  play against the best (`candidateInWords`). The dice (`#an-dice-toggle`,
+  over them), the same row, or a tap anywhere on the board take it back;
+  that tap paints nothing. A candidate's board is the mover's drawn as
+  White, as every puzzle is, so for Black to play it is turned back round
+  (`shownSetup`).
+- **SHARE** (`#an-share`) hands `origin ++ /puzzles/<id>` (the row the ask
+  stored) to the `shareInvite` port: the native sheet on a phone, else the
+  clipboard, and "Link copied" in the quiet line for two seconds. That page
+  is the puzzle's own, its head the question ("White to play 3-1. What's
+  your play?"), the score and the cube, the picture drawn at the write; it
+  names nobody, and an analyzed position has no source, so nobody can mint
+  a story ("... got this wrong") for it. OPEN AS PUZZLE (`#an-open-puzzle`)
+  is the same link in a new tab. The row of buttons (`#an-actions`) is
+  where PLAY THIS (analysis-play-it-out) and SAVE TO A SET
+  (analysis-save-to-set) go.
+- **Nothing moves.** The plate is ANALYZE's box; the panel holds a
+  `min-height` (25rem) at every size, the tallest answer (a sentence over
+  five rows, the line and the buttons), so the page is as tall before the
+  answer as after it, and filling, showing a candidate or clearing moves
+  nothing; the TRY AGAIN countdown is a fixed width. Before any press the
+  panel says where the answer will land. A guest analyzes as an account
+  does (the budgets are the server's); nothing here asks anyone to sign in.
+- **The smoke's engine.** `playwright/test-analysis/setup.exs` starts
+  `Oskol.EngineServer` (`test_support/engine_server.ex`), a Bandit on
+  `ANALYSIS_STUB_PORT` (`PORT + 10000`) that answers as
+  `Oskol.CompleteEngine` does (`prefer: ["8/5 6/5"]`, each answer held
+  1.5 s), in a VM of its own; `run.sh` and `bin/check --browser` point the
+  server's `ANALYSIS_URL` there, so no smoke reaches a real engine.

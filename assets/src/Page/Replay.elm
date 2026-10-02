@@ -61,7 +61,7 @@ import Dict
 import Games.Backgammon.Replay as Replay exposing (Annotation(..), Candidate, Entry(..), Game, GameAnalysis, GameReview, Index, MoveReview(..), Record, Review, Status(..), TurnReview)
 import Games.Backgammon.Setup as Setup
 import Games.Backgammon.View as Board
-import Games.Backgammon.Words exposing (answerInWords, candidateInWords, chanceCells, cubeChances, cubeLine, doubleInWords, gradeMark, gradeOf, gradeTag, inWords, lost, moveInWords, noDoubleInWords, signed, verdictTag)
+import Games.Backgammon.Words exposing (answerInWords, candidateInWords, cubeChances, cubeLine, doubleInWords, gradeMark, gradeOf, gradeTag, inWords, lost, moveInWords, noDoubleInWords, signed, verdictTag)
 import Api.Catalog as Catalog
 import Page.Play exposing (storePref)
 import Html exposing (Html, a, button, div, p, span, text)
@@ -76,6 +76,7 @@ import Svg
 import Svg.Attributes as SvgAttr
 import Task
 import Time
+import Ui.Candidates as Candidates
 import Ui.Scrub
 import Ui.Shell
 import Ui.SignIn as SignIn
@@ -1965,17 +1966,9 @@ viewCandidates model m =
             else
                 m.top
     in
-    div [ class "rp-top" ]
-        (div [ class "rp-top-head" ]
-            [ span [] []
-            , span [] [ text "move" ]
-            , span [ class "rp-col-eq" ] [ text "eq" ]
-            , span [ class "rp-col", Html.Attributes.title "How often this move wins" ] [ text "win" ]
-            , span [ class "rp-col", Html.Attributes.title "How often it wins a gammon" ] [ text "gam+" ]
-            , span [ class "rp-col", Html.Attributes.title "How often it gets gammoned" ] [ text "gam−" ]
-            ]
-            :: (shown
-                    |> List.map
+    Candidates.view []
+        (shown
+            |> List.map
                 (\c ->
                     let
                         on_ =
@@ -1989,79 +1982,41 @@ viewCandidates model m =
                                 Before ->
                                     False
                     in
-                    button
-                        [ classList [ ( "rp-cand", True ), ( "is-on", on_ ), ( "is-played", c.played ) ]
-                        , attribute "data-rank" (String.fromInt c.rank)
-                        , disabled (c.position == Nothing && not c.played)
-                        , onClick
-                            (if c.played then
-                                Show Played
+                    { rank = Just c.rank
+                    , notation = c.notation
+                    , equity = c.equity
+                    , equityLost = c.equityLost
+                    , probs = c.probs
+                    , on = on_
+                    , played = c.played
+                    , badge = Nothing
+                    , title =
+                        (if c.played then
+                            "The move played"
 
-                             else if on_ then
-                                Show Played
-
-                             else
-                                Show (Proposed c.rank)
-                            )
-                        , Html.Attributes.title
-                            ((if c.played then
-                                "The move played"
-
-                              else
-                                "Show this move on the board"
-                             )
-                                ++ (case c.probs of
-                                        Just p ->
-                                            " · backgammons " ++ Replay.formatPercent p.backgammonWin ++ " for, " ++ Replay.formatPercent p.backgammonLoss ++ " against"
-
-                                        Nothing ->
-                                            ""
-                                   )
-                            )
-                        ]
-                        ([ span [ class "rp-rank tabular-nums" ] [ text (String.fromInt c.rank ++ ".") ]
-                         , span
-                            [ classList
-                                [ ( "rp-cand-move", True )
-
-                                -- a long notation (doubles, hits) steps the
-                                -- type down rather than taking a second line
-                                , ( "is-long", String.length c.notation > 10 )
-                                , ( "is-longer", String.length c.notation > 15 )
-                                ]
-                            ]
-                            [ text c.notation, candidateMark c.equityLost ]
-                         , span [ class "rp-cand-lost rp-col-eq tabular-nums" ]
-                            [ text
-                                (if c.equityLost > 0 then
-                                    "−" ++ Replay.formatEquity c.equityLost
-
-                                 else
-                                    signed c.equity
-                                )
-                            ]
-                         ]
-                            ++ chanceCells c.probs
+                         else
+                            "Show this move on the board"
                         )
+                            ++ (case c.probs of
+                                    Just p ->
+                                        " · backgammons " ++ Replay.formatPercent p.backgammonWin ++ " for, " ++ Replay.formatPercent p.backgammonLoss ++ " against"
+
+                                    Nothing ->
+                                        ""
+                               )
+                    , onTap =
+                        if c.position == Nothing && not c.played then
+                            Nothing
+
+                        else if c.played || on_ then
+                            Just (Show Played)
+
+                        else
+                            Just (Show (Proposed c.rank))
+                    , attrs = []
+                    }
                 )
-           )
         )
-
-
-{-| The annotators' mark beside a candidate: how bad it is at a glance.
--}
-candidateMark : Float -> Html msg
-candidateMark equityLost =
-    let
-        grade =
-            gradeOf equityLost
-    in
-    case gradeMark grade of
-        "" ->
-            text ""
-
-        mark ->
-            span [ class ("rp-cand-grade g-" ++ grade), attribute "data-grade" grade ] [ text mark ]
 
 
 {-| Where this game's analysis stands, when it is not simply done.

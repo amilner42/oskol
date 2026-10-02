@@ -8,7 +8,9 @@ settings that can only be set where they mean something (Crawford, the
 cube's owner).
 -}
 
+import AnalysisFixtures
 import Api
+import Api.Analysis as AnalysisApi
 import Expect
 import Games.Backgammon.Puzzle as Puzzle
 import Games.Backgammon.Setup as Setup exposing (Ask(..), Color(..), Setup)
@@ -35,12 +37,13 @@ suite =
         , doors
         , theLine
         , settings
+        , answering
         ]
 
 
 page : Analysis.Model
 page =
-    Analysis.init Session.empty { xgid = Nothing, puzzle = Nothing } |> Tuple.first
+    Analysis.init Session.empty "http://oskol.test" { xgid = Nothing, puzzle = Nothing } |> Tuple.first
 
 
 send : Msg -> Analysis.Model -> Analysis.Model
@@ -334,7 +337,7 @@ doors =
                     raw =
                         "XGID=-b----E-C---eE---c-e----B-:0:0:-1:52:0:0:1:0:10"
                 in
-                Analysis.init Session.empty { xgid = Just raw, puzzle = Nothing }
+                Analysis.init Session.empty "http://oskol.test" { xgid = Just raw, puzzle = Nothing }
                     |> Tuple.first
                     |> Expect.all
                         [ .setup >> Ok >> Expect.equal (Xgid.decode raw)
@@ -351,7 +354,7 @@ doors =
                         .setup >> .match >> Maybe.map .crawford
                 in
                 Expect.all
-                    [ \_ -> Analysis.init Session.empty { xgid = Just raw, puzzle = Nothing } |> Tuple.first |> crawford |> Expect.equal (Just False)
+                    [ \_ -> Analysis.init Session.empty "http://oskol.test" { xgid = Just raw, puzzle = Nothing } |> Tuple.first |> crawford |> Expect.equal (Just False)
                     , \_ -> page |> sendAll [ OpenedImport, ImportInput raw, ImportSubmitted ] |> crawford |> Expect.equal (Just False)
                     , \_ -> page |> sendAll [ OpenedImport, ImportInput raw, ImportSubmitted ] |> Analysis.line |> Expect.equal Nothing
                     , \_ -> page |> sendAll [ OpenedImport, ImportInput raw, ImportSubmitted, ToggledGame, ToggledGame ] |> crawford |> Expect.equal (Just False)
@@ -359,7 +362,7 @@ doors =
                     ()
         , test "an id with an owner on a cube at 1 comes in centered" <|
             \_ ->
-                Analysis.init Session.empty { xgid = Just "XGID=-b----E-C---eE---c-e----B-:0:1:1:31:0:0:1:0:10", puzzle = Nothing }
+                Analysis.init Session.empty "http://oskol.test" { xgid = Just "XGID=-b----E-C---eE---c-e----B-:0:1:1:31:0:0:1:0:10", puzzle = Nothing }
                     |> Tuple.first
                     |> Expect.all
                         [ .setup >> .cubeOwner >> Expect.equal Nothing
@@ -367,7 +370,7 @@ doors =
                         ]
         , test "?xgid= that is not one opens the opening and says so" <|
             \_ ->
-                Analysis.init Session.empty { xgid = Just "nope", puzzle = Nothing }
+                Analysis.init Session.empty "http://oskol.test" { xgid = Just "nope", puzzle = Nothing }
                     |> Tuple.first
                     |> Expect.all
                         [ .setup >> Expect.equal Setup.opening
@@ -380,7 +383,7 @@ doors =
                         \_ ->
                             case D.decodeString Puzzle.decoder body of
                                 Ok puzzle ->
-                                    Analysis.init Session.empty { xgid = Nothing, puzzle = Just puzzle.id }
+                                    Analysis.init Session.empty "http://oskol.test" { xgid = Nothing, puzzle = Just puzzle.id }
                                         |> Tuple.first
                                         |> Expect.all
                                             [ Analysis.line >> Expect.equal (Just "Opening the puzzle…")
@@ -400,7 +403,7 @@ doors =
             )
         , test "a puzzle that is not there opens the opening and says so, until the first edit" <|
             \_ ->
-                Analysis.init Session.empty { xgid = Nothing, puzzle = Just "nope0000" }
+                Analysis.init Session.empty "http://oskol.test" { xgid = Nothing, puzzle = Just "nope0000" }
                     |> Tuple.first
                     |> send (GotPuzzle (Err (Api.ApiError { code = "not_found", message = "Not found" })))
                     |> Expect.all
@@ -542,3 +545,298 @@ settings =
                         , Analysis.view >> Query.fromHtml >> Query.find [ id "an-turn-black" ] >> Query.has [ class "is-on" ]
                         ]
         ]
+
+
+
+-- THE ANSWER
+
+
+{-| A server's answer, from `AnalysisFixtures` (the server's own bytes).
+-}
+answerNamed : String -> AnalysisApi.Status
+answerNamed name =
+    case
+        AnalysisFixtures.all
+            |> List.filter (\( n, _ ) -> n == name)
+            |> List.head
+            |> Maybe.map (\( _, body ) -> Api.parseBody AnalysisApi.statusDecoder body)
+    of
+        Just (Ok status) ->
+            status
+
+        _ ->
+            AnalysisApi.Failed ("no fixture " ++ name)
+
+
+done : String -> Result AnalysisApi.Refusal AnalysisApi.Status
+done name =
+    Ok (answerNamed name)
+
+
+refusal : String -> String -> Maybe Int -> Result AnalysisApi.Refusal AnalysisApi.Status
+refusal code message wait =
+    Err { error = Api.ApiError { code = code, message = message }, retryAfter = wait }
+
+
+{-| The opening with 6-4 to play, ANALYZE pressed: the first ask is out.
+-}
+asked : Analysis.Model
+asked =
+    sendAll [ PickedRoll ( 6, 4 ), PressedAnalyze ] page
+
+
+{-| The answer, after a wait: pending, a tick, then done from the poll.
+-}
+answered : String -> Analysis.Model
+answered name =
+    asked
+        |> sendAll
+            [ GotAsk 1 (Ok (AnalysisApi.Pending "k1"))
+            , Ticked 1
+            , GotStatus 1 (done name)
+            ]
+
+
+panel : Analysis.Model -> Query.Single Msg
+panel model =
+    Analysis.view model |> Query.fromHtml |> Query.find [ id "an-panel" ]
+
+
+answering : Test
+answering =
+    describe "ANALYZE and the answer"
+        [ test "every answer the server renders decodes" <|
+            \_ ->
+                AnalysisFixtures.all
+                    |> List.map (\( name, body ) -> ( name, Api.parseBody AnalysisApi.statusDecoder body |> Result.map (\_ -> ()) ))
+                    |> List.filter (\( _, r ) -> r /= Ok ())
+                    |> List.map Tuple.first
+                    |> Expect.equal []
+        , test "a refusal's wait is read off its envelope" <|
+            \_ ->
+                AnalysisApi.refusalOf """{"ok":false,"error":{"code":"engine_down","message":"The engine is asleep. Try again in a minute.","retry_after_s":42}}""" Api.NetworkError
+                    |> .retryAfter
+                    |> Expect.equal (Just 42)
+        , test "the press: ANALYZE's slot is a plate counting seconds, and the poll waits for a key" <|
+            \_ ->
+                asked
+                    |> Expect.all
+                        [ Analysis.view >> Query.fromHtml >> Query.find [ id "an-asking" ] >> Query.has [ text "ASKING THE ENGINE… 0 s" ]
+                        , Analysis.view >> Query.fromHtml >> Query.hasNot [ id "an-analyze" ]
+                        , sendAll [ GotAsk 1 (Ok (AnalysisApi.Pending "k1")), Ticked 1, Ticked 1 ]
+                            >> Analysis.view
+                            >> Query.fromHtml
+                            >> Query.find [ id "an-asking" ]
+                            >> Query.has [ text "ASKING THE ENGINE… 2 s" ]
+                        ]
+        , test "pending, then done: the best play in words over the table" <|
+            \_ ->
+                answered "move"
+                    |> panel
+                    |> Expect.all
+                        [ Query.find [ id "an-candidates" ] >> Query.findAll [ class "rp-cand" ] >> Query.count (Expect.equal 3)
+                        , Query.find [ id "an-candidates" ] >> Query.find [ attribute (Html.Attributes.attribute "data-rank" "1") ] >> Query.has [ text "play 1" ]
+                        , Query.has [ text "The best play is play 1: 55.0% wins, 12.0% gammons, 10.0% gammons against." ]
+                        , Query.find [ id "an-depth" ] >> Query.has [ text "4-ply · asked just now" ]
+                        , Query.find [ id "an-open-puzzle" ] >> Query.has [ attribute (Html.Attributes.href "/puzzles/fixmove1"), attribute (Html.Attributes.target "_blank") ]
+                        , Query.has [ id "an-share" ]
+                        ]
+        , test "a position analyzed before is answered at once, and says so" <|
+            \_ ->
+                asked
+                    |> send (GotAsk 1 (done "move"))
+                    |> Expect.all
+                        [ panel >> Query.find [ id "an-depth" ] >> Query.has [ text "4-ply · already analyzed" ]
+                        , Analysis.view >> Query.fromHtml >> Query.has [ id "an-analyze" ]
+                        ]
+        , test "the depth line without a depth" <|
+            \_ ->
+                asked
+                    |> send (GotAsk 1 (done "move_no_levels"))
+                    |> panel
+                    |> Query.find [ id "an-depth" ]
+                    |> Query.has [ text "Already analyzed" ]
+        , test "a double: the sentence, the three equities with the pick, the chances" <|
+            \_ ->
+                sendAll [ PickedDouble, PressedAnalyze, GotAsk 1 (done "double") ] page
+                    |> panel
+                    |> Expect.all
+                        [ Query.find [ id "an-answer" ] >> Query.has [ attribute (Html.Attributes.attribute "data-kind" "double") ]
+                        , Query.findAll [ class "rp-cube-eq" ] >> Query.count (Expect.equal 3)
+                        , Query.findAll [ class "rp-cube-eq", class "is-pick" ] >> Query.count (Expect.equal 1)
+                        , Query.has [ class "rp-cube-top" ]
+                        , Query.hasNot [ id "an-candidates" ]
+                        , Query.find [ id "an-depth" ] >> Query.has [ text "4-ply · already analyzed" ]
+                        ]
+        , test "a take: the taker's sentence" <|
+            \_ ->
+                sendAll [ PickedTake, PressedAnalyze, GotAsk 1 (done "take") ] page
+                    |> panel
+                    |> Query.has [ class "rp-cube-eqs" ]
+        , test "a candidate goes on the board, and the dice take it back" <|
+            \_ ->
+                let
+                    model =
+                        answered "move"
+
+                    showing =
+                        send (Show (Just 2)) model
+                in
+                Expect.all
+                    [ \_ -> Analysis.shownSetup showing |> .points |> Expect.notEqual model.setup.points
+                    , \_ -> Analysis.view showing |> Query.fromHtml |> Query.find [ id "an-proposed" ] |> Query.has [ text "ENGINE'S #2" ]
+                    , \_ -> Analysis.view showing |> Query.fromHtml |> Query.find [ id "an-dice-toggle" ] |> Event.simulate Event.click |> Event.expect (Show Nothing)
+                    , \_ -> send (Show Nothing) showing |> Analysis.shownSetup |> Expect.equal model.setup
+                    , \_ -> panel showing |> Query.find [ id "an-candidates" ] |> Query.find [ class "is-on" ] |> Query.has [ attribute (Html.Attributes.attribute "data-rank" "2") ]
+                    , \_ -> panel model |> Query.find [ id "an-candidates" ] |> Query.find [ attribute (Html.Attributes.attribute "data-rank" "3") ] |> Event.simulate Event.click |> Event.expect (Show (Just 3))
+                    , \_ -> Analysis.view model |> Query.fromHtml |> Query.hasNot [ id "an-dice-toggle" ]
+                    ]
+                    ()
+        , test "a tap on the board while a candidate is shown takes it back and paints nothing" <|
+            \_ ->
+                answered "move"
+                    |> sendAll [ Show (Just 2), Pressed Primary (Point 3) ]
+                    |> Expect.all
+                        [ .showing >> Expect.equal Nothing
+                        , .setup >> at 3 >> Expect.equal 0
+                        , .ask >> isAnswered >> Expect.equal True
+                        ]
+        , test "for Black to play, a candidate's board is turned back round" <|
+            \_ ->
+                let
+                    black =
+                        sendAll [ PickedRoll ( 6, 4 ), PickedTurn Black, PressedAnalyze, GotAsk 1 (done "move"), Show (Just 1) ] page
+
+                    white =
+                        send (Show (Just 1)) (answered "move")
+                in
+                Analysis.shownSetup black
+                    |> .points
+                    |> Expect.equal (Analysis.shownSetup white |> .points |> List.reverse |> List.map negate)
+        , test "an edit after an answer clears it, and the panel keeps its place" <|
+            \_ ->
+                answered "move"
+                    |> sendAll [ Show (Just 2), Show Nothing, PressedClear ]
+                    |> Expect.all
+                        [ .ask >> isAnswered >> Expect.equal False
+                        , .showing >> Expect.equal Nothing
+                        , panel >> Query.hasNot [ id "an-answer" ]
+                        , panel >> Query.has [ class "an-panel-hint" ]
+                        ]
+        , test "a control that changes nothing leaves the answer up" <|
+            \_ ->
+                answered "move"
+                    |> send (PickedTurn White)
+                    |> .ask
+                    |> isAnswered
+                    |> Expect.equal True
+        , test "an answer for an earlier press is dropped" <|
+            \_ ->
+                asked
+                    |> sendAll [ PressedClear, PressedOpening, PickedRoll ( 6, 4 ), PressedAnalyze, GotAsk 1 (done "move") ]
+                    |> .ask
+                    |> isAnswered
+                    |> Expect.equal False
+        , test "a roll that plays nothing: the server's sentence, no TRY AGAIN" <|
+            \_ ->
+                asked
+                    |> send (GotAsk 1 (refusal "dances" "6-4 cannot be played from here" Nothing))
+                    |> panel
+                    |> Expect.all
+                        [ Query.find [ id "an-refused-text" ] >> Query.has [ text "6-4 cannot be played from here" ]
+                        , Query.hasNot [ id "an-retry" ]
+                        ]
+        , test "the engine asleep: its sentence, and TRY AGAIN once the wait has passed" <|
+            \_ ->
+                let
+                    asleep =
+                        send (GotAsk 1 (refusal "engine_down" "The engine is asleep. Try again in a minute." (Just 3))) asked
+
+                    waited =
+                        sendAll [ Ticked 1, Ticked 1, Ticked 1 ] asleep
+                in
+                Expect.all
+                    [ \_ -> panel asleep |> Query.find [ id "an-refused-text" ] |> Query.has [ text "The engine is asleep. Try again in a minute." ]
+                    , \_ -> panel asleep |> Query.find [ id "an-retry" ] |> Query.has [ text "TRY AGAIN · 3 s", attribute (Html.Attributes.disabled True) ]
+                    , \_ -> panel waited |> Query.find [ id "an-retry" ] |> Query.has [ text "TRY AGAIN", attribute (Html.Attributes.disabled False) ]
+                    , \_ -> panel waited |> Query.find [ id "an-retry" ] |> Event.simulate Event.click |> Event.expect PressedRetry
+                    , \_ -> send PressedRetry waited |> .ask |> isAsking |> Expect.equal True
+                    , \_ -> send PressedRetry asleep |> .ask |> isAsking |> Expect.equal False
+                    ]
+                    ()
+        , test "over a budget: the server's sentence and its wait" <|
+            \_ ->
+                asked
+                    |> send (GotAsk 1 (refusal "rate_limited" "Guests can analyze 10 positions an hour. Sign in for more, or try again in 14 minutes." (Just 840)))
+                    |> panel
+                    |> Expect.all
+                        [ Query.find [ id "an-refused-text" ] >> Query.has [ text "Guests can analyze 10 positions an hour. Sign in for more, or try again in 14 minutes." ]
+                        , Query.find [ id "an-retry" ] >> Query.has [ text "TRY AGAIN · 14 min" ]
+                        ]
+        , test "a failed ask: the asker's sentence, and TRY AGAIN at once" <|
+            \_ ->
+                asked
+                    |> sendAll [ GotAsk 1 (Ok (AnalysisApi.Pending "k1")), Ticked 1, GotStatus 1 (Ok (AnalysisApi.Failed "The engine could not read this position. Check the board and try another.")) ]
+                    |> panel
+                    |> Expect.all
+                        [ Query.find [ id "an-refused-text" ] >> Query.has [ text "The engine could not read this position. Check the board and try another." ]
+                        , Query.find [ id "an-retry" ] >> Query.has [ attribute (Html.Attributes.disabled False) ]
+                        ]
+        , test "a key the server forgot is asked again" <|
+            \_ ->
+                asked
+                    |> sendAll [ GotAsk 1 (Ok (AnalysisApi.Pending "k1")), Ticked 1, GotStatus 1 (refusal "not_found" "That puzzle is gone." Nothing) ]
+                    |> .ask
+                    |> isAsking
+                    |> Expect.equal True
+        , test "a poll lost on the way is asked again at the next tick" <|
+            \_ ->
+                asked
+                    |> sendAll [ GotAsk 1 (Ok (AnalysisApi.Pending "k1")), Ticked 1, GotStatus 1 (Err { error = Api.NetworkError, retryAfter = Nothing }) ]
+                    |> .ask
+                    |> isAsking
+                    |> Expect.equal True
+        , test "after the poll limit the page stops asking and says so" <|
+            \_ ->
+                asked
+                    |> send (GotAsk 1 (Ok (AnalysisApi.Pending "k1")))
+                    |> sendAll (List.repeat Analysis.pollLimit (Ticked 1))
+                    |> panel
+                    |> Expect.all
+                        [ Query.find [ id "an-refused-text" ] >> Query.has [ text Analysis.tooLongMessage ]
+                        , Query.find [ id "an-retry" ] >> Query.has [ attribute (Html.Attributes.disabled False) ]
+                        ]
+        , test "SHARE's answer is the fixed line under the answer" <|
+            \_ ->
+                answered "move"
+                    |> send (ShareReported "copied")
+                    |> panel
+                    |> Query.find [ id "an-share-note" ]
+                    |> Query.has [ text "Link copied" ]
+        , test "nothing on the page asks anyone to sign in" <|
+            \_ ->
+                answered "move"
+                    |> Analysis.view
+                    |> Query.fromHtml
+                    |> Query.hasNot [ text "Sign in" ]
+        ]
+
+
+isAnswered : Analysis.Asking -> Bool
+isAnswered ask =
+    case ask of
+        Analysis.Answered _ ->
+            True
+
+        _ ->
+            False
+
+
+isAsking : Analysis.Asking -> Bool
+isAsking ask =
+    case ask of
+        Analysis.Asking _ ->
+            True
+
+        _ ->
+            False

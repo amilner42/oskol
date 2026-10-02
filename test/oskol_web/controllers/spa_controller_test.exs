@@ -322,6 +322,26 @@ defmodule OskolWeb.SpaControllerTest do
       end
     end
 
+    test "an analyzed position's page (what the analysis board's SHARE hands over) asks the question and names nobody",
+         %{conn: conn} do
+      id = a_puzzle("move")
+
+      Oskol.Repo.update_all(
+        Ecto.Query.from(p in Oskol.Puzzles.Puzzle, where: p.id == ^id),
+        set: [origin: "analysis"]
+      )
+
+      html = conn |> get(~p"/puzzles/#{id}") |> html_response(200)
+      prompt = esc("White to play 6-4. What's your play?")
+      assert html =~ ~s(<meta property="og:title" content="#{prompt}")
+      assert html =~ ~s(<meta name="description" content="Match play, 3 away against 5.)
+
+      assert html =~
+               ~s(<meta property="og:image" content="http://localhost:4002/puzzles/#{id}.png")
+
+      refute html =~ "got this wrong"
+    end
+
     test "a puzzle nobody stored is a 404", %{conn: conn} do
       assert_error_sent 404, fn -> get(conn, ~p"/puzzles/nope0000") end
     end

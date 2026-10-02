@@ -93,7 +93,7 @@ import Dict
 import Games.Backgammon.Puzzle as Puzzle exposing (Candidate, Puzzle, Reveal, Schedule, Verdict(..))
 import Games.Backgammon.Replay as Replay
 import Games.Backgammon.View as Board
-import Games.Backgammon.Words as Words exposing (chanceCells, cubeChances, cubeLine, gradeTag, signed)
+import Games.Backgammon.Words as Words exposing (cubeChances, cubeLine, gradeTag)
 import Html exposing (Html, a, button, div, h1, p, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, href, id, rel, target, type_)
 import Html.Events exposing (on, onClick, onFocus)
@@ -108,6 +108,7 @@ import Task
 import Time
 import Svg
 import Svg.Attributes as SvgA
+import Ui.Candidates as Candidates
 import Ui.Charts as Charts
 import Api.Decks
 import Api.PracticeDecks as PracticeDecks
@@ -2537,22 +2538,6 @@ viewMoveReveal model reveal =
             ]
 
 
-{-| The annotators' mark beside a candidate: how bad it is at a glance.
--}
-candidateMark : Float -> Html msg
-candidateMark equityLost =
-    let
-        grade =
-            Words.gradeOf equityLost
-    in
-    case Words.gradeMark grade of
-        "" ->
-            text ""
-
-        mark ->
-            span [ class ("rp-cand-grade g-" ++ grade), attribute "data-grade" grade ] [ text mark ]
-
-
 {-| The candidate whose position is on the board, when one is.
 -}
 shownCandidate : Model -> Reveal -> Maybe Candidate
@@ -2575,20 +2560,10 @@ viewCandidates model reveal =
     let
         yoursRank =
             reveal.yours |> Maybe.andThen .rank
-
-        rows =
-            candidatesOf reveal
     in
-    div [ class "rp-top pz-top", id "pz-candidates" ]
-        (div [ class "rp-top-head" ]
-            [ span [] []
-            , span [] [ text "move" ]
-            , span [ class "rp-col-eq" ] [ text "eq" ]
-            , span [ class "rp-col", Html.Attributes.title "How often this move wins" ] [ text "win" ]
-            , span [ class "rp-col", Html.Attributes.title "How often it wins a gammon" ] [ text "gam+" ]
-            , span [ class "rp-col", Html.Attributes.title "How often it gets gammoned" ] [ text "gam−" ]
-            ]
-            :: List.map
+    Candidates.view [ class "pz-top", id "pz-candidates" ]
+        (candidatesOf reveal
+            |> List.map
                 (\c ->
                     let
                         isYours =
@@ -2601,72 +2576,51 @@ viewCandidates model reveal =
 
                                 Nothing ->
                                     isYours
-
-                        rankText =
-                            c.rank |> Maybe.map (\r -> String.fromInt r ++ ".") |> Maybe.withDefault "–"
                     in
-                    button
-                        [ classList [ ( "rp-cand", True ), ( "is-on", on_ ), ( "is-played", isYours ) ]
-                        , attribute "data-rank" (c.rank |> Maybe.map String.fromInt |> Maybe.withDefault "")
-                        , attribute "data-yours"
+                    { rank = c.rank
+                    , notation =
+                        if c.notation == "" then
+                            "your play"
+
+                        else
+                            c.notation
+                    , equity = Maybe.withDefault 0 c.equity
+                    , equityLost = c.equityLost
+                    , probs = c.probs
+                    , on = on_
+                    , played = isYours
+                    , badge =
+                        if isYours then
+                            Just "you"
+
+                        else
+                            Nothing
+                    , title =
+                        if isYours then
+                            "The move you played"
+
+                        else
+                            "Show this move on the board"
+                    , onTap =
+                        if c.position == Nothing then
+                            Nothing
+
+                        else if isYours || (on_ && model.showing /= Nothing) then
+                            Just (Show Nothing)
+
+                        else
+                            Just (Show c.rank)
+                    , attrs =
+                        [ attribute "data-yours"
                             (if isYours then
                                 "true"
 
                              else
                                 "false"
                             )
-                        , disabled (c.position == Nothing)
-                        , onClick
-                            (if isYours || (on_ && model.showing /= Nothing) then
-                                Show Nothing
-
-                             else
-                                Show c.rank
-                            )
-                        , Html.Attributes.title
-                            (if isYours then
-                                "The move you played"
-
-                             else
-                                "Show this move on the board"
-                            )
                         ]
-                        ([ span [ class "rp-rank tabular-nums" ] [ text rankText ]
-                         , span
-                            [ classList
-                                [ ( "rp-cand-move", True )
-                                , ( "is-long", String.length c.notation > 10 )
-                                , ( "is-longer", String.length c.notation > 15 )
-                                ]
-                            ]
-                            [ text
-                                (if c.notation == "" then
-                                    "your play"
-
-                                 else
-                                    c.notation
-                                )
-                            , candidateMark c.equityLost
-                            , if isYours then
-                                span [ class "pz-you" ] [ text "you" ]
-
-                              else
-                                text ""
-                            ]
-                         , span [ class "rp-cand-lost rp-col-eq tabular-nums" ]
-                            [ text
-                                (if c.equityLost > 0 then
-                                    "−" ++ Replay.formatEquity c.equityLost
-
-                                 else
-                                    signed (Maybe.withDefault 0 c.equity)
-                                )
-                            ]
-                         ]
-                            ++ chanceCells c.probs
-                        )
+                    }
                 )
-                rows
         )
 
 

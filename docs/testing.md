@@ -43,7 +43,9 @@ same for the puzzle wire: `PuzzleApiFixtures.elm` (the question, per kind)
 and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
 `handlers/puzzles.attempt_body`: `move_pass`, `move_dubious`, `move_fail`,
 `move_unknown`, `double_pass`, `double_fail`, `take_pass`, `take_close`, and
-the three schedule shapes).
+the three schedule shapes), and `AnalysisFixtures.elm` (the analysis board's
+`done` answer, from `handlers/analysis.done_fixture`: `move`, `double`,
+`take`, and `move_no_levels`).
 
 **Elm (`elm-test`)**
 - `ProtocolTest`: every fixture payload decodes; cross-checks that hold for
@@ -88,7 +90,17 @@ the three schedule shapes).
   / CLEAR / FLIP, the XGID field following every change, IMPORT and its
   refusal, `?xgid=` and `?p=` on every `PuzzleApiFixtures` question, a gone
   puzzle, the check line's sentences and ANALYZE, CRAWFORD only one away,
-  the cube's owner at 1, the match's bounds.
+  the cube's owner at 1, the match's bounds. The answer, on
+  `AnalysisFixtures`: every one decodes; the plate counting seconds; pending
+  then done (the best play in words, the table, "4-ply · asked just now");
+  a cached answer at once ("already analyzed"); the double and the take; a
+  candidate on the board and the dice taking it back (turned round for
+  Black to play), a board tap while it is shown painting nothing; an edit
+  clearing the answer and a no-op control keeping it; a stale press's
+  answer dropped; a dance (no TRY AGAIN), the engine asleep (TRY AGAIN after
+  its wait), a budget's wait, a failed ask, a forgotten key asked again, a
+  lost poll, the poll limit; "Link copied".
+- `WordsTest` also pins `bestInWords`, with and without chances.
 - `PuzzlePageTest`: the page on the generated fixtures: the reveal decodes
   (a fifth verdict word fails it), a tap walks and UNDO walks back, a lazy
   node is fetched and merged, PLAY posts exactly the path with the key (and
@@ -235,7 +247,7 @@ node playwright/test-puzzle/test.js             # a puzzle from a link: setup.ex
 node playwright/review-puzzle/test.js           # screenshots of the puzzle page: question, staged,
                                                # reveal, a candidate, the cube scale (phone, small,
                                                # landscape, desktop)
-node playwright/test-analysis/test.js           # the analysis board (part 1, setting up): ☰ Analysis;
+node playwright/test-analysis/test.js           # the analysis board. Part 1, setting up: ☰ Analysis;
                                                # a desktop by left and right clicks, the x, the bar,
                                                # the sixteenth's flash, ROLL, the cube, DOUBLE? and
                                                # TAKE?, a match and Crawford, FLIP, IMPORT, COPY; a
@@ -243,9 +255,22 @@ node playwright/test-analysis/test.js           # the analysis board (part 1, se
                                                # point hit where it is drawn at 320x568 and 844x390;
                                                # ?xgid= and a gone ?p=. The board, the strip, each
                                                # control, the line and ANALYZE keep their boxes
-                                               # throughout. Screenshots: screenshots/analysis-*.png.
+                                               # throughout. Part 2, ANALYZE, against a stand-in
+                                               # engine (setup.exs starts `Oskol.EngineServer`, a
+                                               # Bandit serving `Oskol.CompleteEngine`, on
+                                               # ANALYSIS_STUB_PORT = PORT + 10000, which the
+                                               # server's ANALYSIS_URL names): the plate in ANALYZE's
+                                               # box, a fresh answer, a candidate and the dice,
+                                               # "already analyzed", an edit clearing it; the
+                                               # opening 3-1 with 8/5 6/5 first, SHARE's link, a
+                                               # stranger's unfurl (naming nobody) and play to the
+                                               # reveal; DOUBLE?; a dance; the panel at four sizes
+                                               # with every box (the panel's too) held. PART=2 runs
+                                               # part 2 alone. Screenshots:
+                                               # screenshots/analysis-*.png.
                                                # `playwright/test-analysis/run.sh` serves its own
-                                               # port and database around it.
+                                               # port and database around it; bin/check points its
+                                               # server's ANALYSIS_URL at the stand-in's port.
 node playwright/test-puzzles-hub/test.js        # the practice home and a run: setup.exs's game, the
                                                # first seat trimmed to 12 mistakes; a stranger's TRY
                                                # ONE, a guest's run to the score and the sign-in ask,

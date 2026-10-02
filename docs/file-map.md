@@ -233,9 +233,19 @@ assets/src/Page/Analysis.elm     "/analysis" the analysis board: the brushes, th
                                  long press per point and bar half), the settings
                                  strip, OPENING / CLEAR / FLIP, the XGID with COPY (the
                                  `copyText` port) and IMPORT, the check line and
-                                 ANALYZE; the doors in (?xgid=, ?p=)
-assets/src/Api/Analysis.elm      POST /papi/analysis and GET /papi/analysis/:key, and
-                                 their status decoder (the verdict reads them)
+                                 ANALYZE; the doors in (?xgid=, ?p=); the press (the
+                                 plate counting seconds, the poll), the answer's panel
+                                 (`#an-panel`: the best play and the candidate table, or
+                                 the cube's line; a candidate on the board), SHARE /
+                                 OPEN AS PUZZLE, the refusals and TRY AGAIN
+assets/src/Api/Analysis.elm      POST /papi/analysis and GET /papi/analysis/:key: the
+                                 status decoder, the reveal ({best, top, cube, n_legal,
+                                 levels}, through the puzzle reveal's own decoders) and
+                                 a refusal's `retry_after_s`
+assets/src/Ui/Candidates.elm     the engine's candidate table (`.rp-top`, `data-rank`
+                                 rows: move and its mark, equity, win, gam+, gam-), one
+                                 renderer for the replay, the puzzle reveal and the
+                                 analysis board; each page says what its rows do
 assets/src/Page/Practice.elm     "/practice/<slug>" one deck's page: the card at page
                                  size, the ladder in words, what is due, the month,
                                  and for a tier what it cost
@@ -298,8 +308,9 @@ assets/src/Games/Backgammon/Xgid.elm    eXtreme Gammon's position id in and out 
 assets/src/Games/Backgammon/Words.elm   the engine's verdict in words and numbers, pure:
                                  the move's two sentences, the cube's from either side,
                                  the three equities with the call in ink, the chance cells
-                                 and grade tags. The replay reads it and the puzzle
-                                 reveal will; `tooGood` is the twin of Gleam's
+                                 and grade tags, the best play on its own
+                                 (`bestInWords`). The replay, the puzzle reveal and the
+                                 analysis board read it; `tooGood` is the twin of Gleam's
                                  `oskol/puzzles.too_good` and moves with it
 assets/src/Ui/Dialog.elm         the one dialog frame both homes open (JOIN GAME, SIGN
                                  IN, CREATE GAME, LIVE GAMES): a rounded sheet, the

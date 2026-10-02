@@ -19,6 +19,24 @@
  * it, the line under it and ANALYZE keep their boxes to the pixel: nothing
  * moves when a control changes.
  *
+ * Part 2, ANALYZE, against a stand-in engine (setup.exs, in a VM of its
+ * own, on ANALYSIS_STUB_PORT: the server's ANALYSIS_URL must name it, as
+ * run.sh and bin/check arrange):
+ *
+ * 6. A desktop asks about a position nobody has asked before: ANALYZE
+ *    becomes the plate counting seconds, in ANALYZE's own box; the answer
+ *    lands in the panel ("4-ply · asked just now"); a candidate goes on the
+ *    board and the dice take it back; asked again it is "already analyzed";
+ *    a change to the position clears the panel
+ * 7. The opening 3-1: 8/5 6/5 ranked first; SHARE copies /puzzles/<id>
+ *    ("Link copied"); OPEN AS PUZZLE is that link; a stranger opening it
+ *    gets a puzzle page whose head asks the question and names nobody, and
+ *    plays it to the reveal
+ * 8. DOUBLE? is answered with the cube's three equities; a roll that plays
+ *    nothing says so, with no TRY AGAIN
+ * 9. At 390x844, 320x568, 844x390 and 1440x900 the panel fills and clears
+ *    and nothing moves, the panel's own box included
+ *
  * Screenshots at 390x844, 320x568, 844x390 and 1440x900 go to
  * playwright/screenshots/analysis-*.png.
  *
@@ -27,7 +45,8 @@
  */
 const playwright = require('playwright');
 const fs = require('fs');
-const { BASE } = require('../lib/flows');
+const { spawn } = require('child_process');
+const { BASE, resultLine } = require('../lib/flows');
 
 const SHOTS = 'playwright/screenshots';
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
@@ -455,17 +474,253 @@ async function doors(browser, errors) {
   }
 }
 
+
+// ---------- Part 2: ANALYZE ----------
+
+const STUB_PORT = Number(process.env.ANALYSIS_STUB_PORT || Number(new URL(BASE).port || 80) + 10000);
+const OPENING_31 = 'XGID=-b----E-C---eE---c-e----B-:0:0:1:31:0:0:1:0:10';
+const OPENING_DOUBLE = OPENING;
+// White on the bar against a closed board: 6-4 plays nothing.
+const DANCE = 'XGID=-c----N------------bbbbbbA:0:0:1:64:0:0:1:0:10';
+
+/** The stand-in engine, listening, and a way to stop it. */
+async function startEngine() {
+  log(`starting the stand-in engine on ${STUB_PORT} (setup.exs)`);
+  const child = spawn('mix', ['run', '--no-start', '-e', 'Code.eval_file("playwright/test-analysis/setup.exs")'], {
+    env: { ...process.env, ANALYSIS_STUB_PORT: String(STUB_PORT), MIX_ENV: process.env.MIX_ENV || 'dev' },
+    stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  const stop = () => { try { child.stdin.end(); } catch (_) {} try { child.kill(); } catch (_) {} };
+  process.on('exit', stop);
+  await new Promise((resolve, reject) => {
+    let out = '';
+    child.stdout.on('data', (d) => {
+      out += d;
+      try { resultLine(out); resolve(); } catch (_) {}
+    });
+    child.on('exit', (code) => reject(new Error(`the stand-in engine stopped (${code}):\n${out.slice(-2000)}`)));
+  });
+  return stop;
+}
+
+// A position nobody has asked about: the opening in a 25-point match at a
+// score and a roll picked here, so the engine is asked and the page waits.
+function freshPosition() {
+  const r = (n) => Math.floor(Math.random() * n);
+  const a = 1 + r(6);
+  const b = 1 + r(6);
+  return `XGID=-b----E-C---eE---c-e----B-:0:0:1:${Math.max(a, b)}${Math.min(a, b)}:${r(23)}:${r(23)}:0:25:10`;
+}
+
+// The boxes that hold through an ask: part 1's, ANALYZE's slot and the
+// panel's.
+const ASKED = [...HELD.filter((s) => s !== '#an-analyze'), '.an-analyze', '#an-panel'];
+
+async function askedBoxes(page) {
+  return page.evaluate((sels) => {
+    const out = {};
+    for (const s of sels) {
+      const el = document.querySelector(s);
+      if (!el) { out[s] = null; continue; }
+      const r = el.getBoundingClientRect();
+      out[s] = [r.x + window.scrollX, r.y + window.scrollY, r.width, r.height].map((n) => Math.round(n * 2) / 2);
+    }
+    out.pageHeight = document.documentElement.scrollHeight;
+    return out;
+  }, ASKED);
+}
+
+function sameAsked(tag, before, after) {
+  for (const s of [...ASKED, 'pageHeight']) {
+    if (JSON.stringify(before[s]) !== JSON.stringify(after[s]))
+      throw new Error(`${tag}: ${s} moved from ${JSON.stringify(before[s])} to ${JSON.stringify(after[s])}`);
+  }
+}
+
+const text = async (page, sel) => (await page.innerText(sel)).trim();
+
+async function analyze(page, press) {
+  await press('#an-analyze');
+  await page.waitForSelector('#an-answer, #an-refused', { timeout: 30000 });
+  await settle(page);
+}
+
+async function verdict(browser, errors) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+  try {
+    const page = settled(await context.newPage());
+    watch(page, 'verdict', errors);
+
+    // 6. A position nobody has asked about.
+    await open(page, `/analysis?xgid=${encodeURIComponent(freshPosition())}`);
+    const held = await askedBoxes(page);
+    const still = async (tag) => sameAsked(`verdict ${tag}`, held, await askedBoxes(page));
+    await page.click('#an-analyze');
+    await page.waitForSelector('#an-asking');
+    if (!/^ASKING THE ENGINE… \d+ s$/.test(await text(page, '#an-asking'))) throw new Error(`the plate says "${await text(page, '#an-asking')}"`);
+    await still('the plate');
+    await page.screenshot({ path: `${SHOTS}/analysis-desktop-05-asking.png` });
+    await page.waitForSelector('#an-answer', { timeout: 30000 });
+    await settle(page);
+    if ((await text(page, '#an-depth')) !== '4-ply · asked just now') throw new Error(`a fresh answer says "${await text(page, '#an-depth')}"`);
+    if (!/^The best play is .+: [\d.]+% wins, [\d.]+% gammons, [\d.]+% gammons against\.$/.test(await text(page, '#an-answer .rp-words')))
+      throw new Error(`the best play in words: "${await text(page, '#an-answer .rp-words')}"`);
+    const rows = await page.locator('#an-candidates .rp-cand').count();
+    if (rows < 2 || rows > 5) throw new Error(`the table has ${rows} rows`);
+    await still('the answer');
+
+    // A candidate on the board, and the dice take it back.
+    const board = async () => page.$eval('#an-board .bg-still', (el) => el.innerHTML);
+    const asSetUp = await board();
+    await page.click('#an-candidates .rp-cand[data-rank="2"]');
+    if ((await text(page, '#an-proposed')) !== "ENGINE'S #2") throw new Error('the second play is not named on the board');
+    if ((await board()) === asSetUp) throw new Error('the second play did not go on the board');
+    await still('a candidate on the board');
+    // The dice dim while the play they made is on the board (after their fade).
+    await page.waitForTimeout(300);
+    const dim = await page.$$eval('#an-board .die', (ds) => ds.map((d) => Number(getComputedStyle(d).opacity)));
+    if (!dim.length || dim.some((o) => o > 0.6)) throw new Error(`the dice are not dimmed under a candidate: ${JSON.stringify(dim)}`);
+    await page.screenshot({ path: `${SHOTS}/analysis-desktop-06-candidate.png` });
+    await page.click('#an-dice-toggle');
+    if (await page.$('#an-proposed')) throw new Error('the dice did not take the play back');
+    if ((await board()) !== asSetUp) throw new Error('the board is not the position set up after the dice');
+    await still('taken back');
+
+    // Asked again: free, and it says so.
+    await page.click('#an-flip');
+    await page.click('#an-flip');
+    await analyze(page, (sel) => page.click(sel));
+    if ((await text(page, '#an-depth')) !== '4-ply · already analyzed') throw new Error(`a second ask says "${await text(page, '#an-depth')}"`);
+    await still('asked again');
+
+    // A change to the position clears the answer.
+    await page.click('#an-ask-double');
+    if (await page.$('#an-answer')) throw new Error('DOUBLE? left the old answer up');
+    if (!(await page.$('#an-panel .an-panel-hint'))) throw new Error('the cleared panel is not back to its hint');
+    await still('cleared');
+    log('verdict: the plate, the answer, a candidate on the board and back, already analyzed, cleared by an edit; nothing moved');
+
+    // 7. The opening 3-1.
+    await open(page, `/analysis?xgid=${encodeURIComponent(OPENING_31)}`);
+    await analyze(page, (sel) => page.click(sel));
+    const first = await text(page, '#an-candidates .rp-cand[data-rank="1"] .rp-cand-move');
+    if (!first.startsWith('8/5 6/5')) throw new Error(`the opening 3-1's best play is "${first}"`);
+    await page.click('#an-share');
+    await page.waitForFunction(() => document.querySelector('#an-share-note')?.textContent.trim() === 'Link copied');
+    const link = await page.evaluate(() => navigator.clipboard.readText());
+    const m = link.match(new RegExp(`^${BASE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/puzzles/([A-Za-z0-9]+)$`));
+    if (!m) throw new Error(`SHARE copied "${link}"`);
+    const href = await page.getAttribute('#an-open-puzzle', 'href');
+    if (href !== `/puzzles/${m[1]}` || (await page.getAttribute('#an-open-puzzle', 'target')) !== '_blank')
+      throw new Error(`OPEN AS PUZZLE is ${href}`);
+    await page.screenshot({ path: `${SHOTS}/analysis-desktop-07-opening-31.png` });
+    log(`the opening 3-1: 8/5 6/5 first; SHARE copied ${link}`);
+    await stranger(browser, errors, link);
+
+    // 8. DOUBLE?, and a roll that plays nothing.
+    await open(page, `/analysis?xgid=${encodeURIComponent(OPENING_DOUBLE)}`);
+    await page.click('#an-ask-double');
+    const heldCube = await askedBoxes(page);
+    await analyze(page, (sel) => page.click(sel));
+    if ((await page.getAttribute('#an-answer', 'data-kind')) !== 'double') throw new Error('DOUBLE? is not answered as a double');
+    if ((await page.locator('#an-answer .rp-cube-eq').count()) !== 3) throw new Error('the cube answer has no three equities');
+    if ((await page.locator('#an-answer .rp-cube-eq.is-pick').count()) !== 1) throw new Error('the cube answer picks no one');
+    sameAsked('the cube answer', heldCube, await askedBoxes(page));
+    await page.screenshot({ path: `${SHOTS}/analysis-desktop-08-double.png` });
+
+    await open(page, `/analysis?xgid=${encodeURIComponent(DANCE)}`);
+    const heldDance = await askedBoxes(page);
+    await analyze(page, (sel) => page.click(sel));
+    if ((await text(page, '#an-refused-text')) !== '6-4 cannot be played from here') throw new Error(`a dance says "${await text(page, '#an-refused-text')}"`);
+    if (await page.$('#an-retry')) throw new Error('a dance offers TRY AGAIN');
+    sameAsked('a dance', heldDance, await askedBoxes(page));
+    log('the cube: three equities and a pick; a dance says so with no TRY AGAIN');
+  } finally {
+    await context.close();
+  }
+}
+
+// A stranger opens the shared link: the head is the question, naming nobody,
+// and the page plays it to the reveal.
+async function stranger(browser, errors, link) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  try {
+    const page = settled(await context.newPage());
+    watch(page, 'stranger', errors);
+    const head = await (await page.request.get(link)).text();
+    const title = (head.match(/property="og:title" content="([^"]*)"/) || [])[1];
+    if (!['White to play 3-1. What&#39;s your play?', "White to play 3-1. What's your play?"].includes(title))
+      throw new Error(`the shared link unfurls as "${title}": ${(head.match(/<meta[^>]*og:title[^>]*>/) || [head.slice(0, 1500)])[0]}`);
+    if (/got this wrong/.test(head)) throw new Error('the shared link names somebody');
+    await page.goto(link);
+    await page.waitForSelector('.bg-point.source, .bg-bar.source');
+    for (let i = 0; i < 6 && !(await page.locator('#bg-action-play').count()); i++) {
+      await page.locator('.bg-point.source, .bg-bar.source').first().click();
+    }
+    await page.click('#bg-action-play');
+    await page.waitForSelector('#pz-reveal');
+    if ((await page.locator('#pz-candidates .rp-cand').count()) < 2) throw new Error('the reveal has no table');
+    log('a stranger: the head asks the question and names nobody; the puzzle plays to its reveal');
+  } finally {
+    await context.close();
+  }
+}
+
+// The panel at a size: empty, the answer, a candidate, cleared; nothing
+// moves, the panel's own box included.
+async function panelAt(browser, errors, tag, viewport) {
+  const touch = viewport.width < 1024;
+  const context = await browser.newContext({ viewport, hasTouch: touch, isMobile: touch });
+  try {
+    const page = settled(await context.newPage());
+    watch(page, `panel ${tag}`, errors);
+    const press = (sel) => (touch ? page.tap(sel) : page.click(sel));
+    await open(page, `/analysis?xgid=${encodeURIComponent(OPENING_31)}`);
+    const held = await askedBoxes(page);
+    await analyze(page, press);
+    sameAsked(`panel ${tag} the answer`, held, await askedBoxes(page));
+    await page.screenshot({ path: `${SHOTS}/analysis-${tag}-answer.png`, fullPage: true });
+    await press('#an-candidates .rp-cand[data-rank="3"]');
+    sameAsked(`panel ${tag} a candidate`, held, await askedBoxes(page));
+    await press('#an-dice-toggle');
+    await press('#an-ask-double');
+    sameAsked(`panel ${tag} cleared`, held, await askedBoxes(page));
+    await analyze(page, press);
+    sameAsked(`panel ${tag} the cube`, held, await askedBoxes(page));
+    await page.screenshot({ path: `${SHOTS}/analysis-${tag}-double.png`, fullPage: true });
+    await noSideScroll(page, `panel ${tag}`);
+    log(`panel ${tag}: empty, a move, a candidate, cleared, a double; nothing moved`);
+  } finally {
+    await context.close();
+  }
+}
+
 (async () => {
   fs.mkdirSync(SHOTS, { recursive: true });
   const browser = await playwright.chromium.launch({ headless: true, executablePath: process.env.PW_CHROMIUM, args: ['--no-sandbox'] });
   const errors = [];
   try {
-    await menu(browser, errors);
-    await desktop(browser, errors);
-    await phone(browser, errors);
-    await aim(browser, errors, '320', { width: 320, height: 568 });
-    await aim(browser, errors, '844x390', { width: 844, height: 390 });
-    await doors(browser, errors);
+    // PART=2 runs part 2 alone (while working on the answer).
+    if (process.env.PART !== '2') {
+      await menu(browser, errors);
+      await desktop(browser, errors);
+      await phone(browser, errors);
+      await aim(browser, errors, '320', { width: 320, height: 568 });
+      await aim(browser, errors, '844x390', { width: 844, height: 390 });
+      await doors(browser, errors);
+    }
+
+    const stopEngine = await startEngine();
+    try {
+      await verdict(browser, errors);
+      await panelAt(browser, errors, '390', { width: 390, height: 844 });
+      await panelAt(browser, errors, '320', { width: 320, height: 568 });
+      await panelAt(browser, errors, '844x390', { width: 844, height: 390 });
+      await panelAt(browser, errors, 'desktop', { width: 1440, height: 900 });
+    } finally {
+      stopEngine();
+    }
     if (errors.length) throw new Error(`console errors:\n${errors.join('\n')}`);
     log('ALL PASSED');
   } catch (e) {
