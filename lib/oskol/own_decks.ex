@@ -92,32 +92,42 @@ defmodule Oskol.OwnDecks do
   there already. `{added?, position}`: where it stands either way.
   """
   def add_member(deck, puzzle_id) when is_binary(deck) and is_binary(puzzle_id) do
-    %{rows: rows} =
-      Repo.query!(
-        """
-        INSERT INTO deck_puzzles (deck, puzzle_id, position, inserted_at, updated_at)
-        SELECT $1::varchar, $2::varchar, COALESCE(MAX(position), 0) + 1, now(), now()
-        FROM deck_puzzles WHERE deck = $1::varchar
-        ON CONFLICT (deck, puzzle_id) DO NOTHING
-        RETURNING position
-        """,
-        [deck, puzzle_id]
-      )
+    {:ok, result} =
+      Repo.transaction(fn ->
+        # One save at a time per set, so two at once cannot take the same
+        # position: the set's own row is the lock.
+        Repo.query!("SELECT id FROM decks WHERE id = $1 FOR UPDATE", [deck])
+        now = DateTime.utc_now()
 
-    case rows do
-      [[position]] ->
-        {true, position}
-
-      [] ->
-        position =
-          from(m in "deck_puzzles",
-            where: m.deck == ^deck and m.puzzle_id == ^puzzle_id,
-            select: m.position
+        %{rows: rows} =
+          Repo.query!(
+            """
+            INSERT INTO deck_puzzles (deck, puzzle_id, position, inserted_at, updated_at)
+            SELECT $1::varchar, $2::varchar, COALESCE(MAX(position), 0) + 1, $3, $3
+            FROM deck_puzzles WHERE deck = $1::varchar
+            ON CONFLICT (deck, puzzle_id) DO NOTHING
+            RETURNING position
+            """,
+            [deck, puzzle_id, now]
           )
-          |> Repo.one!()
 
-        {false, position}
-    end
+        case rows do
+          [[position]] ->
+            {true, position}
+
+          [] ->
+            position =
+              from(m in "deck_puzzles",
+                where: m.deck == ^deck and m.puzzle_id == ^puzzle_id,
+                select: m.position
+              )
+              |> Repo.one!()
+
+            {false, position}
+        end
+      end)
+
+    result
   end
 
   @doc "Take a puzzle out of a set: true if a row went."

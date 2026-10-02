@@ -24,7 +24,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import oskol/caps/decks.{type Member, type OwnDeck}
 import oskol/caps/practice.{
-  type Card, type Cell, type PracticeCaps, type PracticeError, Item,
+  type Card, type Cell, type PracticeCaps, type PracticeError, Item, Suspended,
 }
 import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/core/session.{type Session}
@@ -171,21 +171,34 @@ pub fn has_work(standing: Standing) -> Bool {
 /// Read off the deck's own ladder: the totals retain keeps, and the count
 /// per rung, of which the patched ones are the rungs at and above
 /// `deck.patched_level` -- the same rule a mistake is patched by.
-pub fn standing(ctx: Ctx, deck: Deck, uid: String) -> Standing {
-  let caps = practice(ctx, deck)
+pub fn standing(ctx: Ctx, set: Deck, uid: String) -> Standing {
+  let caps = practice(ctx, set)
   case caps.summary(uid, []) |> list.first {
     Error(Nil) -> Standing(0, 0, 0, 0, 0)
     Ok(row) -> {
-      let patched =
-        caps.ladder(uid)
-        |> list.drop(deck.patched_level)
-        |> int.sum
+      // An own set's positions taken out are suspended, not dropped (so a
+      // re-save keeps its level): they are no longer in the set, and count
+      // for nothing. A universal set keeps its NEVER cards as it always has.
+      let #(total, patched) = case is_own(set) {
+        True -> {
+          let kept =
+            caps.cells(uid) |> list.filter(fn(c) { c.status != Suspended })
+          #(
+            list.length(kept),
+            list.count(kept, fn(c) { c.level >= deck.patched_level }),
+          )
+        }
+        False -> #(
+          row.count,
+          caps.ladder(uid) |> list.drop(deck.patched_level) |> int.sum,
+        )
+      }
       let untouched = row.new_count
       let budget = int.max(caps.day(uid).new_remaining, 0)
       Standing(
-        total: row.count,
-        in_progress: int.max(row.count - untouched - patched, 0),
-        patched: int.min(patched, row.count),
+        total: total,
+        in_progress: int.max(total - untouched - patched, 0),
+        patched: int.min(patched, total),
         due: row.due_count,
         new_left: int.min(untouched, budget),
       )
@@ -228,8 +241,10 @@ pub fn enroll_one(
   use Nil <- result.try(caps.put_user(uid, "", deck.new_per_day))
   use fresh <- result.try(caps.put_items(uid, [item(deck, member)]))
   case fresh {
+    // Already on the ladder: taken out once, and now back at the set's end.
     0 -> {
       let _ = caps.resume(uid, [member.puzzle_id])
+      let _ = caps.place(uid, [#(member.puzzle_id, member.position)])
       Ok(Nil)
     }
     _ -> Ok(Nil)
@@ -349,6 +364,16 @@ pub fn standing_json(s: Standing) -> Json {
     #("due", json.int(s.due)),
     #("new_left", json.int(s.new_left)),
   ])
+}
+
+/// An own set's cells as its pages draw them: what is in the set, which
+/// leaves out a position taken out of it (suspended, so a re-save keeps
+/// its level). Any other deck's cells are as they are.
+pub fn shown_cells(set: Deck, cells: List(Cell)) -> List(Cell) {
+  case is_own(set) {
+    True -> list.filter(cells, fn(c) { c.status != Suspended })
+    False -> cells
+  }
 }
 
 /// An own set's positions for its owner, in the set's order, each with the

@@ -130,13 +130,55 @@ defmodule Oskol.OwnDecksTest do
 
     assert {:ok, %{suspended: true}} = Retain.fetch_item(user.id, p1, scope: "deck:" <> id)
 
-    # Saving it again brings it back where it was.
+    # What was taken out counts for nothing: one in the set, one in its
+    # standing, one in its grid.
+    hub = conn |> get(~p"/papi/practice/decks") |> json_response(200)
+
+    assert %{"size" => 1, "standing" => %{"total" => 1}} =
+             Enum.find(hub["decks"], &(&1["id"] == id))
+
+    page = conn |> get(~p"/papi/practice/decks/#{id}") |> json_response(200)
+    assert [%{"id" => ^p2}] = page["cells"]
+
+    assert %{"decks" => [%{"standing" => %{"total" => 1}}]} =
+             conn |> get(~p"/papi/decks/mine") |> json_response(200)
+
+    # Saving it again brings it back at the level it had, at the set's end.
     conn
     |> with_csrf()
     |> post(~p"/papi/decks/#{id}/puzzles", %{"puzzle_id" => p1})
     |> json_response(200)
 
-    assert {:ok, %{suspended: false}} = Retain.fetch_item(user.id, p1, scope: "deck:" <> id)
+    assert {:ok, %{suspended: false, position: 3}} =
+             Retain.fetch_item(user.id, p1, scope: "deck:" <> id)
+
+    assert [%{puzzle_id: ^p2, position: 2}, %{puzzle_id: ^p1, position: 3}] =
+             Oskol.Puzzles.deck_members(id)
+  end
+
+  test "taking a position out of a set nothing was ever saved into is no error", %{
+    conn: conn,
+    puzzles: [p1, _]
+  } do
+    {conn, _user} = signed_in(conn, "own@oskol.test")
+    %{"deck" => %{"id" => id}} = conn |> create("Empty") |> json_response(200)
+
+    assert %{"ok" => true, "deck" => %{"size" => 0}} =
+             conn
+             |> with_csrf()
+             |> delete(~p"/papi/decks/#{id}/puzzles/#{p1}")
+             |> json_response(200)
+  end
+
+  test "two saves at once take two positions", %{conn: conn, puzzles: [p1, p2]} do
+    {_conn, user} = signed_in(conn, "own@oskol.test")
+    {:ok, deck} = OwnDecks.create(user.id, "RACE0001", "Race", 5)
+
+    [p1, p2]
+    |> Task.async_stream(&OwnDecks.add_member(deck.id, &1), timeout: :infinity)
+    |> Enum.to_list()
+
+    assert [1, 2] = deck.id |> Oskol.Puzzles.deck_members() |> Enum.map(& &1.position)
   end
 
   test "saving a position somebody analyzed leaves it out of strangers' practice", %{

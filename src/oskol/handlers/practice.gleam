@@ -724,7 +724,7 @@ fn account_readings(
       }
       catalog.Set(set), _ | catalog.Own(set), _ -> {
         let caps = decks.practice(ctx, set)
-        let cells = caps.cells(uid)
+        let cells = decks.shown_cells(set, caps.cells(uid))
         let day = caps.day(uid)
         let standing =
           deck.standing(cells, day.new_remaining, day.answered, now_ms, rungs)

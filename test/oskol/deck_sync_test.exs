@@ -586,7 +586,7 @@ defmodule Oskol.DeckSyncTest do
 
       # ...and KEEP GOING is what gets past that.
       {:practice_caps, _, _, _, _, _, _, start_new, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
-       _, _} =
+       _, _, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       assert start_new.(user.id, 10) == 10
@@ -678,7 +678,7 @@ defmodule Oskol.DeckSyncTest do
       [worst] = Enum.map(sources_of(very_bad), & &1.puzzle_id)
 
       {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, _, _, _, _,
-       _} =
+       _, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       # Nothing started yet: every mistake is untouched -- neither in
@@ -735,7 +735,7 @@ defmodule Oskol.DeckSyncTest do
       [key] = Enum.map(sources_of(game_id), & &1.puzzle_id)
 
       {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, _, _, _, _,
-       _} =
+       _, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       assert {:severity, "very_bad", 1, 0, 0, 0, 1} in severity.(user.id, 4)
@@ -763,7 +763,7 @@ defmodule Oskol.DeckSyncTest do
       [mild] = Enum.map(sources_of(dubious), & &1.puzzle_id)
 
       {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, band_queue, _, _,
-       _, _} =
+       _, _, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       # Nothing started: each tier offers its own, as a new card.
@@ -791,7 +791,7 @@ defmodule Oskol.DeckSyncTest do
       user = an_account("arie@oskol.test")
 
       {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, band_queue, _, _,
-       _, _} =
+       _, _, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       # No deck at all.
@@ -811,7 +811,7 @@ defmodule Oskol.DeckSyncTest do
       user = an_account("arie@oskol.test")
 
       {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, _, _, _, _,
-       _} =
+       _, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       assert severity.(user.id, 4) == []
@@ -826,10 +826,10 @@ defmodule Oskol.DeckSyncTest do
     size = tuple_size(caps)
 
     %{
-      cells: elem(caps, size - 4),
-      answered_today_by_band: elem(caps, size - 3),
-      start_new_in_band: elem(caps, size - 2),
-      intervals: elem(caps, size - 1)
+      cells: elem(caps, size - 5),
+      answered_today_by_band: elem(caps, size - 4),
+      start_new_in_band: elem(caps, size - 3),
+      intervals: elem(caps, size - 2)
     }
   end
 
@@ -903,7 +903,8 @@ defmodule Oskol.DeckSyncTest do
       assert caps.answered_today_by_band.(user.id) == [{"very_bad", 1}]
 
       # The same rows `day` counts, so the bands add up to it.
-      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, day, _, _, _, _, _, _} =
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, day, _, _, _, _, _, _,
+       _} =
         Oskol.Gleam.Caps.Practice.build()
 
       assert {:day, 1, _} = day.(user.id)
@@ -1003,7 +1004,7 @@ defmodule Oskol.DeckSyncTest do
       caps = new_caps()
 
       {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, band_queue,
-       _, _, _, _} = Oskol.Gleam.Caps.Practice.build()
+       _, _, _, _, _} = Oskol.Gleam.Caps.Practice.build()
 
       # Each sees the card in their own tier, by all four readings.
       for {who, band} <- [{ari, "doubtful"}, {bo, "very_bad"}] do

@@ -14,10 +14,12 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import oskol/caps/decks.{
-  type OwnDeck, Added, DeckCaps, IdTaken, NameTaken, OwnDeck,
+  type OwnDeck, Added, DeckCaps, IdTaken, Member, NameTaken, OwnDeck,
 }
 import oskol/caps/ids.{IdsCaps}
-import oskol/caps/practice.{type PracticeCaps, Day, Item, PracticeCaps}
+import oskol/caps/practice.{
+  type PracticeCaps, Active, Cell, Day, Item, PracticeCaps, Summary, Suspended,
+}
 import oskol/caps/puzzles.{PuzzlesCaps, Stored}
 import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/core/error
@@ -130,6 +132,20 @@ fn ladder(scope: String) -> PracticeCaps {
     suspend: fn(uid, keys) {
       note(scope <> " suspend " <> uid <> " " <> string.join(keys, ","))
       list.length(keys)
+    },
+    place: fn(uid, positions) {
+      list.each(positions, fn(pair: #(String, Int)) {
+        note(
+          scope
+          <> " place "
+          <> uid
+          <> " "
+          <> pair.0
+          <> " "
+          <> string.inspect(pair.1),
+        )
+      })
+      list.length(positions)
     },
   )
 }
@@ -311,6 +327,15 @@ fn filling(rows: List(OwnDeck)) -> Ctx {
         note("unmember " <> deck <> " " <> puzzle)
         True
       },
+      // What add_member wrote, and remove_member has not taken away.
+      members: fn(deck) {
+        let saved = list.contains(log(), "member " <> deck <> " p1")
+        let gone = list.contains(log(), "unmember " <> deck <> " p1")
+        case saved && !gone {
+          True -> [Member("p1", 4, "double", "{\"kind\":\"double\"}")]
+          False -> []
+        }
+      },
     ),
   )
 }
@@ -345,6 +370,10 @@ pub fn a_position_is_saved_onto_the_set_s_own_ladder_once_test() {
   assert string.contains(again, "\"added\":false")
   assert list.filter(log(), fn(l) { string.contains(l, "member ") })
     == ["member " <> set_id <> " p1"]
+  // A card already on the ladder is resumed and goes to where its row is:
+  // taken out once, saved again at the set's end.
+  assert list.contains(log(), scope <> " resume u1 p1")
+  assert list.contains(log(), scope <> " place u1 p1 4")
 }
 
 pub fn a_puzzle_that_is_not_there_is_not_saved_test() {
@@ -358,13 +387,68 @@ pub fn a_puzzle_that_is_not_there_is_not_saved_test() {
 pub fn a_position_taken_out_is_put_away_not_forgotten_test() {
   reset()
   let ctx = filling([row(set_id, "Back games")])
+  let _ = note("member " <> set_id <> " p1")
   let assert Ok(body) = handler.remove_json(ctx, me(), set_id, "p1")
   assert string_at(body, ["deck", "id"]) == set_id
+  // The card first, then the row: a remove that fails between the two is
+  // finished by the next one.
   assert log()
     == [
-      "unmember " <> set_id <> " p1",
+      "member " <> set_id <> " p1",
       "deck:" <> set_id <> " suspend u1 p1",
+      "unmember " <> set_id <> " p1",
     ]
+}
+
+pub fn a_position_not_in_the_set_is_not_taken_out_test() {
+  reset()
+  // An empty set, never saved into: nothing to suspend, no row to delete
+  // (both would panic), and the answer is the set as it is.
+  let ctx =
+    Ctx(
+      ..world([row(set_id, "Back games")]),
+      decks: DeckCaps(
+        ..world([row(set_id, "Back games")]).decks,
+        members: fn(_) { [] },
+      ),
+    )
+  let assert Ok(body) = handler.remove_json(ctx, me(), set_id, "p9")
+  assert string_at(body, ["deck", "id"]) == set_id
+  assert log() == []
+}
+
+pub fn a_position_taken_out_counts_for_nothing_in_the_set_test() {
+  // Two saved, one taken out (suspended): the set holds one, and it is
+  // patched; the suspended card is neither in the total nor in the grid.
+  let rows = [row(set_id, "Back games")]
+  let cells = [
+    Cell("p1", "", 0, 0, Suspended, Some(1)),
+    Cell("p2", "", 7, 0, Active, Some(2)),
+  ]
+  let ctx =
+    Ctx(
+      ..world(rows),
+      decks: DeckCaps(
+        ..world(rows).decks,
+        size: fn(_) { 1 },
+        members: fn(_) { [Member("p2", 2, "move", "{}")] },
+        practice: fn(scope) {
+          PracticeCaps(
+            ..ladder(scope),
+            summary: fn(_, _) { [Summary([], 2, 0, 1, 1, 0, 3.5)] },
+            ladder: fn(_) { [1, 0, 0, 0, 0, 0, 0, 1] },
+            cells: fn(_) { cells },
+          )
+        },
+      ),
+    )
+  let body = handler.mine_json(ctx, me())
+  assert string.contains(
+    body,
+    "\"standing\":{\"joined\":true,\"total\":1,\"in_progress\":0,\"patched\":1,",
+  )
+  let assert Ok(shown) = handler.show_json(ctx, me(), set_id)
+  assert string.contains(shown, "\"members\":[{\"id\":\"p2\"")
 }
 
 // ---------- A set is private ----------

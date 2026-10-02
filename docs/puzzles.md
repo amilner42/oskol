@@ -707,13 +707,17 @@ universal-set machinery with an owner, so there are no new practice rules.
   and never on the sitemap. Sharing a set is later; the row has room for a
   token.
 - **Saving enrolls at once.** `POST /papi/decks/:id/puzzles {puzzle_id}`
-  writes the member at one past the set's highest position (`on conflict do
-  nothing`) and puts that one item in the owner's scope (`put_user(uid, "",
-  5)`, then `put_items` with tags `{deck, kind}` and the question as its
-  content, as `enroll` writes them), so it is due today as a new position.
-  Idempotent: the second time is `added: false`. Taking it out deletes the
-  member and suspends its card; saving it again resumes it at the level it
-  had. Joining an own set is a no-op: there is nothing to add.
+  writes the member, under a lock on the set's row, at one past its highest
+  position (`on conflict do nothing`) and puts that one item in the owner's
+  scope (`put_user(uid, "", 5)`, then `put_items` with tags `{deck, kind}`
+  and the question as its content, as `enroll` writes them), so it is due
+  today as a new position. Idempotent: the second time is `added: false`.
+  Taking it out suspends its card, then deletes the member (a half-done
+  remove is finished by the next one); a suspended card counts for nothing
+  in the set's standing or grid (`decks.shown_cells`). Saving it again
+  resumes it at the level it had and moves it to the set's end (the
+  `practice.place` cap). Joining an own set is a no-op: there is nothing to
+  add.
 - **Origin is not touched.** A position somebody analyzed stays `origin:
   analysis` when it is saved into a set, so it stays out of TRY ONE and
   the status page (`Oskol.Puzzles.sample/1` takes `game` and `set` only).

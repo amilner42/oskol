@@ -961,7 +961,17 @@ fn with_own() -> Ctx {
       [],
       Day(0, 0),
       [],
-      [#(own_id, [cell("p1", "", 2, now + 9, Active)], Day(1, 4))],
+      // p0 was saved and taken out again: suspended, and no longer in it.
+      [
+        #(
+          own_id,
+          [
+            cell("p0", "", 3, now + 9, Suspended),
+            cell("p1", "", 2, now + 9, Active),
+          ],
+          Day(1, 4),
+        ),
+      ],
       [#("openings", 15), #("opening_replies", 315), #(own_id, 1)],
     )
   Ctx(
@@ -1006,6 +1016,9 @@ pub fn the_hub_draws_an_own_set_as_kind_own_joined_even_empty_test() {
   assert back.slug == own_id
   assert back.size == 1
   assert back.joined
+  // Only what is in the set counts: p1, not the p0 taken out.
+  let assert Some([total, ..]) = back.standing
+  assert total == 1
   let primes = find(body, "Z3W8R1PB")
   assert primes.size == 0
   assert primes.joined
@@ -1020,6 +1033,8 @@ pub fn an_own_set_s_page_lists_what_is_in_it_for_its_owner_test() {
     body,
     "\"members\":[{\"id\":\"p1\",\"kind\":\"move\",\"prompt\":\"What's your play?\",\"position\":1,\"level\":2}]",
   )
+  // Its grid draws what is in it, not the position taken out.
+  assert !string.contains(body, "\"id\":\"p0\"")
   // An empty one has a page too, rather than a 404.
   let assert Ok(empty) =
     practice.deck_page_json(with_own(), signed_in(), "Z3W8R1PB", now)

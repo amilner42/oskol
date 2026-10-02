@@ -143,7 +143,7 @@ pub fn show_json(
   id: String,
 ) -> Result(String, ApiError) {
   use #(uid, set, _) <- result.try(owned(ctx, session, id))
-  let cells = decks.practice(ctx, set).cells(uid)
+  let cells = decks.shown_cells(set, decks.practice(ctx, set).cells(uid))
   Ok(
     envelope.ok([
       #("deck", set_json(ctx, set, uid)),
@@ -192,7 +192,9 @@ pub fn add_json(
 // ---------- DELETE /papi/decks/:id/puzzles/:puzzle_id ----------
 
 /// Take a position out of the set. Its card is suspended rather than
-/// dropped, so saving it again brings back the level it had.
+/// dropped, so saving it again brings back the level it had. The card goes
+/// first and the row second, so a remove that fails half-way is finished
+/// by the next one; a position that is not in the set touches nothing.
 pub fn remove_json(
   ctx: Ctx,
   session: Session,
@@ -200,8 +202,14 @@ pub fn remove_json(
   puzzle_id: String,
 ) -> Result(String, ApiError) {
   use #(uid, set, _) <- result.try(owned(ctx, session, id))
-  let _ = ctx.decks.remove_member(set.id, puzzle_id)
-  let _ = decks.practice(ctx, set).suspend(uid, [puzzle_id])
+  case list.any(ctx.decks.members(set.id), fn(m) { m.puzzle_id == puzzle_id }) {
+    True -> {
+      let _ = decks.practice(ctx, set).suspend(uid, [puzzle_id])
+      let _ = ctx.decks.remove_member(set.id, puzzle_id)
+      Nil
+    }
+    False -> Nil
+  }
   Ok(envelope.ok([#("deck", set_json(ctx, set, uid))]))
 }
 
