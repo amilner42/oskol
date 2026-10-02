@@ -135,6 +135,14 @@ the three schedule shapes).
   from both sides of the cube, the too-good rule the Gleam twin shares,
   and the engine's three words read into `Optimal` (a fourth falls back
   rather than being guessed at).
+- `XgidTest`: the position id pinned by vectors (the opening, Black to
+  play, a cube owned by each side, a match with Crawford, a take, the bar
+  and borne off, ids published by gnubg's bug list and backgammonforums),
+  every refusal in its one sentence, and `decode (encode s) == s` over
+  `SetupFuzz`'s valid setups.
+- `SetupTest`: the analysis board's setup on the wire (the literal the
+  Gleam decoder reads), `check`'s sentences, `flip`, and the puzzle
+  fixtures opened on the board (`fromQuestion`).
 
 **Elixir (`mix test`)**
 - `test/oskol/room_test.exs`: `Oskol.Bots` (test_support) plays random

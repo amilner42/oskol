@@ -11,6 +11,7 @@ and the tests below pin what that is worth now, which is nothing at all.
 -}
 
 import Expect
+import Games.Backgammon.Setup as Setup exposing (Ask(..))
 import Route exposing (Route(..))
 import Test exposing (Test, describe, test)
 import Url
@@ -85,6 +86,22 @@ suite =
                 \_ -> Expect.notEqual (Just (Play "practice" "openings")) (parse "/practice/openings")
             , test "a deck's page links as its slug" <|
                 \_ -> Expect.equal "/practice/opening-replies" (Route.href (Route.practice "opening-replies"))
+            , test "the analysis board" <|
+                \_ -> Expect.equal (Just (Analysis Nothing Nothing)) (parse "/analysis")
+            , test "the analysis board is not a game called analysis" <|
+                \_ -> Expect.notEqual (Just (GameLanding "analysis" Nothing)) (parse "/analysis")
+            , test "the analysis board on a position id, its = and : percent-encoded" <|
+                \_ ->
+                    Expect.equal
+                        (Just (Analysis (Just "XGID=-b----E-C---eE---c-e----B-:0:0:1:31:0:0:1:0:10") Nothing))
+                        (parse "/analysis?xgid=XGID%3D-b----E-C---eE---c-e----B-%3A0%3A0%3A1%3A31%3A0%3A0%3A1%3A0%3A10")
+            , test "or pasted with them bare" <|
+                \_ ->
+                    Expect.equal
+                        (Just (Analysis (Just "XGID=-b----E-C---eE---c-e----B-:0:0:1:31:0:0:1:0:10") Nothing))
+                        (parse "/analysis?xgid=XGID=-b----E-C---eE---c-e----B-:0:0:1:31:0:0:1:0:10")
+            , test "the analysis board on a puzzle" <|
+                \_ -> Expect.equal (Just (Analysis Nothing (Just "abcd1234"))) (parse "/analysis?p=abcd1234")
             , test "the sitemap belongs to the server" <|
                 \_ -> Expect.equal Nothing (parse "/sitemap.xml")
             , test "so does the dev dashboard" <|
@@ -113,6 +130,14 @@ suite =
                 \_ ->
                     Route.href (Route.replay "backgammon" "AB12CD" (Just 3))
                         |> Expect.equal "/backgammon/AB12CD/replay?game=3"
+            , test "the analysis board" <|
+                \_ -> Expect.equal "/analysis" (Route.href Route.analysis)
+            , test "the analysis board on a position: the id percent-encoded" <|
+                \_ ->
+                    Route.href (Route.analysisXgid { opening | ask = Move (Just ( 3, 1 )) })
+                        |> Expect.equal "/analysis?xgid=XGID%3D-b----E-C---eE---c-e----B-%3A0%3A0%3A1%3A31%3A0%3A0%3A1%3A0%3A10"
+            , test "the analysis board on a puzzle" <|
+                \_ -> Expect.equal "/analysis?p=abcd1234" (Route.href (Route.analysisPuzzle "abcd1234"))
             , test "nothing the client builds carries a token" <|
                 \_ ->
                     [ Route.href (Route.invite "backgammon" "AB12CD")
@@ -135,9 +160,19 @@ suite =
                 , Replay "backgammon" "AB12CD" (Just 2) Nothing
                 , Replay "backgammon" "AB12CD" (Just 2) (Just 17)
                 , Replay "backgammon" "AB12CD" Nothing Nothing
+                , Analysis Nothing Nothing
+                , Analysis (Just "XGID=-b----E-C---eE---c-e----B-:0:0:1:31:0:0:1:0:10") Nothing
+                , Analysis (Just "XGID=aC----B-------------b---dB:1:-1:-1:D:6:3:1:7:10") Nothing
+                , Analysis Nothing (Just "abcd1234")
+                , Route.analysisXgid Setup.opening
                 ]
             )
         ]
+
+
+opening : Setup.Setup
+opening =
+    Setup.opening
 
 
 roundTrip : Route -> Test

@@ -159,6 +159,8 @@ assets/src/Run.elm               a practice run, pure, kept by Main: its source 
                                  from the end card (KEEP GOING, PRACTICE ANYWAY); when
                                  today's set is done (`celebrate`, once a run)
 assets/src/Route.elm             the client routes, mirroring the server's
+                                 (`Analysis` -- /analysis?xgid=&p= -- is the client's
+                                 alone until the analysis page lands)
 assets/src/Api.elm               the /papi envelope + CSRF header
 assets/src/Api/Catalog.elm       the landing pages' data and its decoders
 assets/src/Page/GameLanding.elm  "/" the guest's home page (`home`: the site's bar,
@@ -268,6 +270,14 @@ assets/src/Games/Backgammon/Replay.elm  the record and reviews as the replay rea
                                  the engine's cube call is read once here, into `Optimal`
                                  (no double, double/take, double/pass, or a word a later
                                  engine wrote), and its answer into `Response`
+assets/src/Games/Backgammon/Setup.elm   a position set up on the analysis board: the
+                                 twin of src/oskol/analysis/setup.gleam (its wire shape,
+                                 `check`'s sentences), `opening`, `empty`, `flip`, and a
+                                 puzzle as its page shows it (`fromQuestion`)
+assets/src/Games/Backgammon/Xgid.elm    eXtreme Gammon's position id in and out of a
+                                 Setup, pinned by vectors (XgidTest); the field meanings,
+                                 checked against gnubg, are its module doc; the server
+                                 never reads one
 assets/src/Games/Backgammon/Words.elm   the engine's verdict in words and numbers, pure:
                                  the move's two sentences, the cube's from either side,
                                  the three equities with the call in ink, the chance cells
