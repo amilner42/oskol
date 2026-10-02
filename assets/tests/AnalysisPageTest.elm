@@ -300,6 +300,17 @@ theId =
                         ++ [ \_ -> field page ]
                     )
                     ()
+        , test "while a checker is not placed there is no id: the field is empty, COPY is off, IMPORT is not" <|
+            \_ ->
+                sendAll [ PickedBrush Erase, Pressed Primary (Point 6) ] page
+                    |> Expect.all
+                        [ Analysis.positionId >> Expect.equal Nothing
+                        , Analysis.view >> Query.fromHtml >> Query.find [ id "an-xgid" ] >> Query.has [ attribute (Html.Attributes.value ""), attribute (Html.Attributes.placeholder "Place every checker first") ]
+                        , Analysis.view >> Query.fromHtml >> Query.find [ id "an-xgid-copy" ] >> Query.has [ attribute (Html.Attributes.disabled True) ]
+                        , Analysis.view >> Query.fromHtml >> Query.find [ id "an-xgid-import" ] >> Query.hasNot [ attribute (Html.Attributes.disabled True) ]
+                        , send PressedCopy >> .copiedShown >> Expect.equal False
+                        , sendAll [ PickedBrush (Paint White), Pressed Primary (Tray White) ] >> Analysis.positionId >> Expect.notEqual Nothing
+                        ]
         , test "the opening with no roll picked is XG's opening with 00" <|
             \_ ->
                 Xgid.encode page.setup

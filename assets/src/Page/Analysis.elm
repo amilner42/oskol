@@ -1,7 +1,7 @@
 port module Page.Analysis exposing
     ( Model, Msg(..), Brush(..), Button(..), Target(..), Press, Asking(..), Refusal
     , init, update, view, title, withSession, subscriptions
-    , Off, paint, toPlace, offFrom, line, analyzable, rolls, longPressMs, defaultMatch
+    , Off, paint, toPlace, offFrom, positionId, line, analyzable, rolls, longPressMs, defaultMatch
     , puzzleGone, pollLimit, tooLongMessage, depthLine, shownSetup
     )
 
@@ -372,6 +372,19 @@ placeLine model =
 
         ( w, b ) ->
             Just ("Place " ++ more w White ++ " and " ++ more b Black ++ " checkers")
+
+
+{-| The position's XGID, once every checker is placed or borne off. An id
+has no "not placed": written earlier, it would quietly count those
+checkers as borne off.
+-}
+positionId : Model -> Maybe String
+positionId model =
+    if toPlace White ( model.setup, model.off ) == 0 && toPlace Black ( model.setup, model.off ) == 0 then
+        Just (Xgid.encode model.setup)
+
+    else
+        Nothing
 
 
 {-| ANALYZE is enabled: every checker is on the board or borne off, and
@@ -837,12 +850,17 @@ update msg model =
                 n =
                     model.copied + 1
             in
-            ( { model | copied = n, copiedShown = True }
-            , Cmd.batch
-                [ copyText (Xgid.encode model.setup)
-                , Process.sleep 1500 |> Task.perform (\_ -> CopiedFaded n)
-                ]
-            )
+            case positionId model of
+                Just id ->
+                    ( { model | copied = n, copiedShown = True }
+                    , Cmd.batch
+                        [ copyText id
+                        , Process.sleep 1500 |> Task.perform (\_ -> CopiedFaded n)
+                        ]
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         CopiedFaded n ->
             if n == model.copied then
@@ -1880,12 +1898,19 @@ viewQuick model =
                 [ id "an-xgid"
                 , class "q-field an-xgid"
                 , readonly True
-                , value (Xgid.encode model.setup)
+                , value (positionId model |> Maybe.withDefault "")
+                , Html.Attributes.placeholder "Place every checker first"
                 , attribute "aria-label" "Position id (XGID)"
                 , attribute "spellcheck" "false"
                 ]
                 []
-            , button [ type_ "button", id "an-xgid-copy", class "q-btn plain an-quick an-copy pixel", onClick PressedCopy ]
+            , button
+                [ type_ "button"
+                , id "an-xgid-copy"
+                , class "q-btn plain an-quick an-copy pixel"
+                , disabled (positionId model == Nothing)
+                , onClick PressedCopy
+                ]
                 [ text
                     (if model.copiedShown then
                         "COPIED"

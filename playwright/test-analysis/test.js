@@ -97,20 +97,21 @@ function settled(page) {
 
 const xgid = async (page) => { await settle(page); return page.inputValue('#an-xgid'); };
 
-// A point's count as the id has it: White positive, Black negative. 0 is
-// Black's bar (O's), 25 White's (X's), 1..24 the points.
-function countAt(id, index) {
-  const ch = id.slice(5).split(':')[0][index];
-  if (ch === '-') return 0;
-  if (ch >= 'A' && ch <= 'P') return ch.charCodeAt(0) - 64;
-  return -(ch.charCodeAt(0) - 96);
-}
-
 const field = (id, n) => id.slice(5).split(':')[n];
 
+// A place's count as the board draws it, numbered as an id numbers them:
+// White positive, Black negative; 0 is Black's bar, 25 White's. Read off
+// the board, not the id: while a checker is not placed there is no id.
+async function boardCount(page, index) {
+  await settle(page);
+  const sel = index === 0 ? '#an-bar-black' : index === 25 ? '#an-bar-white' : `#an-pt-${index}`;
+  const d = await drawnOn(page, sel);
+  return d.white - d.black;
+}
+
 async function expectCount(page, tag, index, want) {
-  const got = countAt(await xgid(page), index);
-  if (got !== want) throw new Error(`${tag}: index ${index} holds ${got}, not ${want} (${await xgid(page)})`);
+  const got = await boardCount(page, index);
+  if (got !== want) throw new Error(`${tag}: index ${index} holds ${got}, not ${want}`);
 }
 
 // What the board draws on a point: its white and black checkers (a stack
@@ -228,7 +229,11 @@ async function desktop(browser, errors) {
     const still = async (tag) => sameBoxes(`desktop ${tag}`, held, await boxes(page));
 
     await page.click('#an-clear');
-    if (field(await xgid(page), 0) !== '-'.repeat(26)) throw new Error(`CLEAR left ${await xgid(page)}`);
+    // Nothing placed: no id yet, and nothing to copy.
+    if ((await xgid(page)) !== '') throw new Error(`CLEAR left the id ${await xgid(page)}`);
+    if ((await page.getAttribute('#an-xgid', 'placeholder')) !== 'Place every checker first') throw new Error('the empty id field does not say why');
+    if (!(await page.isDisabled('#an-xgid-copy'))) throw new Error('COPY is on with checkers not placed');
+    if (await page.isDisabled('#an-xgid-import')) throw new Error('IMPORT is off with checkers not placed');
     await expectLine(page, 'cleared', 'Place 15 more White and 15 more Black checkers');
     if ((await page.innerText('#an-left-white')).trim() !== '15') throw new Error("White's brush does not say 15 to place");
     await still('CLEAR');
@@ -463,10 +468,9 @@ async function aim(browser, errors, tag, viewport) {
         await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height * (p > 12 ? 0.25 : 0.75));
         await settle(page);
       }
-      const id = await xgid(page);
       for (let p = 1; p <= 24; p++) {
         const want = p >= half[0] && p <= half[1] ? 1 : 0;
-        if (countAt(id, p) !== want) throw new Error(`${tag}: taps on points ${half[0]}..${half[1]} gave ${id}`);
+        if ((await boardCount(page, p)) !== want) throw new Error(`${tag}: taps on points ${half[0]}..${half[1]} left ${await boardCount(page, p)} on ${p}`);
       }
     }
     await page.tap('#an-bar-white');

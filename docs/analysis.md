@@ -321,7 +321,9 @@ and the column is beside both.
   starts, the cube in the middle; who is to play, the ask and the match
   stay), CLEAR (`#an-clear`: no checkers, the rest kept), FLIP
   (`#an-flip`, `Setup.flip`). The position id: `#an-xgid` (read-only, the
-  live `Xgid.encode`), COPY (`#an-xgid-copy`, the `copyText` port: the
+  live `Xgid.encode` once every checker is placed or borne off; until then
+  empty, "Place every checker first", and COPY disabled, since an id has
+  no "not placed" and would count those checkers as borne off), COPY (`#an-xgid-copy`, the `copyText` port: the
   clipboard, or the field selected where the browser refuses), IMPORT
   (`#an-xgid-import`, a `Ui.Dialog` `#an-import` with `#an-import-text`
   and `#an-import-go`; "That is not a position id" in its fixed line).
