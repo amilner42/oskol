@@ -100,6 +100,17 @@ async function revealed(browser, size, puzzle, shape) {
   return { context, page, posts, hold };
 }
 
+// The choice in force reads as chosen: filled in ink (the color the
+// others' text is drawn in), at full opacity -- under the pointer too.
+async function filled(page, id, what) {
+  const s = await page.evaluate((sel) => {
+    const on = getComputedStyle(document.querySelector(sel));
+    const other = [...document.querySelectorAll('.pz-outcome:not(.is-on)')].map((b) => getComputedStyle(b).color)[0];
+    return { bg: on.backgroundColor, opacity: on.opacity, ink: other };
+  }, `#pz-outcome-${id}`);
+  must(s.bg === s.ink && s.opacity === '1', `${what}: ${id} is filled in ink at full opacity (${s.bg}, ${s.opacity})`);
+}
+
 // The choice has landed: in force, and the four free again.
 async function landed(page, id) {
   await page.waitForFunction((sel) => {
@@ -137,10 +148,13 @@ async function shot(page, size, name) {
         await page.click('#pz-outcome-sooner');
         await page.waitForSelector('#pz-outcome-sooner.is-busy');
         must(await page.locator('.pz-outcome:disabled').count() === 4, `${size.name}: in flight, the four are disabled`);
+        await filled(page, 'sooner', `${size.name}, in flight`);
         must((await page.textContent('#pz-outcome-why')).trim() === 'Back to the start: it comes back tomorrow. Level 2 → 0.', `${size.name}: SOONER explained as it goes`);
         await same('SOONER in flight');
         await shot(page, size, 'sooner-sending');
         await landed(page, 'sooner');
+        // The pointer is still over it, as a thumb's tap leaves :hover.
+        await filled(page, 'sooner', `${size.name}, applied and hovered`);
         must(posts.join() === 'sooner', `${size.name}: the tap posted SOONER, once`);
         must((await page.textContent('#pz-level-line')).trim() === 'Level 2 → 0 · back tomorrow', `${size.name}: the level line moved`);
         await same('SOONER applied');

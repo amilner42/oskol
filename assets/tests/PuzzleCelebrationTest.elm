@@ -291,6 +291,30 @@ appearing =
                     , \_ -> rendered (step Next last) |> Query.has [ id "pz-today-done" ]
                     ]
                     ()
+        , test "I'M DONE on that reveal shows the card first; the card's I'M DONE ends the run" <|
+            \_ ->
+                let
+                    model =
+                        answered { session = account, deck = Nothing } |> done runAnswers
+
+                    stopped =
+                        step PressedDone model
+                in
+                Expect.all
+                    [ \_ -> out PressedDone model |> Expect.equal Page.NoOut
+                    , \_ -> rendered stopped |> Query.has [ id "pz-today-done" ]
+                    , \_ -> rendered stopped |> Query.hasNot [ id "pz-reveal" ]
+                    , \_ -> out PressedDone stopped |> Expect.equal Page.WantsEnd
+                    ]
+                    ()
+        , test "an unconfirmed NEVER is dropped on the way to the card" <|
+            \_ ->
+                (answered { session = account, deck = Nothing }
+                    |> done runAnswers
+                    |> step (PressedOutcome "never")
+                    |> step PressedDone
+                ).confirmingNever
+                    |> Expect.equal False
         , test "the outcome choices on that reveal still work" <|
             \_ ->
                 (answered { session = account, deck = Nothing } |> done runAnswers |> step (PressedOutcome "sooner")).applying

@@ -1791,9 +1791,16 @@ button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shado
 }
 .pz-outcome:not(:disabled):hover { background: var(--paper-2); }
 .pz-outcome:not(:disabled):active { transform: translate(2px, 2px); box-shadow: none; }
-.pz-outcome.is-on { background: var(--ink); color: var(--paper); }
-/* A choice on its way: filled at once, pressed in, and the four wait. */
+/* The choice in force: ink with paper text, always -- under the pointer
+   (a phone keeps :hover on the button just tapped), and while the four
+   wait for a choice on its way. Specific enough to beat the hover rule. */
+.pz-outcome.is-on,
+.pz-outcome.is-on:not(:disabled):hover,
+.pz-outcome.is-on:disabled { background: var(--ink); color: var(--paper); opacity: 1; }
+/* A choice on its way: filled at once, pressed in; the other three wait,
+   dimmed. */
 .pz-outcome.is-busy { cursor: progress; transform: translate(2px, 2px); box-shadow: none; }
+.pz-outcomes .pz-outcome:disabled:not(.is-on) { opacity: 0.55; }
 /* NEVER asking (it cannot be undone): pressed in and ringed, on paper.
    The fill stays with the choice in force until YES, NEVER. Outline and
    transform take no layout, so nothing beside it moves. */
@@ -1804,7 +1811,7 @@ button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shado
 .pz-outcome:disabled { cursor: default; }
 .pz-outcomes.is-closed .pz-outcome:not(.is-on) { opacity: 0.55; }
 /* GOT IT after a miss: in its column, not a choice. A tap says why. */
-.pz-outcome.is-barred { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
+.pz-outcome.is-barred, .pz-outcomes .pz-outcome.is-barred:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
 .pz-outcome.is-barred:hover { background: #fff; }
 .pz-outcome.is-barred:active { transform: none; }
 /* What the choice in force does (or NEVER would). Two lines are always

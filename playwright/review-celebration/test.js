@@ -71,12 +71,12 @@ function must(condition, message) {
 /** The reveal that finished today's set: an ordinary one, ANOTHER under
  * the board and no card. ANOTHER brings the card up on the same URL, in
  * place of the puzzle. Resolves with when ANOTHER was pressed. */
-async function toCard(page, what) {
+async function toCard(page, what, button = '#pz-next') {
   must(!(await page.locator('#pz-today-done').count()), `${what}: the reveal that finished today's set holds no card`);
-  must(await page.isVisible('#pz-actions #pz-next'), `${what}: its band offers ANOTHER`);
+  must(await page.isVisible(`#pz-actions ${button}`), `${what}: its band offers ${button}`);
   const was = new URL(page.url()).pathname;
   const at = Date.now();
-  await page.click('#pz-next');
+  await page.click(`#pz-actions ${button}`);
   await page.waitForSelector('#pz-today-done');
   must(new URL(page.url()).pathname === was, `${what}: the card comes up on the last puzzle's URL`);
   must(!(await page.locator('#pz-board').count()) && !(await page.locator('#pz-reveal').count()), `${what}: the board and the reveal are gone`);
@@ -286,11 +286,16 @@ const ringOf = (page) => page.evaluate(() => { const r = document.querySelector(
         shape('today_three');
         const { context, page } = await open(PHONE);
         await runTo(page, [playAny, playAny, playAny]);
-        await toCard(page, 'a run of misses');
+        // I'M DONE on the reveal that finished today's set shows the card
+        // first, as ANOTHER does; the card's own I'M DONE ends the run.
+        await toCard(page, "a run of misses, by I'M DONE", '#pz-done');
         await settled(page);
         const steps = (await page.textContent('#pz-today-steps')).trim();
         must(steps === 'Every one of these is back on its way', `a run of misses: "${steps}"`);
         await shot(page, { path: `${OUT}/05-all-missed-phone.png`, fullPage: true });
+        await page.click('#pz-today-done #pz-done');
+        await page.waitForSelector('#pz-end');
+        must(!(await page.locator('#pz-today-done').count()), "the card's I'M DONE ends the run on the end card");
         await context.close();
       }
 

@@ -513,7 +513,7 @@ an answer with nothing new in it ends today's set. The page is told
 count ("3 practiced today"), or "Practice only" in a run of early answers --
 with, for a mistake, the `/why` line. It offers ANOTHER (`#pz-next`,
 `WantsNext`) and I'M DONE (`#pz-done`, `WantsEnd`) after every reveal --
-on the one that finishes today's set ANOTHER is the celebration (below)
+on the one that finishes today's set both bring the celebration first (below)
 -- and reports every reveal and override as `Out = Answered {verdict,
 schedule, grade}`, or, where ANOTHER / I'M DONE was pressed while a
 choice was still on its way, `Out = AnsweredThen answer (WantsNext |
@@ -541,7 +541,7 @@ cells and the way on (`Run.way`). **The card is the next card** (since
 2026-10-01; it used to sit under the reveal, where it was missed): the
 reveal of that answer is an ordinary one (its choices still apply) whose
 band offers ANOTHER -- even past the run's last id -- and I'M DONE.
-ANOTHER (`Celebration.shown`) puts the card (`#pz-today-done`) where the
+Either (`Celebration.shown`; I'M DONE too, since that is when a player stops) puts the card (`#pz-today-done`) where the
 next puzzle would be, on the same URL, the board and reveal gone, one
 centered column at every size (`.pz-page.is-card`): the ring at 104px
 filling to a check, "Today's 5 done.", what this run moved (from its own

@@ -117,7 +117,7 @@ the three schedule shapes).
   that reaches today's target, once a run.
 - `PuzzleCelebrationTest`: the today's-set-done card -- not in the
   reveal of the answer that did it, whose ANOTHER (even past the run's
-  last id) shows it in place of the puzzle; never for a guest, once a
+  last id) or I'M DONE shows it in place of the puzzle (the card's own I'M DONE ends the run); never for a guest, once a
   page; "Keep going?"; hidden until the
   deck is read; the ring and check, the steps line, the won-back line, a
   set's words, the grid's stepping squares, KEEP GOING / PRACTICE ANYWAY /

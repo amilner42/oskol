@@ -769,17 +769,7 @@ update msg model =
                         stay model Cmd.none
 
                     else
-                        let
-                            shown =
-                                { c | shown = True }
-                        in
-                        stay { model | celebration = Just shown, confirmingNever = False }
-                            (if shown.ready then
-                                celebrateCard celebrationId
-
-                             else
-                                Cmd.none
-                            )
+                        showCelebration c model
 
                 Nothing ->
                     if model.leaving then
@@ -861,8 +851,21 @@ update msg model =
 
         -- I'M DONE: the run stops here and the shell hands back the
         -- score, however few this was. One is a whole session.
+        --
+        -- On the answer that finished today's set, I'M DONE shows the
+        -- celebration first, as ANOTHER does: that is exactly when a player
+        -- stops, and the moment is theirs. The card's own I'M DONE ends it.
         PressedDone ->
-            leave WantsEnd model
+            case model.celebration of
+                Just c ->
+                    if c.shown then
+                        leave WantsEnd model
+
+                    else
+                        showCelebration c model
+
+                Nothing ->
+                    leave WantsEnd model
 
         EndSignInMsg signInMsg ->
             case model.ended of
@@ -1002,6 +1005,25 @@ celebrationRead read model =
 
         Nothing ->
             ( model, Cmd.none )
+
+
+{-| ANOTHER or I'M DONE on the reveal that finished today's set: the card
+in place of the puzzle. An unconfirmed NEVER is dropped; a choice still on
+its way lands on this page as ever, and the card's lines follow it.
+-}
+showCelebration : Celebration -> Model -> ( Model, Cmd Msg, Out )
+showCelebration c model =
+    let
+        shown =
+            { c | shown = True }
+    in
+    stay { model | celebration = Just shown, confirmingNever = False }
+        (if shown.ready then
+            celebrateCard celebrationId
+
+         else
+            Cmd.none
+        )
 
 
 {-| The card can be drawn. Played as soon as it is also on the page:

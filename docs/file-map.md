@@ -250,7 +250,7 @@ assets/src/Page/Puzzle.elm       "/puzzles/:id" one puzzle: the question over th
                                  in a fixed line (NEVER alone asks: YES, NEVER), the
                                  memory line, SHARE, and -- in a run -- the strip over
                                  the board and ANOTHER / I'M DONE after every reveal;
-                                 on the one that finishes today's set ANOTHER brings
+                                 on the one that finishes today's set ANOTHER or I'M DONE brings
                                  the celebration as the next card ("Keep going?",
                                  KEEP GOING beside I'M DONE); the end of a run is
                                  the score (one is a whole session and says so), "N
