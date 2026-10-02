@@ -28,6 +28,7 @@ suite : Test
 suite =
     describe "Words"
         [ candidateSentences
+        , bestSentence
         , moveSentences
         , doublerSentences
         , responderSentences
@@ -140,6 +141,22 @@ saysMove expected m =
 
 
 -- MOVES
+
+
+bestSentence : Test
+bestSentence =
+    describe "the best play, on its own (the analysis board)"
+        [ test "its chances, to a decimal" <|
+            \_ ->
+                Words.bestInWords (candidate "8/5 6/5" (Just (probs 0.541 0.153 0.102)))
+                    |> Query.fromHtml
+                    |> Query.contains [ Html.text "The best play is 8/5 6/5: 54.1% wins, 15.3% gammons, 10.2% gammons against." ]
+        , test "without chances, the play alone" <|
+            \_ ->
+                Words.bestInWords (candidate "24/18 13/11" Nothing)
+                    |> Query.fromHtml
+                    |> Query.contains [ Html.text "The best play is 24/18 13/11." ]
+        ]
 
 
 candidateSentences : Test

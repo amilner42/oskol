@@ -1,8 +1,8 @@
 port module Page.Analysis exposing
-    ( Model, Msg(..), Brush(..), Button(..), Target(..), Press, Asking(..)
-    , init, update, view, title, withSession
+    ( Model, Msg(..), Brush(..), Button(..), Target(..), Press, Asking(..), Refusal
+    , init, update, view, title, withSession, subscriptions
     , paint, line, analyzable, rolls, longPressMs, defaultMatch
-    , puzzleGone
+    , puzzleGone, pollLimit, tooLongMessage, depthLine, shownSetup
     )
 
 {-| `/analysis` -- the analysis board. A position set up by tapping, with
@@ -30,9 +30,20 @@ an XGID: COPY, and IMPORT from one.
 
 **The line under the strip** is the first thing `Setup.check` says stops
 the position being asked, in the server's words; ANALYZE is disabled while
-it says anything. Pressing it is `PressedAnalyze`, the seam the verdict
-(analysis-page-verdict) fills: the answer's panel is `#an-panel`, under the
-board on a phone and beside it otherwise.
+it says anything.
+
+**ANALYZE** posts the setup (`Api.Analysis.ask`). A position asked before
+comes back at once; otherwise the button's slot becomes a plate of the
+same size, "ASKING THE ENGINE… 3 s", and the page asks how it is going
+once a second (`Api.Analysis.status`) for up to `pollLimit` seconds. The
+answer fills `#an-panel` (under the board on a phone, in the column beside
+it otherwise), in the replay's words and its candidate table
+(`Ui.Candidates`): a row puts its play on the board, the dice (or the same
+row) take it back. A double or a take is the cube's three equities, the
+chances and the sentence. Under it, the depth and whether it was asked
+just now or already analyzed, SHARE (the puzzle's clean link) and OPEN AS
+PUZZLE. When it cannot: the server's sentence, and TRY AGAIN once any wait
+it named has passed. Any change to the position clears the answer.
 
 **Doors in.** `/analysis` is the opening position, White to play, no roll
 picked. `?xgid=` opens on that id, whoever is to play: an id with Black on
@@ -48,16 +59,22 @@ dialog float over the page.
 -}
 
 import Api
+import Api.Analysis as Analysis
 import Games.Backgammon.Puzzle as Puzzle
+import Games.Backgammon.Replay as Replay
 import Games.Backgammon.Setup as Setup exposing (Ask(..), Color(..), Match, Setup)
 import Games.Backgammon.View as Board
+import Games.Backgammon.Words as Words
 import Games.Backgammon.Xgid as Xgid
-import Html exposing (Html, button, div, input, span, text)
-import Html.Attributes exposing (attribute, class, classList, disabled, id, readonly, type_, value)
+import Html exposing (Html, a, button, div, input, span, text)
+import Html.Attributes exposing (attribute, class, classList, disabled, href, id, readonly, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
+import Page.Play exposing (shareInvite, shareResult)
 import Process
+import Route
 import Session exposing (Session)
 import Task
+import Ui.Candidates as Candidates
 import Ui.Dialog
 
 
@@ -73,6 +90,7 @@ port copyText : String -> Cmd msg
 
 type alias Model =
     { session : Session
+    , origin : String -- scheme, host and port, for the link SHARE hands over
     , setup : Setup
     , brush : Brush
     , press : Maybe Press -- a finger or a button down on a place of the board
@@ -90,19 +108,50 @@ type alias Model =
     , copied : Int -- COPY presses; the label says COPIED for a moment after each
     , copiedShown : Bool
 
-    -- The slots the tickets after this one fill: the engine's answer for
-    -- the position on the board (analysis-page-verdict), and the line
-    -- played out from it (analysis-play-out). Every edit clears `ask`.
+    -- The engine's answer for the position on the board, and the line
+    -- played out from it (analysis-play-it-out). Every edit clears `ask`.
     , ask : Asking
+    , asks : Int -- every press is numbered: an answer for an earlier one is dropped
+    , showing : Maybe Int -- the rank of the candidate whose play is on the board
+    , shareNote : Maybe String -- "Link copied", for a moment after SHARE
+    , shares : Int
     , line : List Setup
     }
 
 
-{-| What has been asked about the position on the board. Nothing yet: the
-verdict's ticket adds the rest.
+{-| What has been asked about the position on the board.
+
+  - `Asking`: the press is out. `seconds` since it, the key once the server
+    has named one (then it is polled), and whether a request is out now.
+  - `Answered`: the engine's answer; `cached` when the POST answered at
+    once (the position had been analyzed before).
+  - `Refused`: why not, in the server's sentence.
+
 -}
 type Asking
     = NotAsked
+    | Asking { seconds : Int, key : Maybe String, out : Bool }
+    | Answered { answer : Analysis.Answer, cached : Bool }
+    | Refused Refusal
+
+
+{-| A press that came to nothing: the sentence, whether TRY AGAIN is
+offered, and the seconds it is held back for (a 429's or a 503's wait).
+-}
+type alias Refusal =
+    { message : String, retry : Bool, wait : Int }
+
+
+{-| How long the page waits for an answer before it gives up asking.
+-}
+pollLimit : Int
+pollLimit =
+    90
+
+
+tooLongMessage : String
+tooLongMessage =
+    "The engine is taking too long. Try again in a minute."
 
 
 type Brush
@@ -161,11 +210,12 @@ puzzleGone =
     "That puzzle is gone."
 
 
-init : Session -> { xgid : Maybe String, puzzle : Maybe String } -> ( Model, Cmd Msg )
-init session door =
+init : Session -> String -> { xgid : Maybe String, puzzle : Maybe String } -> ( Model, Cmd Msg )
+init session origin door =
     let
         base =
             { session = session
+            , origin = origin
             , setup = Setup.opening
             , brush = Paint White
             , press = Nothing
@@ -183,6 +233,10 @@ init session door =
             , copied = 0
             , copiedShown = False
             , ask = NotAsked
+            , asks = 0
+            , showing = Nothing
+            , shareNote = Nothing
+            , shares = 0
             , line = []
             }
     in
@@ -233,6 +287,13 @@ withSession session model =
 title : Model -> String
 title _ =
     "Analysis"
+
+
+{-| What the share sheet (or the clipboard) did with SHARE's link.
+-}
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    shareResult ShareReported
 
 
 theme : Model -> String
@@ -483,6 +544,14 @@ type Msg
     | ImportInput String
     | ImportSubmitted
     | PressedAnalyze
+    | PressedRetry
+    | GotAsk Int (Result Analysis.Refusal Analysis.Status)
+    | GotStatus Int (Result Analysis.Refusal Analysis.Status)
+    | Ticked Int
+    | Show (Maybe Int)
+    | PressedShare
+    | ShareReported String
+    | ShareFaded Int
     | GotPuzzle (Result Api.Error Puzzle.Puzzle)
     | NoOp
 
@@ -657,9 +726,144 @@ update msg model =
                     ( { model | importError = Just reason }, Cmd.none )
 
         PressedAnalyze ->
-            -- The verdict's seam (analysis-page-verdict): nothing is asked
-            -- from this page yet.
-            ( model, Cmd.none )
+            analyze model
+
+        PressedRetry ->
+            case model.ask of
+                Refused r ->
+                    if r.retry && r.wait <= 0 then
+                        analyze model
+
+                    else
+                        ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        GotAsk n result ->
+            if n /= model.asks then
+                ( model, Cmd.none )
+
+            else
+                case ( model.ask, result ) of
+                    ( Asking a, Ok status ) ->
+                        landed True a status model
+
+                    ( Asking _, Err refusal ) ->
+                        refused refusal model
+
+                    _ ->
+                        ( model, Cmd.none )
+
+        GotStatus n result ->
+            if n /= model.asks then
+                ( model, Cmd.none )
+
+            else
+                case ( model.ask, result ) of
+                    ( Asking a, Ok status ) ->
+                        landed False a status model
+
+                    ( Asking a, Err refusal ) ->
+                        case refusal.error of
+                            -- the server forgot the key (a restart): ask
+                            -- again, which an answered key serves from its row
+                            Api.ApiError e ->
+                                if e.code == "not_found" then
+                                    ( { model | ask = Asking { a | key = Nothing, out = True } }
+                                    , Analysis.ask model.session model.setup (GotAsk model.asks)
+                                    )
+
+                                else
+                                    refused refusal model
+
+                            -- a poll lost on the way: the next tick asks again
+                            _ ->
+                                ( { model | ask = Asking { a | out = False } }, Cmd.none )
+
+                    _ ->
+                        ( model, Cmd.none )
+
+        Ticked n ->
+            if n /= model.asks then
+                ( model, Cmd.none )
+
+            else
+                case model.ask of
+                    Asking a ->
+                        let
+                            seconds =
+                                a.seconds + 1
+                        in
+                        if seconds >= pollLimit then
+                            ( { model | ask = Refused { message = tooLongMessage, retry = True, wait = 0 } }, Cmd.none )
+
+                        else
+                            case ( a.key, a.out ) of
+                                ( Just key, False ) ->
+                                    ( { model | ask = Asking { a | seconds = seconds, out = True } }
+                                    , Cmd.batch [ Analysis.status model.session key (GotStatus n), tick n ]
+                                    )
+
+                                _ ->
+                                    ( { model | ask = Asking { a | seconds = seconds } }, tick n )
+
+                    Refused r ->
+                        if r.wait > 0 then
+                            ( { model | ask = Refused { r | wait = r.wait - 1 } }
+                            , if r.wait > 1 then
+                                tick n
+
+                              else
+                                Cmd.none
+                            )
+
+                        else
+                            ( model, Cmd.none )
+
+                    _ ->
+                        ( model, Cmd.none )
+
+        Show rank ->
+            ( { model | showing = rank }, Cmd.none )
+
+        PressedShare ->
+            case model.ask of
+                Answered { answer } ->
+                    ( model, shareInvite (model.origin ++ Route.href (Route.puzzle answer.puzzle.id)) )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        ShareReported result ->
+            let
+                n =
+                    model.shares + 1
+            in
+            ( { model
+                | shares = n
+                , shareNote =
+                    Just
+                        (case result of
+                            "copied" ->
+                                "Link copied"
+
+                            "shared" ->
+                                "Shared"
+
+                            _ ->
+                                "Copy failed"
+                        )
+              }
+            , Process.sleep 2000 |> Task.perform (\_ -> ShareFaded n)
+            )
+
+        ShareFaded n ->
+            if n == model.shares then
+                ( { model | shareNote = Nothing }, Cmd.none )
+
+            else
+                ( model, Cmd.none )
 
         GotPuzzle (Ok puzzle) ->
             ( remembered { model | loading = False, setup = Setup.fromQuestion puzzle.kind puzzle.question }, Cmd.none )
@@ -688,7 +892,85 @@ any answer about the position before are gone with it.
 -}
 edit : (Setup -> Setup) -> Model -> Model
 edit change model =
-    { model | setup = normalize (change model.setup), notice = Nothing, ask = NotAsked }
+    let
+        setup =
+            normalize (change model.setup)
+    in
+    if setup == model.setup then
+        -- nothing changed (the turn already White, the roll already 3-1):
+        -- the answer is still about the position on the board
+        { model | notice = Nothing }
+
+    else
+        { model | setup = setup, notice = Nothing, ask = NotAsked, showing = Nothing }
+
+
+{-| ANALYZE (or TRY AGAIN): ask about the position as it stands. Each
+press is numbered, so whatever comes back for an earlier one is dropped.
+-}
+analyze : Model -> ( Model, Cmd Msg )
+analyze model =
+    if analyzable model then
+        let
+            n =
+                model.asks + 1
+        in
+        ( { model | asks = n, ask = Asking { seconds = 0, key = Nothing, out = True }, showing = Nothing, shareNote = Nothing }
+        , Cmd.batch [ Analysis.ask model.session model.setup (GotAsk n), tick n ]
+        )
+
+    else
+        ( model, Cmd.none )
+
+
+tick : Int -> Cmd Msg
+tick n =
+    Process.sleep 1000 |> Task.perform (\_ -> Ticked n)
+
+
+{-| A status, from the POST (`fresh`) or a poll: an answer, a key to keep
+asking about, or the engine's failure.
+-}
+landed : Bool -> { seconds : Int, key : Maybe String, out : Bool } -> Analysis.Status -> Model -> ( Model, Cmd Msg )
+landed fresh asking status model =
+    case status of
+        Analysis.Done answer ->
+            ( { model | ask = Answered { answer = answer, cached = fresh } }, Cmd.none )
+
+        Analysis.Pending key ->
+            ( { model | ask = Asking { asking | key = Just key, out = False } }, Cmd.none )
+
+        Analysis.Failed message ->
+            ( { model | ask = Refused { message = message, retry = True, wait = 0 } }, Cmd.none )
+
+
+{-| A refusal, in the server's sentence. A roll that plays nothing, and a
+position the server will not take, are not tried again; the rest are,
+once the wait the server named has passed.
+-}
+refused : Analysis.Refusal -> Model -> ( Model, Cmd Msg )
+refused refusal model =
+    let
+        code =
+            Api.errorCode refusal.error
+
+        wait =
+            Maybe.withDefault 0 refusal.retryAfter
+    in
+    ( { model
+        | ask =
+            Refused
+                { message = Api.errorMessage refusal.error
+                , retry = not (List.member code [ "dances", "validation_failed" ])
+                , wait = wait
+                }
+      }
+    , if wait > 0 then
+        tick model.asks
+
+      else
+        Cmd.none
+    )
 
 
 editMatch : (Match -> Match) -> Model -> Model
@@ -759,6 +1041,18 @@ cycleCube s =
 
 press : Button -> Target -> Model -> Model
 press button target model =
+    if model.showing /= Nothing then
+        -- An engine's play is on the board, not the position being set up:
+        -- a tap takes it back, as the dice do, rather than paint on a board
+        -- that is not the one shown.
+        { model | showing = Nothing }
+
+    else
+        paintAt button target model
+
+
+paintAt : Button -> Target -> Model -> Model
+paintAt button target model =
     case paint model.brush button target model.setup of
         Ok setup ->
             edit (\_ -> setup) model
@@ -882,6 +1176,10 @@ dropped p model =
 
 view : Model -> Html Msg
 view model =
+    let
+        shown =
+            shownCandidate model
+    in
     div
         [ classList
             [ ( "rp-page an-page paper", True )
@@ -894,32 +1192,72 @@ view model =
         , div [ class "rp-main" ]
             [ div [ class "rp-stage" ]
                 [ viewBrushes model
-                , div [ class "rp-board an-board", id "an-board" ]
+                , div
+                    [ classList
+                        [ ( "rp-board an-board", True )
+                        , ( "is-proposed", shown /= Nothing )
+                        , ( "dice-played", shown /= Nothing )
+                        ]
+                    , id "an-board"
+                    ]
                     [ Board.viewEdit
                         { still = still model
                         , zoneId = zoneId
                         , onEdit = Pointer
                         , noop = NoOp
                         }
+                    , case shown of
+                        Just c ->
+                            span [ class "rp-proposed an-proposed pixel text-[7px]", id "an-proposed" ]
+                                [ text
+                                    (if c.rank == Just 1 then
+                                        "BEST PLAY"
+
+                                     else
+                                        "ENGINE'S #" ++ (c.rank |> Maybe.map String.fromInt |> Maybe.withDefault "")
+                                    )
+                                ]
+
+                        Nothing ->
+                            text ""
+                    , case shown of
+                        Just _ ->
+                            -- Over the dice, as the replay's: a tap takes the
+                            -- play back off the board.
+                            button
+                                [ type_ "button"
+                                , class
+                                    ("rp-dice-toggle "
+                                        ++ (if model.setup.toPlay == White then
+                                                "is-right"
+
+                                            else
+                                                "is-left"
+                                           )
+                                    )
+                                , id "an-dice-toggle"
+                                , attribute "aria-label" "Take the play back: the position as it was set up"
+                                , Html.Attributes.title "Back to the position"
+                                , onClick (Show Nothing)
+                                ]
+                                []
+
+                        Nothing ->
+                            text ""
                     ]
                 ]
             , div [ class "rp-side an-side" ]
                 [ viewStrip model
                 , viewQuick model
                 , viewCheck model
-                , button
-                    [ type_ "button"
-                    , id "an-analyze"
-                    , class "q-btn yellow an-analyze pixel"
-                    , disabled (not (analyzable model))
-                    , onClick PressedAnalyze
-                    ]
-                    [ text "ANALYZE" ]
+                , viewAnalyze model
 
-                -- The answer's place (analysis-page-verdict). Under
-                -- everything else here, so whatever fills it moves
-                -- nothing above it.
-                , div [ class "an-panel", id "an-panel" ] []
+                -- The answer's place. Under everything else here, so
+                -- whatever fills it moves nothing above it, and its slot
+                -- keeps a height of its own (`.an-panel`'s min-height) so
+                -- the page's height does not change when it fills or
+                -- clears.
+                , div [ class "an-panel", id "an-panel", attribute "aria-live" "polite" ] (viewPanel model)
                 ]
             ]
         , if model.rolling then
@@ -972,7 +1310,7 @@ still model =
     , cube = True
     , theme = theme model
     , key = 0
-    , position = Setup.snapshot setup
+    , position = Setup.snapshot (shownSetup model)
     , mover =
         Just
             (Setup.colorId
@@ -991,7 +1329,18 @@ still model =
 
             _ ->
                 []
-    , landed = []
+    , landed =
+        case shownCandidate model of
+            Just c ->
+                -- the candidate's points are the mover's, counted as White's
+                if setup.toPlay == White then
+                    c.landed
+
+                else
+                    List.map (\p -> 25 - p) c.landed
+
+            Nothing ->
+                []
     , offer =
         case setup.ask of
             Take ->
@@ -1001,6 +1350,53 @@ still model =
                 Nothing
     , accounts = Nothing
     }
+
+
+{-| The candidate whose play is on the board, when one is.
+-}
+shownCandidate : Model -> Maybe Puzzle.Candidate
+shownCandidate model =
+    case ( model.showing, model.ask ) of
+        ( Just rank, Answered { answer } ) ->
+            answer.reveal.top
+                |> List.filter (\c -> c.rank == Just rank && c.position /= Nothing)
+                |> List.head
+
+        _ ->
+            Nothing
+
+
+{-| The position on the board: the one set up, or the one a candidate
+leaves. A candidate's board is the mover's, drawn as White (as every
+puzzle is), so for Black to play it is turned back round.
+-}
+shownSetup : Model -> Setup
+shownSetup model =
+    let
+        setup =
+            model.setup
+    in
+    case shownCandidate model |> Maybe.andThen .position of
+        Just b ->
+            let
+                asWhite =
+                    { setup
+                        | points = List.map2 (-) b.white.points b.black.points
+                        , whiteBar = b.white.bar
+                        , blackBar = b.black.bar
+                    }
+
+                placed =
+                    if setup.toPlay == White then
+                        asWhite
+
+                    else
+                        Setup.flip asWhite
+            in
+            { setup | points = placed.points, whiteBar = placed.whiteBar, blackBar = placed.blackBar }
+
+        Nothing ->
+            setup
 
 
 viewBrushes : Model -> Html Msg
@@ -1318,6 +1714,250 @@ viewCheck : Model -> Html Msg
 viewCheck model =
     Html.p [ class "an-check", id "an-check", attribute "aria-live" "polite" ]
         [ text (line model |> Maybe.withDefault "") ]
+
+
+{-| ANALYZE, or while the press is out a plate of the same size counting
+the seconds, with the thin bar the page loads with.
+-}
+viewAnalyze : Model -> Html Msg
+viewAnalyze model =
+    case model.ask of
+        Asking a ->
+            div [ class "an-analyze an-asking pixel", id "an-asking", attribute "role" "status" ]
+                [ span [ class "an-asking-text" ] [ text ("ASKING THE ENGINE… " ++ String.fromInt a.seconds ++ " s") ]
+                , span [ class "an-asking-track", attribute "aria-hidden" "true" ] [ span [ class "an-asking-fill" ] [] ]
+                ]
+
+        _ ->
+            button
+                [ type_ "button"
+                , id "an-analyze"
+                , class "q-btn yellow an-analyze pixel"
+                , disabled (not (analyzable model))
+                , onClick PressedAnalyze
+                ]
+                [ text "ANALYZE" ]
+
+
+viewPanel : Model -> List (Html Msg)
+viewPanel model =
+    case model.ask of
+        NotAsked ->
+            [ Html.p [ class "an-panel-hint" ] [ text "The engine's answer lands here: its best plays with their chances, or its call on the cube." ] ]
+
+        Asking _ ->
+            [ Html.p [ class "an-panel-hint" ] [ text "Asking the engine at 4-ply. A few seconds for a roll, less for the cube." ] ]
+
+        Refused r ->
+            [ div [ class "an-refused", id "an-refused" ]
+                [ Html.p [ class "an-refused-text", id "an-refused-text" ] [ text r.message ]
+                , if r.retry then
+                    button
+                        [ type_ "button"
+                        , id "an-retry"
+                        , class "q-btn plain an-retry pixel"
+                        , disabled (r.wait > 0)
+                        , onClick PressedRetry
+                        ]
+                        [ text
+                            (if r.wait > 0 then
+                                "TRY AGAIN · " ++ waitLabel r.wait
+
+                             else
+                                "TRY AGAIN"
+                            )
+                        ]
+
+                  else
+                    text ""
+                ]
+            ]
+
+        Answered { answer, cached } ->
+            [ div [ class "rp-note an-answer", id "an-answer", attribute "data-kind" answer.puzzle.kind ]
+                (viewAnswer model answer
+                    ++ [ div [ class "an-foot" ]
+                            [ span [ class "an-depth", id "an-depth" ] [ text (depthLine answer cached) ]
+                            , span [ class "an-share-note", id "an-share-note" ] [ text (Maybe.withDefault "" model.shareNote) ]
+                            ]
+
+                       -- PLAY THIS (analysis-play-it-out) and SAVE TO A SET
+                       -- (analysis-save-to-set) take the two slots before
+                       -- these, in this same row of fixed cells.
+                       , div [ class "an-actions", id "an-actions" ]
+                            [ button [ type_ "button", id "an-share", class "q-btn plain an-action pixel", onClick PressedShare ] [ text "SHARE" ]
+                            , a
+                                [ id "an-open-puzzle"
+                                , class "q-btn plain an-action pixel"
+                                , href (Route.href (Route.puzzle answer.puzzle.id))
+                                , Html.Attributes.target "_blank"
+                                , Html.Attributes.rel "noopener"
+                                ]
+                                [ text "OPEN AS PUZZLE" ]
+                            ]
+                       ]
+                )
+            ]
+
+
+{-| "42 s", "14 min".
+-}
+waitLabel : Int -> String
+waitLabel seconds =
+    if seconds < 60 then
+        String.fromInt seconds ++ " s"
+
+    else
+        String.fromInt ((seconds + 59) // 60) ++ " min"
+
+
+{-| The quiet line under an answer: how deep the engine looked, and
+whether this press asked it or found the position analyzed already.
+"4-ply · asked just now", "4-ply · already analyzed".
+-}
+depthLine : Analysis.Answer -> Bool -> String
+depthLine answer cached =
+    let
+        when =
+            if cached then
+                "already analyzed"
+
+            else
+                "asked just now"
+
+        level =
+            answer.reveal.levels
+                |> Maybe.map
+                    (\l ->
+                        if answer.reveal.cube == Nothing then
+                            l.moves
+
+                        else
+                            l.cube
+                    )
+                |> Maybe.map plies
+    in
+    case level of
+        Just depth ->
+            depth ++ " · " ++ when
+
+        Nothing ->
+            String.toUpper (String.left 1 when) ++ String.dropLeft 1 when
+
+
+{-| The engine's name for a depth, as a player reads it: "4ply" -> "4-ply".
+-}
+plies : String -> String
+plies level =
+    if String.endsWith "ply" level && not (String.endsWith "-ply" level) then
+        String.dropRight 3 level ++ "-ply"
+
+    else
+        level
+
+
+{-| The engine's answer: for a move, the best play in a sentence (or the
+play on the board, against the best) over the candidate table; for a cube
+question, the sentence, the three equities and the chances.
+-}
+viewAnswer : Model -> Analysis.Answer -> List (Html Msg)
+viewAnswer model answer =
+    let
+        reveal =
+            answer.reveal
+
+        mover =
+            model.setup.toPlay
+
+        name =
+            Setup.colorName mover
+
+        otherName =
+            Setup.colorName (Setup.other mover)
+    in
+    case ( reveal.cube, reveal.best ) of
+        ( Just cube, _ ) ->
+            let
+                review =
+                    { action = ""
+                    , response = Nothing
+                    , optimal = Puzzle.optimalOf answer.puzzle.kind cube
+                    , noDouble = cube.noDouble
+                    , doubleTake = cube.doubleTake
+                    , doublePass = cube.doublePass
+                    , probs = cube.probs
+                    , doubler = { seat = 0, grade = "", equityLost = 0, mistake = Nothing }
+                    , taker = Nothing
+                    }
+
+                -- The replay's sentence for the position, from the side
+                -- being asked: the doubler, or for a take the taker.
+                words =
+                    case ( answer.puzzle.kind, review.optimal ) of
+                        ( "take", _ ) ->
+                            Words.answerWhy name review
+
+                        ( _, Replay.NoDouble ) ->
+                            Words.noDoubleWhy name otherName review
+
+                        _ ->
+                            Words.doubleWhy name otherName review
+            in
+            [ Words.inWords words
+            , Words.cubeLine review
+            , Words.cubeChances name review
+            ]
+
+        ( Nothing, Just best ) ->
+            [ case shownCandidate model of
+                Just c ->
+                    if c.rank == Just 1 then
+                        Words.bestInWords (Puzzle.asReplayCandidate best)
+
+                    else
+                        Words.candidateInWords (Puzzle.asReplayCandidate c) (Puzzle.asReplayCandidate best)
+
+                Nothing ->
+                    Words.bestInWords (Puzzle.asReplayCandidate best)
+            , Candidates.view [ class "an-top", id "an-candidates" ]
+                (reveal.top
+                    |> List.map
+                        (\c ->
+                            let
+                                on_ =
+                                    c.rank /= Nothing && c.rank == model.showing
+                            in
+                            { rank = c.rank
+                            , notation = c.notation
+                            , equity = Maybe.withDefault 0 c.equity
+                            , equityLost = c.equityLost
+                            , probs = c.probs
+                            , on = on_
+                            , played = False
+                            , badge = Nothing
+                            , title =
+                                if on_ then
+                                    "Back to the position"
+
+                                else
+                                    "Show this play on the board"
+                            , onTap =
+                                if c.position == Nothing then
+                                    Nothing
+
+                                else if on_ then
+                                    Just (Show Nothing)
+
+                                else
+                                    Just (Show c.rank)
+                            , attrs = []
+                            }
+                        )
+                )
+            ]
+
+        ( Nothing, Nothing ) ->
+            [ Html.p [ class "rp-words" ] [ text "The engine had nothing to say about this one." ] ]
 
 
 viewRollSheet : Model -> Html Msg

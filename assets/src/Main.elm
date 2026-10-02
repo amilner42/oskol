@@ -433,7 +433,7 @@ openRoute url oldModel =
         -- The analysis board: the opening position, or the position an
         -- XGID or a puzzle id in the URL names.
         Just (Route.Analysis xgid puzzleId) ->
-            Page.Analysis.init model.session { xgid = xgid, puzzle = puzzleId }
+            Page.Analysis.init model.session model.origin { xgid = xgid, puzzle = puzzleId }
                 |> wrap model Analysis AnalysisMsg
 
         Just Route.Puzzles ->
@@ -1276,6 +1276,9 @@ subscriptions model =
 
             Home pageModel ->
                 Sub.map HomeMsg (Page.Home.subscriptions pageModel)
+
+            Analysis pageModel ->
+                Sub.map AnalysisMsg (Page.Analysis.subscriptions pageModel)
 
             _ ->
                 Sub.none

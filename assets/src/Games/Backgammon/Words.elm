@@ -1,5 +1,6 @@
 module Games.Backgammon.Words exposing
     ( answerInWords
+    , bestInWords
     , answerWhy
     , candidateInWords
     , chanceCells
@@ -353,6 +354,37 @@ candidateInWords c best =
 
                 _ ->
                     lead
+            )
+        ]
+
+
+{-| The engine's best play and its chances, in one sentence: "The best
+play is 8/5 6/5: 54.1% wins, 15.3% gammons, 10.2% gammons against." The
+analysis board's answer, where nothing was played to compare it with.
+-}
+bestInWords : Candidate -> Html msg
+bestInWords best =
+    let
+        percent x =
+            Replay.fixed1 (x * 100) ++ "%"
+    in
+    div [ class "rp-words" ]
+        [ text
+            ("The best play is "
+                ++ best.notation
+                ++ (case best.probs of
+                        Just p ->
+                            ": "
+                                ++ percent p.win
+                                ++ " wins, "
+                                ++ percent p.gammonWin
+                                ++ " gammons, "
+                                ++ percent p.gammonLoss
+                                ++ " gammons against."
+
+                        Nothing ->
+                            "."
+                   )
             )
         ]
 

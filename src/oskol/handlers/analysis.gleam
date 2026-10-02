@@ -212,6 +212,22 @@ fn pending_body(key: String) -> String {
 
 fn done_body(ctx: Ctx, key: String, keyed: Keyed) -> Result(String, ApiError) {
   use puzzle <- result.try(puzzle_page.puzzle_object(ctx, keyed.stored))
+  done_json(key, puzzle, keyed)
+}
+
+/// The same `done` answer with the puzzle's tree worked out fresh, for a
+/// caller with no capabilities (the fixture task): byte for byte what a
+/// page receives.
+pub fn done_fixture(key: String, keyed: Keyed) -> Result(String, ApiError) {
+  use puzzle <- result.try(puzzle_page.puzzle_object_fresh(keyed.stored))
+  done_json(key, puzzle, keyed)
+}
+
+fn done_json(
+  key: String,
+  puzzle: json.Json,
+  keyed: Keyed,
+) -> Result(String, ApiError) {
   use reveal <- result.try(puzzle_page.reveal_json(
     keyed.stored,
     keyed.evaluated_by_json,

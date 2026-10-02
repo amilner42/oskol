@@ -165,6 +165,13 @@ pub fn puzzle_object(ctx: Ctx, stored: caps.Stored) -> Result(Json, ApiError) {
   )
 }
 
+/// `puzzle_object` with the tree worked out fresh, for a caller with no
+/// capabilities (the fixture task), as `puzzle_body` is.
+pub fn puzzle_object_fresh(stored: caps.Stored) -> Result(Json, ApiError) {
+  use question <- result.try(question_of(stored))
+  Ok(json.object(fields(stored.id, question, fresh_tree(question))))
+}
+
 // ---------- The reveal with no attempt in it ----------
 
 /// What the engine says about a puzzle, with nobody's answer in it:

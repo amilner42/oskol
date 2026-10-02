@@ -5,7 +5,7 @@ module Games.Backgammon.Puzzle exposing
     , Table, Seat, Out(..), view
     , nodeAt, played, snapshot, pips, pipsAgainst
     , Reveal, Verdict(..), Candidate, CubeReveal, Schedule, Memory, Story, Why
-    , revealDecoder, scheduleDecoder, memoryDecoder, whyDecoder, storyDecoder, verdictName
+    , revealDecoder, candidateDecoder, cubeRevealDecoder, scheduleDecoder, memoryDecoder, whyDecoder, storyDecoder, verdictName
     , asReplayCandidate, gradeOf, optimalOf, bands, answers
     )
 
@@ -52,7 +52,7 @@ opened from a story link (`?s=`) gets the sharer's `Story` on the reveal
 too, and only there.
 
 @docs Reveal, Verdict, Candidate, CubeReveal, Schedule, Memory, Story, Why
-@docs revealDecoder, scheduleDecoder, memoryDecoder, whyDecoder, storyDecoder, verdictName
+@docs revealDecoder, candidateDecoder, cubeRevealDecoder, scheduleDecoder, memoryDecoder, whyDecoder, storyDecoder, verdictName
 @docs asReplayCandidate, gradeOf, optimalOf, bands, answers
 
 -}
