@@ -69,7 +69,13 @@ defmodule OskolWeb.Api.PuzzleController do
   def position(conn, %{"slug" => slug, "id" => game_id}) do
     send_json(
       conn,
-      :oskol@handlers@positions.share_json(ctx(), slug, game_id, Jason.encode!(conn.body_params))
+      :oskol@handlers@positions.share_json(
+        ctx(),
+        session(conn),
+        slug,
+        game_id,
+        Jason.encode!(conn.body_params)
+      )
     )
   end
 

@@ -3,6 +3,7 @@ module Page.Replay exposing
     , Model
     , Msg(..)
     , Out(..)
+    , Quiet(..)
     , ShareDoor(..)
     , Showing(..)
     , Tab(..)
@@ -469,8 +470,13 @@ advance msg model =
             if model.sharing || currentShareDoor model == ShareOff then
                 ( model, Cmd.none )
 
-            else if currentShareDoor model == ShareSoon then
-                noteShare { game = model.game, step = model.step, text = gradedSoon } 3000 model
+            else if currentShareDoor model /= ShareReady then
+                case currentShareDoor model of
+                    ShareQuiet quiet ->
+                        noteShare { game = model.game, step = model.step, text = quietWhy quiet } 3000 model
+
+                    _ ->
+                        ( model, Cmd.none )
 
             else
                 ( { model | sharing = True, shareNote = Nothing }
@@ -758,12 +764,34 @@ advance msg model =
             ( model, Cmd.none )
 
 
-{-| What a press of SHARE says on a decision whose game is not graded yet:
-the server's own sentence for it (`handlers/positions`).
+{-| Why SHARE is quiet at a decision, in the word beside it and the
+sentence a press of it says (the server's own, `handlers/positions`,
+where it has one).
 -}
-gradedSoon : String
-gradedSoon =
-    "This position will be shareable once the game is graded."
+quietWord : Quiet -> String
+quietWord quiet =
+    case quiet of
+        GradedSoon ->
+            "Graded soon"
+
+        NotGraded ->
+            "Not graded"
+
+        InAnalysis ->
+            "Analysis only"
+
+
+quietWhy : Quiet -> String
+quietWhy quiet =
+    case quiet of
+        GradedSoon ->
+            "This position will be shareable once the game is graded."
+
+        NotGraded ->
+            "This game could not be graded, so its positions cannot be shared."
+
+        InAnalysis ->
+            "This position's answer is incomplete; open it in the analysis board instead."
 
 
 {-| Put a line over the panel for `ms`, then let it go.
@@ -779,19 +807,33 @@ noteShare shareNote ms model =
     )
 
 
-{-| What SHARE POSITION is at a step. A step that is no decision anyone
-could be asked about (the start, a resignation, the result, a roll with
-one way to play it or none, a double the engine does not grade) keeps the
-button's place, unseen, as OPEN IN ANALYSIS does. A decision whose game
-has no answer yet -- the game on the board, a review still running -- is
-"Graded soon": the share is written from the game's stored answer and
-never asks the engine, so it waits for the review rather than spending
-anything. A graded decision is ready.
+{-| What SHARE is at a step. A step that is no decision anyone could be
+asked about (the start, a resignation, the result, a roll with one way to
+play it or none, a double the engine does not grade) keeps the button's
+place, unseen, as OPEN IN ANALYSIS does. A graded decision is ready.
+Otherwise it is quiet, with a word beside it and a sentence when pressed:
+
+  - `GradedSoon`: the game has no answer yet (on the board, a review still
+    running). The share is written from the game's stored answer and never
+    asks the engine, so it waits for the review rather than spending
+    anything.
+  - `NotGraded`: the review failed and will not be tried again on its own.
+  - `InAnalysis`: the answer cannot make a puzzle the server would keep --
+    one from before the engine sent every legal play (`everyPlay`), or a
+    roll played after a taken double (whose stored question has the cube as
+    it was before the double) -- so the door is OPEN IN ANALYSIS beside it.
+
 -}
 type ShareDoor
     = ShareOff
-    | ShareSoon
+    | ShareQuiet Quiet
     | ShareReady
+
+
+type Quiet
+    = GradedSoon
+    | NotGraded
+    | InAnalysis
 
 
 shareDoor : Model -> Game -> ShareDoor
@@ -804,11 +846,15 @@ shareDoor model game =
             currentReview model
                 |> Maybe.andThen
                     (\r ->
-                        if r.status == Done then
-                            r.review
+                        case ( r.status, r.review ) of
+                            ( Done, Just review ) ->
+                                Just (Ok review)
 
-                        else
-                            Nothing
+                            ( Failed, _ ) ->
+                                Just (Err NotGraded)
+
+                            _ ->
+                                Nothing
                     )
 
         cubeOn pick r =
@@ -822,9 +868,13 @@ shareDoor model game =
             case Replay.entryAt game model.step of
                 Just (TurnEntry _) ->
                     case Replay.moveAt r line of
-                        Just ( _, Moved m ) ->
+                        Just ( t, Moved m ) ->
                             if m.forced then
                                 ShareOff
+
+                            else if not r.everyPlay || t.answerEntry /= Nothing then
+                                -- An old answer, or the roll after a take.
+                                ShareQuiet InAnalysis
 
                             else
                                 ShareReady
@@ -856,11 +906,14 @@ shareDoor model game =
 
         Just _ ->
             case graded of
-                Just r ->
+                Just (Ok r) ->
                     ready r
 
+                Just (Err quiet) ->
+                    ShareQuiet quiet
+
                 Nothing ->
-                    ShareSoon
+                    ShareQuiet GradedSoon
 
 
 currentShareDoor : Model -> ShareDoor
@@ -1450,11 +1503,12 @@ viewPanelHead model record game =
     div [ class "rp-panel-head" ]
         [ -- The quiet word for a decision not graded yet, where the row
           -- has room for it; always there, so the doors never move.
-          span
-            [ classList [ ( "rp-share-soon", True ), ( "is-hidden", door /= ShareSoon ) ]
-            , id "rp-share-soon"
-            ]
-            [ text "Graded soon" ]
+          case door of
+            ShareQuiet quiet ->
+                span [ class "rp-share-soon", id "rp-share-soon" ] [ text (quietWord quiet) ]
+
+            _ ->
+                span [ class "rp-share-soon is-hidden", id "rp-share-soon" ] []
         , case door of
             ShareReady ->
                 button
@@ -1472,14 +1526,14 @@ viewPanelHead model record game =
                     ]
                     [ linkIcon, text "SHARE" ]
 
-            -- Not a door yet: pressed, it says why in the floating line.
-            ShareSoon ->
+            -- Not a door: pressed, it says why in the floating line.
+            ShareQuiet quiet ->
                 button
                     [ class "rp-door rp-share is-soon pixel text-[8px]"
                     , id "rp-share-position"
                     , attribute "aria-disabled" "true"
-                    , attribute "aria-label" "Share this position (graded soon)"
-                    , Html.Attributes.title "Graded soon"
+                    , attribute "aria-label" ("Share this position (" ++ String.toLower (quietWord quiet) ++ ")")
+                    , Html.Attributes.title (quietWord quiet)
                     , onClick PressedSharePosition
                     ]
                     [ linkIcon, text "SHARE" ]

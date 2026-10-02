@@ -26,11 +26,13 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import oskol/caps/analysis as analysis_caps
+import oskol/caps/auth.{type LimitBucket}
 import oskol/caps/puzzles.{type NewPuzzle, type ReplayLink, ReplayLink} as puzzles_caps
 import oskol/caps/records
 import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/core/error
 import oskol/core/raw
+import oskol/core/session
 import oskol/fakes
 import oskol/handlers/positions
 import oskol/puzzles
@@ -53,7 +55,18 @@ fn put_drawn(key: String, value: List(String)) -> Dynamic
 @external(erlang, "erlang", "get")
 fn get_drawn(key: String) -> List(String)
 
+@external(erlang, "erlang", "put")
+fn put_charged(key: String, value: List(List(LimitBucket))) -> Dynamic
+
+@external(erlang, "erlang", "get")
+fn get_charged(key: String) -> List(List(LimitBucket))
+
 const room = "821900"
+
+/// A browser with a guest cookie and no account: anyone who has the link.
+fn stranger_session() -> session.Session {
+  fakes.guest("g-stranger")
+}
 
 // ---------- The seeded room ----------
 
@@ -174,6 +187,7 @@ fn ctx_over(
 ) -> Ctx {
   let _ = put_writes("writes", [])
   let _ = put_drawn("drawn", [])
+  let _ = put_charged("charged", [])
   let base = fakes.ctx()
   Ctx(
     ..base,
@@ -185,6 +199,11 @@ fn ctx_over(
     analysis: analysis_caps.AnalysisCaps(
       ..analysis_caps.stub(),
       stored_one: fn(_, number) { review(number) },
+      // The budget has room unless a test says otherwise (`limited_ctx`).
+      allow_ask: fn(buckets) {
+        let _ = put_charged("charged", [buckets, ..get_charged("charged")])
+        Ok(Nil)
+      },
     ),
     puzzles: puzzles_caps.PuzzlesCaps(
       ..puzzles_caps.stub(),
@@ -329,7 +348,8 @@ pub fn a_roll_is_shared_as_the_play_the_review_asked_about_test() {
     })
   let assert Some(line) = turn.entry
   let step = line + 1
-  let assert Ok(id) = positions.share(ctx, "backgammon", room, g.number, step)
+  let assert Ok(id) =
+    positions.share(ctx, stranger_session(), "backgammon", room, g.number, step)
   let #(p, origin, link) = the_write()
   assert p.kind == "move"
   assert p.key == key_of(puzzles.Move, g, turn)
@@ -346,7 +366,14 @@ pub fn a_double_is_shared_as_the_doublers_call_test() {
   let #(g, turn) = find_turn(replayed(f), fn(t) { t.double_entry != None })
   let assert Some(line) = turn.double_entry
   let assert Ok(_) =
-    positions.share(ctx, "backgammon", room, g.number, line + 1)
+    positions.share(
+      ctx,
+      stranger_session(),
+      "backgammon",
+      room,
+      g.number,
+      line + 1,
+    )
   let #(p, origin, _) = the_write()
   assert p.kind == "double"
   assert p.key == key_of(puzzles.Double, g, turn)
@@ -359,7 +386,14 @@ pub fn a_take_and_a_drop_are_shared_as_the_answer_to_the_double_test() {
   let #(g, took) = find_turn(games, fn(t) { t.double == Some(analysis.Took) })
   let assert Some(line) = took.answer_entry
   let assert Ok(_) =
-    positions.share(ctx, "backgammon", room, g.number, line + 1)
+    positions.share(
+      ctx,
+      stranger_session(),
+      "backgammon",
+      room,
+      g.number,
+      line + 1,
+    )
   let #(p, _, _) = the_write()
   assert p.kind == "take"
   assert p.key == key_of(puzzles.Take, g, took)
@@ -369,7 +403,14 @@ pub fn a_take_and_a_drop_are_shared_as_the_answer_to_the_double_test() {
     find_turn(games, fn(t) { t.double == Some(analysis.Passed) })
   let assert Some(line) = passed.answer_entry
   let assert Ok(_) =
-    positions.share(ctx, "backgammon", room, g.number, line + 1)
+    positions.share(
+      ctx,
+      stranger_session(),
+      "backgammon",
+      room,
+      g.number,
+      line + 1,
+    )
   let #(p, _, _) = the_write()
   assert p.kind == "take"
   assert p.key == key_of(puzzles.Take, g, passed)
@@ -393,15 +434,30 @@ pub fn every_decision_of_a_game_is_the_question_the_review_asked_test() {
             None -> Error(Nil)
             Some(line) -> {
               let ctx = ctx_over(setup_of(f, f.format), f.records, graded(f))
-              case positions.share(ctx, "backgammon", room, 1, line + 1) {
+              case
+                positions.share(
+                  ctx,
+                  stranger_session(),
+                  "backgammon",
+                  room,
+                  1,
+                  line + 1,
+                )
+              {
                 Ok(_) -> {
                   let #(p, _, _) = the_write()
                   assert p.key == key_of(pair.1, g, turn)
                   Ok(Nil)
                 }
-                // A forced roll or a dance is no decision.
+                // A forced roll or a dance is no decision; the roll after a
+                // taken double goes to the analysis board.
                 Error(error.Conflict(code, _)) -> {
                   assert code == positions.no_decision_code
+                    || {
+                      code == positions.incomplete_code
+                      && pair.1 == puzzles.Move
+                      && turn.double == Some(analysis.Took)
+                    }
                   Error(Nil)
                 }
                 Error(_) -> panic as "a step of a graded game failed"
@@ -419,7 +475,9 @@ pub fn every_decision_of_a_game_is_the_question_the_review_asked_test() {
 pub fn the_opening_position_a_resignation_and_the_result_are_no_decision_test() {
   let #(f, ctx) = seeded()
   let no_decision = fn(number, step) {
-    case positions.share(ctx, "backgammon", room, number, step) {
+    case
+      positions.share(ctx, stranger_session(), "backgammon", room, number, step)
+    {
       Error(error.Conflict(code, _)) -> code == positions.no_decision_code
       _ -> False
     }
@@ -440,7 +498,7 @@ pub fn the_opening_position_a_resignation_and_the_result_are_no_decision_test() 
 pub fn a_step_or_a_game_that_names_nothing_is_a_404_test() {
   let #(_, ctx) = seeded()
   let missing = fn(slug, number, step) {
-    case positions.share(ctx, slug, room, number, step) {
+    case positions.share(ctx, stranger_session(), slug, room, number, step) {
       Error(error.NotFound(_)) -> True
       _ -> False
     }
@@ -455,7 +513,9 @@ pub fn a_step_or_a_game_that_names_nothing_is_a_404_test() {
 pub fn the_game_on_the_board_and_an_ungraded_game_wait_test() {
   let f = fixture()
   let not_graded = fn(ctx, number, step) {
-    case positions.share(ctx, "backgammon", room, number, step) {
+    case
+      positions.share(ctx, stranger_session(), "backgammon", room, number, step)
+    {
       Error(error.Conflict(code, message)) ->
         code == positions.not_graded_code
         && message == "This position will be shareable once the game is graded."
@@ -497,7 +557,14 @@ pub fn an_answer_short_of_every_play_is_incomplete_and_writes_nothing_test() {
     })
   let assert Some(line) = turn.entry
   let assert Error(error.Conflict(code, message)) =
-    positions.share(ctx, "backgammon", room, g.number, line + 1)
+    positions.share(
+      ctx,
+      stranger_session(),
+      "backgammon",
+      room,
+      g.number,
+      line + 1,
+    )
   assert code == positions.incomplete_code
   assert message
     == "This position's answer is incomplete; open it in the analysis board instead."
@@ -519,7 +586,8 @@ pub fn a_body_is_read_and_answered_with_the_puzzles_link_test() {
         #("step", json.int(line + 1)),
       ]),
     )
-  let assert Ok(text) = positions.share_json(ctx, "backgammon", room, body)
+  let assert Ok(text) =
+    positions.share_json(ctx, stranger_session(), "backgammon", room, body)
   let assert Ok(#(id, url)) =
     json.parse(text, {
       use id <- decode.field("id", decode.string)
@@ -528,7 +596,13 @@ pub fn a_body_is_read_and_answered_with_the_puzzles_link_test() {
     })
   assert url == "/puzzles/" <> id
   let assert Error(error.Invalid(_, _)) =
-    positions.share_json(ctx, "backgammon", room, "{\"game\":1}")
+    positions.share_json(
+      ctx,
+      stranger_session(),
+      "backgammon",
+      room,
+      "{\"game\":1}",
+    )
 }
 
 // ---------- Crawford ----------
@@ -572,7 +646,8 @@ pub fn the_crawford_game_is_asked_as_the_crawford_game_test() {
     }
   }
   let ctx = ctx_over(setup_of(f, "match3"), rows, review)
-  let assert Ok(_) = positions.share(ctx, "backgammon", room, 2, 1)
+  let assert Ok(_) =
+    positions.share(ctx, stranger_session(), "backgammon", room, 2, 1)
   let #(p, _, _) = the_write()
   let assert Ok(q) = puzzles.question_from_json(p.question_json)
   assert q.crawford
@@ -604,7 +679,8 @@ pub fn the_crawford_game_is_asked_as_the_crawford_game_test() {
     ),
   ]
   let ctx = ctx_over(setup_of(f, "match3"), early, review)
-  let assert Ok(_) = positions.share(ctx, "backgammon", room, 2, 1)
+  let assert Ok(_) =
+    positions.share(ctx, stranger_session(), "backgammon", room, 2, 1)
   let #(p, _, _) = the_write()
   let assert Ok(q) = puzzles.question_from_json(p.question_json)
   assert !q.crawford
@@ -622,4 +698,128 @@ fn first_turn_only(response: String) -> String {
   json.to_string(
     object([#("turns", json.preprocessed_array(first)), ..as_json(top)]),
   )
+}
+
+// ---------- The budget, a roll after a take, a record that will not read ----------
+
+pub fn a_share_is_charged_to_the_caller_and_to_everybody_test() {
+  let #(f, ctx) = seeded()
+  let #(g, turn) =
+    find_turn(replayed(f), fn(t) {
+      t.dice != None
+      && !analysis.danced(t)
+      && t.entry != None
+      && t.double == None
+    })
+  let assert Some(line) = turn.entry
+  let assert Ok(_) =
+    positions.share(
+      ctx,
+      stranger_session(),
+      "backgammon",
+      room,
+      g.number,
+      line + 1,
+    )
+  let assert [[mine, everybody]] = get_charged("charged")
+  assert mine.key == "analysis:share:guest:g-stranger:hour"
+  assert mine.limit == 30 && mine.window_s == 3600
+  assert everybody.key == "analysis:share:global:hour"
+  assert everybody.limit == 1000
+  // A refusal costs nothing: the start of a game is not charged.
+  let _ = put_charged("charged", [])
+  let assert Error(_) =
+    positions.share(ctx, stranger_session(), "backgammon", room, 1, 0)
+  assert get_charged("charged") == []
+}
+
+pub fn a_spent_budget_is_a_429_in_a_players_words_and_writes_nothing_test() {
+  let #(f, ctx) = seeded()
+  let #(g, turn) =
+    find_turn(replayed(f), fn(t) {
+      t.dice != None
+      && !analysis.danced(t)
+      && t.entry != None
+      && t.double == None
+    })
+  let assert Some(line) = turn.entry
+  let refusing = fn(key) {
+    Ctx(
+      ..ctx,
+      analysis: analysis_caps.AnalysisCaps(..ctx.analysis, allow_ask: fn(_) {
+        Error(analysis_caps.Refused(key, 1200))
+      }),
+    )
+  }
+  let assert Error(error.Limited(code, mine, 1200)) =
+    positions.share(
+      refusing("analysis:share:guest:g-stranger:hour"),
+      stranger_session(),
+      "backgammon",
+      room,
+      g.number,
+      line + 1,
+    )
+  assert code == "rate_limited"
+  assert mine == "You can share 30 positions an hour. Try again in 20 minutes."
+  let assert Error(error.Limited(_, all, _)) =
+    positions.share(
+      refusing("analysis:share:global:hour"),
+      stranger_session(),
+      "backgammon",
+      room,
+      g.number,
+      line + 1,
+    )
+  assert all
+    == "Lots of positions are being shared right now. Try again in 20 minutes."
+  // The limiter not answering fails closed.
+  let assert Error(error.Limited(_, closed, _)) =
+    positions.share(
+      refusing("analysis:limiter"),
+      stranger_session(),
+      "backgammon",
+      room,
+      g.number,
+      line + 1,
+    )
+  assert closed == "Sharing is busy. Try again in a minute."
+  assert get_writes("writes") == []
+}
+
+pub fn a_roll_after_a_taken_double_goes_to_the_analysis_board_test() {
+  // Its stored question has the cube from before the double, which the
+  // engine did not grade it on: refused, the incomplete sentence.
+  let #(f, ctx) = seeded()
+  let #(g, turn) =
+    find_turn(replayed(f), fn(t) {
+      t.double == Some(analysis.Took) && t.entry != None
+    })
+  let assert Some(line) = turn.entry
+  let assert Error(error.Conflict(code, _)) =
+    positions.share(
+      ctx,
+      stranger_session(),
+      "backgammon",
+      room,
+      g.number,
+      line + 1,
+    )
+  assert code == positions.incomplete_code
+  assert get_writes("writes") == []
+}
+
+pub fn a_record_row_that_will_not_read_is_a_500_not_a_skipped_game_test() {
+  let f = fixture()
+  let rows =
+    list.map(f.records, fn(r) {
+      case r.game_number {
+        2 -> records.StoredRecord(2, "[{\"kind\":\"nonsense\"}]")
+        _ -> r
+      }
+    })
+  let ctx = ctx_over(setup_of(f, f.format), rows, graded(f))
+  let assert Error(error.Internal(_)) =
+    positions.share(ctx, stranger_session(), "backgammon", room, 3, 2)
+  assert get_writes("writes") == []
 }

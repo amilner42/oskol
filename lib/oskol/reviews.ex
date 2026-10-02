@@ -554,11 +554,22 @@ defmodule Oskol.Reviews do
   # no containment test ever matches.
   defp mine(user_id), do: [%{"user_id" => user_id}]
 
-  @doc "One game's rendered analysis, or nil."
+  @doc """
+  One game's rendered analysis, or nil, with `every_play` beside its fields:
+  whether the stored answer carries every legal play of each checker play
+  (the generated `game_reviews.every_play`, read without the answer).
+  """
   def report(game_id, game_number) do
     from(r in Review,
       where: r.game_id == ^game_id and r.game_number == ^game_number,
-      select: r.report
+      # One table, so the generated column needs no alias (it has no field
+      # in the schema: nothing writes it).
+      select:
+        fragment(
+          "CASE WHEN ? IS NULL THEN NULL ELSE jsonb_set(?, '{every_play}', to_jsonb(every_play)) END",
+          r.report,
+          r.report
+        )
     )
     |> Repo.one()
   end

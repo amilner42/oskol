@@ -38,12 +38,15 @@ import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
-import oskol/caps/analysis.{Done, Stored} as _analysis_caps
+import oskol/caps/analysis.{type Refused, Done, Stored} as _analysis_caps
+import oskol/caps/auth.{type LimitBucket, LimitBucket}
 import oskol/caps/puzzles.{ReplayLink} as _puzzle_caps
 import oskol/caps/records
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
 import oskol/core/error.{type ApiError}
+import oskol/core/session.{type Session}
+import oskol/handlers/analysis as analysis_page
 import oskol/handlers/record as record_page
 import oskol/practice/openings
 import oskol/puzzles.{type Answer, type Kind, type Question}
@@ -79,6 +82,18 @@ pub const no_decision_code = "no_decision"
 
 pub const no_decision_message = "There is no decision to share at this step."
 
+/// How many positions one caller (an account, else the browser's guest id)
+/// may share an hour, and everybody together. A share costs the engine
+/// nothing, but it writes a public row and draws a picture: a spend guard,
+/// not billing, so the limiter is per node, as the analysis board's is.
+pub const caller_hour = 30
+
+pub const global_hour = 1000
+
+pub const rate_limited_code = "rate_limited"
+
+const hour_s = 3600
+
 /// One step of one game of the room.
 pub type Asked {
   Asked(game: Int, step: Int)
@@ -93,6 +108,7 @@ fn asked_decoder() -> decode.Decoder(Asked) {
 /// The whole POST: the body read, the step shared, the envelope.
 pub fn share_json(
   ctx: Ctx,
+  session: Session,
   game_slug: String,
   game_id: String,
   body_json: String,
@@ -101,7 +117,14 @@ pub fn share_json(
     json.parse(body_json, asked_decoder())
     |> result.replace_error(error.validation_failed(bad_request_message)),
   )
-  use id <- result.try(share(ctx, game_slug, game_id, asked.game, asked.step))
+  use id <- result.try(share(
+    ctx,
+    session,
+    game_slug,
+    game_id,
+    asked.game,
+    asked.step,
+  ))
   Ok(
     envelope.ok([
       #("id", json.string(id)),
@@ -113,6 +136,7 @@ pub fn share_json(
 /// Share one step of one game: the id of the puzzle that stands for it.
 pub fn share(
   ctx: Ctx,
+  session: Session,
   game_slug: String,
   game_id: String,
   number: Int,
@@ -126,7 +150,7 @@ pub fn share(
   use #(target, jacoby) <- result.try(
     rules(setup.format) |> result.replace_error(not_found),
   )
-  let games = finished_games(ctx.records.stored(game_id))
+  use games <- result.try(finished_games(ctx.records.stored(game_id)))
   use entries <- result.try(game_entries(setup, games, number))
   use entry <- result.try(case step {
     // The position the game opened from: nobody has rolled.
@@ -160,6 +184,11 @@ pub fn share(
     |> result.replace_error(not_graded()),
   )
   use #(question, answer) <- result.try(decision(pairs, kind, step - 1, jacoby))
+  // Charged only for a share that would be written: a refusal above costs
+  // nobody anything.
+  use _ <- result.try(
+    ctx.analysis.allow_ask(buckets(session)) |> result.map_error(limited),
+  )
   use id <- result.try(
     ctx.puzzles.store_one(
       openings.new_puzzle(question, answer, graded.levels),
@@ -186,15 +215,68 @@ fn rules(format: String) -> Result(#(Int, Bool), Nil) {
 }
 
 /// The room's finished games, by number, oldest first, each read back
-/// into record lines. A row that does not read is left out.
-fn finished_games(rows: List(records.StoredRecord)) -> List(#(Int, List(Entry))) {
+/// into record lines. A row that does not read is a 500, never skipped:
+/// leaving it out would move every later game's number and score.
+fn finished_games(
+  rows: List(records.StoredRecord),
+) -> Result(List(#(Int, List(Entry))), ApiError) {
   rows
-  |> list.filter_map(fn(row) {
+  |> list.try_map(fn(row) {
     json.parse(row.entries_json, decode.list(record.decoder()))
     |> result.map(fn(entries) { #(row.game_number, entries) })
-    |> result.replace_error(Nil)
+    |> result.replace_error(error.Internal(
+      "A stored record of game "
+      <> int.to_string(row.game_number)
+      <> " did not read",
+    ))
   })
-  |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+  |> result.map(list.sort(_, fn(a, b) { int.compare(a.0, b.0) }))
+}
+
+// ---------- The budget ----------
+
+/// The caller's hour (an account's when signed in, else the guest's; a
+/// request with neither shares one allowance with every other such) and
+/// everybody's hour. Under `analysis:`, so the limiter fails closed for
+/// them as it does for the analysis board's (`Oskol.Limiter`).
+pub fn buckets(session: Session) -> List(LimitBucket) {
+  let who = case session.user_id, session.guest_id {
+    Some(user_id), _ -> "user:" <> user_id
+    None, Some(guest_id) -> "guest:" <> guest_id
+    None, None -> "guest:none"
+  }
+  [
+    LimitBucket(
+      key: "analysis:share:" <> who <> ":hour",
+      limit: caller_hour,
+      window_s: hour_s,
+    ),
+    LimitBucket(
+      key: "analysis:share:global:hour",
+      limit: global_hour,
+      window_s: hour_s,
+    ),
+  ]
+}
+
+/// A spent budget in a player's words: whose, and how long.
+pub fn limited(refused: Refused) -> ApiError {
+  let wait = analysis_page.duration(refused.retry_after_s)
+  let message = case refused.key {
+    "analysis:share:global:hour" ->
+      "Lots of positions are being shared right now. Try again in "
+      <> wait
+      <> "."
+    "analysis:share:" <> _ ->
+      "You can share "
+      <> int.to_string(caller_hour)
+      <> " positions an hour. Try again in "
+      <> wait
+      <> "."
+    // The limiter is not answering: it fails closed.
+    _ -> "Sharing is busy. Try again in a minute."
+  }
+  error.Limited(rate_limited_code, message, int.max(refused.retry_after_s, 1))
 }
 
 /// One finished game's lines. The game after the last one written down is
@@ -303,6 +385,15 @@ fn move_decision(
   graded: TurnReview,
   jacoby: Bool,
 ) -> Result(#(Question, Answer), ApiError) {
+  // A roll played after a taken double: the stored question (`extract`'s,
+  // whose key this must share) has the cube as it stood before the double,
+  // while the engine graded the play on the doubled cube. Until that is
+  // mended, such a step goes to the analysis board, which reads the cube
+  // off the record.
+  use _ <- result.try(case turn.double {
+    Some(analysis.Took) -> Error(incomplete())
+    _ -> Ok(Nil)
+  })
   use _ <- result.try(case graded.move, analysis.danced(turn) {
     None, _ -> Error(not_graded())
     Some(report.Danced), _ | _, True -> Error(no_decision())

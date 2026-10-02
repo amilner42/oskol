@@ -24,7 +24,7 @@ import Games.Backgammon.View as View
 import Games.Backgammon.Xgid as Xgid
 import Route
 import Json.Decode as D
-import Page.Replay as Page exposing (Loadable(..), Msg(..), ShareDoor(..), Showing(..))
+import Page.Replay as Page exposing (Loadable(..), Msg(..), ShareDoor(..), Quiet(..), Showing(..))
 import ReplayFixtures
 import Session
 import Test exposing (Test, describe, test)
@@ -1386,7 +1386,69 @@ sharePosition =
             \_ ->
                 -- The record is in; the index and the analysis are not.
                 doorAt gradedRollStep (loaded (Just 1))
-                    |> Expect.equal ShareSoon
+                    |> Expect.equal (ShareQuiet GradedSoon)
+        , test "an answer from before every play was sent points at the analysis board" <|
+            \_ ->
+                let
+                    old =
+                        analysis ReplayFixtures.analysisGame1
+                            |> (\a -> { a | review = Maybe.map (\r -> { r | everyPlay = False }) a.review })
+                in
+                loaded (Just 1)
+                    |> run [ GotIndex (Ok allDone), GotAnalysis 1 (Ok old) ]
+                    |> doorAt gradedRollStep
+                    |> Expect.equal (ShareQuiet InAnalysis)
+        , test "the roll after a take points at the analysis board" <|
+            \_ ->
+                let
+                    line =
+                        gradedRollStep - 1
+
+                    tookFirst =
+                        analysis ReplayFixtures.analysisGame1
+                            |> (\a ->
+                                    { a
+                                        | review =
+                                            Maybe.map
+                                                (\r ->
+                                                    { r
+                                                        | turns =
+                                                            List.map
+                                                                (\t ->
+                                                                    if t.entry == Just line then
+                                                                        { t | answerEntry = Just (line - 1) }
+
+                                                                    else
+                                                                        t
+                                                                )
+                                                                r.turns
+                                                    }
+                                                )
+                                                a.review
+                                    }
+                               )
+                in
+                loaded (Just 1)
+                    |> run [ GotIndex (Ok allDone), GotAnalysis 1 (Ok tookFirst) ]
+                    |> doorAt gradedRollStep
+                    |> Expect.equal (ShareQuiet InAnalysis)
+        , test "a game whose review failed is not graded, not graded soon" <|
+            \_ ->
+                let
+                    failed =
+                        index (String.replace "\"done\"" "\"failed\"" ReplayFixtures.index)
+                in
+                Expect.all
+                    [ \m -> doorAt gradedRollStep m |> Expect.equal (ShareQuiet NotGraded)
+                    , \m ->
+                        m
+                            |> run [ GoTo gradedRollStep ]
+                            |> Page.view
+                            |> Query.fromHtml
+                            |> Query.find [ Selector.id "rp-share-soon" ]
+                            |> Query.has [ Selector.text "Not graded" ]
+                    ]
+                    (loaded (Just 1) |> run [ GotIndex (Ok failed) ])
         , test "a double and its answer can be shared once graded" <|
             \_ ->
                 let

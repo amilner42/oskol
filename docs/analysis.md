@@ -434,12 +434,26 @@ log), `test/backgammon/analysis_test.gleam` (`turns_from_record` against
   instead."), nothing written -- every answer from before `all_results`.
   Step 0, a resignation, the result, a forced roll, a dance and a double the
   engine does not grade are 409 `no_decision`; a room, game or step that
-  names nothing 404.
+  names nothing 404. A roll played after a taken double is `incomplete`
+  too: its stored question (`extract`'s, whose key a share must match) has
+  the cube from before the double while the engine graded the doubled one,
+  so it goes to the analysis board, which reads the cube off the record. A
+  record row that will not read is a 500, never a skipped game (it would
+  move every later game's number and score).
+- **A budget.** Past `allow_ask` with `positions.buckets`: 30 an hour per
+  caller (the account, else the guest id) and 1000 an hour for everybody,
+  under `analysis:` so the limiter fails closed. Charged only for a share
+  that would be written; refused, a 429 in a player's words.
 - **Written once, nobody's practice.** `puzzles.store_one(puzzle, "replay",
   Some(ReplayLink))` writes the row with `origin = 'replay'` and
   `puzzles.replay = {slug, id, game, step}`; a key already stored keeps its
-  row and its origin and gets the link only if it has none (a set's own row,
-  `origin = 'set'`, never). Then `pictures_one` draws the unfurl picture.
+  row and its origin and gets the link only if it has none. A position a
+  universal set holds (`origin = 'set'`, or any `deck_puzzles` row under a
+  deck that is not somebody's own -- origin is only whoever wrote the key
+  first) is never linked, and `replay_of` answers nothing for one linked
+  before the set took it in: a set's learners did not come from that room.
+  An own set is its owner's alone, so its positions may keep a link. Then
+  `pictures_one` draws the unfurl picture.
   **No `puzzle_sources` row**, so it enters no deck and no story can be
   minted on it (`handlers/shares` mints only on the caller's own source:
   403). Idempotent: the same step is the same key is the same id.
@@ -460,7 +474,11 @@ log), `test/backgammon/analysis_test.gleam` (`turns_from_record` against
   then `shareInvite` with `origin ++ url`: the share sheet on a phone, the
   clipboard elsewhere, "Link copied"); `is-soon` and quiet on a decision not
   graded yet, with "Graded soon" to its left where the row has room (a
-  container query) and, pressed, the sentence; unseen on a step that is no
+  container query) and, pressed, the sentence; "Not graded" on a game whose
+  review failed; "Analysis only" on a roll whose answer predates every play
+  being sent (the review's `every_play`, a generated column on
+  `game_reviews` served beside the rendered report) or a roll after a take,
+  pointing at OPEN IN ANALYSIS beside it; unseen on a step that is no
   decision. What a share did floats under the head over the tabs
   (`#rp-share-note`), on that step only, and moves nothing.
 

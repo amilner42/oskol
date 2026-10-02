@@ -121,6 +121,19 @@ defmodule OskolWeb.Api.PositionsApiTest do
       assert json_response(story, 403)["ok"] == false
     end
 
+    test "a game's analysis says whether its answer carries every play", %{conn: conn} do
+      every_play = fn ->
+        conn
+        |> get(~p"/papi/games/backgammon/rooms/#{@room}/reviews/1")
+        |> json_response(200)
+        |> get_in(["review", "every_play"])
+      end
+
+      assert every_play.() == false
+      complete_game_one()
+      assert every_play.() == true
+    end
+
     test "an old answer short of every play is a 409 and writes nothing", %{conn: conn} do
       before = Repo.aggregate(Puzzles.Puzzle, :count)
       body = conn |> share(%{"game" => 1, "step" => @step}) |> json_response(409)
@@ -178,6 +191,14 @@ defmodule OskolWeb.Api.PositionsApiTest do
       }
     end
 
+    defp in_deck(puzzle_id, deck) do
+      now = DateTime.utc_now()
+
+      Repo.insert_all("deck_puzzles", [
+        %{deck: deck, puzzle_id: puzzle_id, position: 1, inserted_at: now, updated_at: now}
+      ])
+    end
+
     defp link(step), do: %{"slug" => "backgammon", "id" => @room, "game" => 1, "step" => step}
 
     test "is written once, and a row that has one keeps it" do
@@ -201,6 +222,44 @@ defmodule OskolWeb.Api.PositionsApiTest do
       assert {:ok, set_id} = Puzzles.store_one(set, "set")
       assert {:ok, ^set_id} = Puzzles.store_one(set, "replay", link(1))
       assert Repo.get!(Puzzles.Puzzle, set_id).replay == nil
+    end
+
+    test "a position a universal set holds is never linked, whoever wrote it first" do
+      # An unlimited game's opening mistake (origin "game") that the set build
+      # later took into Openings: every Openings learner would otherwise get
+      # a door into that room.
+      opening = a_new_puzzle("replay-openings")
+      assert {:ok, id} = Puzzles.store_one(opening, "game")
+      in_deck(id, "openings")
+      assert {:ok, ^id} = Puzzles.store_one(opening, "replay", link(1))
+      assert Repo.get!(Puzzles.Puzzle, id).replay == nil
+
+      # Linked first, taken into the set after: the page no longer says so.
+      later = a_new_puzzle("replay-openings-later")
+      assert {:ok, later_id} = Puzzles.store_one(later, "replay", link(1))
+      assert Puzzles.replay_of(later_id) == link(1)
+      in_deck(later_id, "opening_replies")
+      assert Puzzles.replay_of(later_id) == nil
+    end
+
+    test "a position in somebody's own set may carry its link" do
+      user = Oskol.Auth.find_or_create_user("own-set@oskol.test")
+
+      Repo.insert_all("decks", [
+        %{
+          id: "OWNSET01",
+          user_id: Ecto.UUID.dump!(user.id),
+          name: "Mine",
+          inserted_at: DateTime.utc_now(),
+          updated_at: DateTime.utc_now()
+        }
+      ])
+
+      own = a_new_puzzle("replay-own-set")
+      assert {:ok, id} = Puzzles.store_one(own, "analysis")
+      in_deck(id, "OWNSET01")
+      assert {:ok, ^id} = Puzzles.store_one(own, "replay", link(6))
+      assert Puzzles.replay_of(id) == link(6)
     end
 
     test "TRY ONE never draws a shared step, nor a row a share linked" do

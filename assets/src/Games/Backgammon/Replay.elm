@@ -412,6 +412,7 @@ type alias Review =
     { players : List Totals
     , turns : List TurnReview
     , levels : Maybe { moves : String, cube : String } -- the engine's search depth, "4ply"
+    , everyPlay : Bool -- the stored answer carries every legal play of each roll (what a share needs)
     }
 
 
@@ -609,7 +610,7 @@ statusOf s =
 
 reviewDecoder : Decoder Review
 reviewDecoder =
-    D.map3 Review
+    D.map4 Review
         (D.field "players" (D.list totalsDecoder))
         (D.field "turns" (D.list turnReviewDecoder))
         (D.oneOf
@@ -623,6 +624,10 @@ reviewDecoder =
             , D.succeed Nothing
             ]
         )
+        -- Beside the rendered report, from the stored answer itself
+        -- (`Oskol.Reviews.report/2`); a review that does not say is taken
+        -- at its word.
+        (D.oneOf [ D.field "every_play" D.bool, D.succeed True ])
 
 
 totalsDecoder : Decoder Totals

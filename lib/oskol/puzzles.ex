@@ -642,22 +642,50 @@ defmodule Oskol.Puzzles do
   end
 
   # Set once: the first share of a key writes it, and a row that has one
-  # (or is a set's own) is left exactly as it is.
+  # is left exactly as it is. Never on a position a universal set holds
+  # (`in_universal_set/0`): origin is only whoever wrote the key first, and a
+  # game's opening mistake the set build later took into Openings is drilled
+  # by everybody, none of whom came to it from that room. An own set is its
+  # owner's alone, so a position in one may carry its link.
   defp link_replay(_id, nil), do: :ok
 
   defp link_replay(id, replay) do
-    from(p in Puzzle, where: p.id == ^id and is_nil(p.replay) and p.origin != "set")
+    from(p in Puzzle,
+      as: :puzzle,
+      where:
+        p.id == ^id and is_nil(p.replay) and p.origin != "set" and
+          not exists(in_universal_set())
+    )
     |> Repo.update_all(set: [replay: replay, updated_at: DateTime.utc_now()])
 
     :ok
   end
 
+  # The `deck_puzzles` rows that put this puzzle in a universal set: every
+  # deck that is not somebody's own (`decks` holds only own sets).
+  defp in_universal_set do
+    from(m in "deck_puzzles",
+      where:
+        m.puzzle_id == parent_as(:puzzle).id and
+          m.deck not in subquery(from(d in "decks", select: d.id)),
+      select: 1
+    )
+  end
+
   @doc """
   The replay step a puzzle was shared from, `%{"slug", "id", "game",
-  "step"}`, or nil.
+  "step"}`, or nil. Nil too for a position a universal set holds, whatever
+  the row says: a link written before the set took the position in must not
+  reach the set's learners either.
   """
   def replay_of(id) when is_binary(id) do
-    Repo.one(from(p in Puzzle, where: p.id == ^id, select: p.replay))
+    Repo.one(
+      from(p in Puzzle,
+        as: :puzzle,
+        where: p.id == ^id and not exists(in_universal_set()),
+        select: p.replay
+      )
+    )
   end
 
   @doc """
