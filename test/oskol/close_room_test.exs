@@ -332,10 +332,16 @@ defmodule Oskol.CloseRoomTest do
 
       play_the_human_to_the_pause(game_id, human)
 
+      # Sage says READY for itself as soon as it sees the game end (its
+      # brain is another process, so a game Sage's own move ended reaches
+      # the pause a moment before it does), and then the pause is waiting
+      # on the person alone -- and it is still a pause: the card they read,
+      # READY beside END SESSION, is still up.
+      wait_until(fn ->
+        "ready" not in GameKit.legal_names(Game.get_server_state(game_id).instance, sage)
+      end)
+
       state = Game.get_server_state(game_id)
-      # Sage said READY for itself the moment the game ended, so the pause
-      # is waiting on the person alone -- and it is still a pause: the card
-      # they read, READY beside END SESSION, is still up.
       assert phase(game_id) == "between_games"
       assert "ready" in GameKit.legal_names(state.instance, human)
       assert "close" in GameKit.legal_names(state.instance, human)
