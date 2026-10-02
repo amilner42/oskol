@@ -266,15 +266,18 @@ viewBars config grid =
                 cells
                 |> Tuple.second
                 |> List.reverse
+
+        said =
+            sentence config grid
     in
     Svg.svg
         [ SvgAttr.viewBox "0 0 360 360"
         , SvgAttr.class "rl-bars quiet"
         , attribute "data-rolls" "bars"
         , attribute "role" "img"
-        , attribute "aria-label" (sentence config grid)
+        , attribute "aria-label" said
         ]
-        (Svg.title [] [ Svg.text (sentence config grid) ]
+        (Svg.title [] [ Svg.text said ]
             :: Svg.line
                 [ SvgAttr.x1 (num barPadX)
                 , SvgAttr.y1 (num barZeroY)
