@@ -887,12 +887,18 @@ defmodule Oskol.Puzzles do
   its commit would refresh no sources and the job would have read the old
   seat. Taking the room's row lock makes the second of the two wait for
   the first, and then see it.
+
+  `FOR NO KEY UPDATE`, not `FOR UPDATE`: inserting a source already holds
+  `FOR KEY SHARE` on its room (the foreign key), and a seat write already
+  holds `FOR NO KEY UPDATE` (its `UPDATE games`). `FOR UPDATE` conflicts
+  with the key share, so each would wait on the other: a deadlock. This
+  lock conflicts only with the seat write's, so one simply waits.
   """
   def refresh_owners([]), do: :ok
 
   def refresh_owners(game_ids) when is_list(game_ids) do
     Repo.query!(
-      "SELECT 1 FROM games WHERE id = ANY($1) ORDER BY id FOR UPDATE",
+      "SELECT 1 FROM games WHERE id = ANY($1) ORDER BY id FOR NO KEY UPDATE",
       [game_ids]
     )
 
