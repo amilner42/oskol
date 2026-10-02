@@ -3,8 +3,8 @@ module Ui.Decks exposing
     , endSignIn
     , hasWork
     , ladderLine
-    , learnedOf
-    , learnedRun
+    , masteredOf
+    , masteredRun
     , legendTop
     , restingLine
     , rowLeft
@@ -25,11 +25,11 @@ module Ui.Decks exposing
 {-| Every sentence the universal sets are said in: the openings and the
 replies to them, and whatever sets come after.
 
-The mistakes have their own words (`Ui.Mistakes`): a mistake is **fixed**
-and one you have stopped making is **patched**. A set is not made of
-anything you did wrong, so a position in one is **learned** -- the same
-rung on the same ladder, said as what it is. As with mistakes, nothing a
-player reads says card, deck or flashcard.
+A set is said in the mistakes' own words (`Ui.Mistakes`), because it is
+the same ladder: you **train** it, a position you have started is
+**learning**, one you have not is **to learn**, and one at the top is
+**mastered**. As with mistakes, nothing a player reads says card, deck or
+flashcard, nor "fix", "patched" or "learned".
 
 -}
 
@@ -44,20 +44,20 @@ hasWork standing =
     standing.due > 0 || standing.newLeft > 0
 
 
-{-| "11 left to learn · 4 learned" -- the left first, because that is
-what the player is working through; learned quieter beside it, and only
+{-| "11 left to master · 4 mastered" -- the left first, because that is
+what the player is working through; mastered quieter beside it, and only
 once there is some.
 -}
 standingLine : Standing -> String
 standingLine standing =
     if standing.left == 0 then
-        "All " ++ String.fromInt standing.total ++ " learned"
+        "All " ++ String.fromInt standing.total ++ " mastered"
 
     else if standing.patched == 0 then
-        String.fromInt standing.left ++ " left to learn"
+        String.fromInt standing.left ++ " left to master"
 
     else
-        String.fromInt standing.left ++ " left to learn · " ++ String.fromInt standing.patched ++ " learned"
+        String.fromInt standing.left ++ " left to master · " ++ String.fromInt standing.patched ++ " mastered"
 
 
 {-| A set that has been added and has nothing to do today.
@@ -68,12 +68,12 @@ restingLine =
 
 
 {-| What the button on a set says. An account that has added it
-practises it, one that has not starts it, and anybody else tries it.
+trains it, one that has not starts it, and anybody else tries it.
 -}
 startLabel : { signedIn : Bool, joined : Bool } -> String
 startLabel who =
     if who.joined then
-        "PRACTICE"
+        "TRAIN"
 
     else if who.signedIn then
         "START"
@@ -113,43 +113,43 @@ runSummary score =
         String.fromInt score.right ++ " of " ++ String.fromInt score.total ++ " right"
 
 
-{-| What a run took over the rung: "You learned 2 of them." Nothing when
-it took none.
+{-| What a run took over the rung: "You mastered 2 of them." Nothing
+when it took none.
 -}
-learnedRun : Int -> Maybe String
-learnedRun n =
+masteredRun : Int -> Maybe String
+masteredRun n =
     case n of
         0 ->
             Nothing
 
         1 ->
-            Just "You learned one of them."
+            Just "You mastered one of them."
 
         _ ->
-            Just ("You learned " ++ String.fromInt n ++ " of them.")
+            Just ("You mastered " ++ String.fromInt n ++ " of them.")
 
 
-{-| How much of the set is learned, under the celebration: "4 of 15
-learned." The whole of it, said plainly.
+{-| How much of the set is mastered, under the celebration: "4 of 15
+mastered." The whole of it, said plainly.
 -}
-learnedOf : { learned : Int, total : Int } -> String
-learnedOf counts =
-    String.fromInt (max 0 counts.learned) ++ " of " ++ String.fromInt (max 0 counts.total) ++ " learned."
+masteredOf : { mastered : Int, total : Int } -> String
+masteredOf counts =
+    String.fromInt (max 0 counts.mastered) ++ " of " ++ String.fromInt (max 0 counts.total) ++ " mastered."
 
 
 {-| What a run through a set did, under the celebration: the same line
-the mistakes say, in the set's word. "2 stepped up a level · 1 learned".
+the mistakes say. "2 stepped up a level · 1 mastered".
 -}
-stepsLine : { stepped : Int, learned : Int } -> String
+stepsLine : { stepped : Int, mastered : Int } -> String
 stepsLine counts =
-    Mistakes.stepsLineIn "learned" { stepped = counts.stepped, patched = counts.learned }
+    Mistakes.stepsLine { stepped = counts.stepped, patched = counts.mastered }
 
 
-{-| A set in its three states, as the grid is filled in: learned, in
-progress, still to start, and how many in all. Every part even at zero,
+{-| A set in its three states, as the grid is filled in: mastered,
+learning, still to learn, and how many in all. Every part even at zero,
 because the line is the grid's legend too.
 
-    "4 learned · 6 in progress · 5 to start · of 15"
+    "4 mastered · 6 learning · 5 to learn · of 15"
 
 -}
 stateLine : { total : Int, untouched : Int, inProgress : Int, patched : Int } -> String
@@ -157,17 +157,12 @@ stateLine counts =
     String.join " · " (List.map Tuple.second (stateParts counts))
 
 
-{-| The same line in its parts, each with the state it names
-("patched" -- the grid's word for the top rungs, said "learned" here --,
-"in-progress", "to-start", "total").
+{-| The same line in its parts, each with the state it names: the
+mistakes' own (`Ui.Mistakes.stateParts`).
 -}
 stateParts : { total : Int, untouched : Int, inProgress : Int, patched : Int } -> List ( String, String )
-stateParts counts =
-    [ ( "patched", String.fromInt (max 0 counts.patched) ++ " learned" )
-    , ( "in-progress", String.fromInt (max 0 counts.inProgress) ++ " in progress" )
-    , ( "to-start", String.fromInt (max 0 counts.untouched) ++ " to start" )
-    , ( "total", "of " ++ String.fromInt (max 0 counts.total) )
-    ]
+stateParts =
+    Mistakes.stateParts
 
 
 {-| A set's size, over its name: "15 POSITIONS".
@@ -240,12 +235,12 @@ tryLine =
     "Played in order, nothing kept. Sign in to keep your place."
 
 
-{-| A row's number for a set: what is left to learn of it.
+{-| A row's number for a set: what is left to master of it.
 -}
 rowLeft : Int -> String
 rowLeft n =
     if n <= 0 then
-        "All learned"
+        "All mastered"
 
     else
         String.fromInt n ++ " left"
@@ -263,16 +258,16 @@ endSignIn =
 -- A SET'S OWN PAGE
 
 
-{-| A position at the top of a set's ladder: learned, never patched.
+{-| A position at the top of a set's ladder: mastered, as a mistake's.
 -}
 legendTop : String
 legendTop =
-    "learned"
+    Mistakes.legendTop
 
 
 {-| A set's ladder in words.
 
-    "3 back at the start, 7 at level 1, 4 learned."
+    "3 back at the start, 7 at level 1, 4 mastered."
 
 -}
 ladderLine : { patchedLevel : Int, started : List Int } -> String

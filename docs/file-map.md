@@ -231,8 +231,8 @@ assets/src/Ui/Charts.elm         the home's and the practice pages' pictures: th
 assets/src/Ui/Mistakes.elm       every word practice is said in (pinned in MistakesTest)
 assets/src/Ui/Tiers.elm          the home's practice section: one deck in front of you:
                                  the worst tier the player has made a mistake in, by
-                                 the replay's own mark (?? ? ?!), "31 left to fix" with
-                                 "23 patched" quieter beside it, its bar and FIX ONE;
+                                 the replay's own mark (?? ? ?!), "31 left to master" with
+                                 "23 mastered" quieter beside it, its bar and TRAIN;
                                  the other tiers as quiet rows you may tap. A tier with
                                  nothing due and no new ones left today says so warmly
                                  and offers the next tier down instead; with no tier

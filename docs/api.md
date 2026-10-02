@@ -286,7 +286,7 @@ GET  /papi/practice[?band=<grade>][&all=1[&from=<n>]]
                                        account's only. `?band=` narrows the
                                        puzzles to that one tier, due first and
                                        then ones never seen, worst first
-                                       inside it: what FIX ONE runs; a guest's
+                                       inside it: what TRAIN runs; a guest's
                                        `?band=` narrows their mistakes the same
                                        way. A band that is not one of the three
                                        is a 422, never the whole deck. `all=1`

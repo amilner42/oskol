@@ -320,7 +320,7 @@ pub fn held_days(intervals: List(Int), level: Int) -> Int {
 /// **There is no target.** A day used to ask for ten and draw a ring
 /// round how much of them was done, which read as a quota and put a
 /// player off starting at all. Practice asks for one mistake at a time
-/// now, so the day says only what has happened: "3 fixed today". The
+/// now, so the day says only what has happened: "3 practised today". The
 /// streak is the days; this is today.
 pub type Today {
   Today(done: Int)

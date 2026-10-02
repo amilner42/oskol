@@ -23,9 +23,9 @@ card and four rows; this is where a deck's whole picture fits:
   - **the card at page size** (`Ui.Deck.card` with `OnPage`): the mark or
     the name, today's ring at 64px, the mastery grid as wide as the page
     with a square per position in the deck's own order, its legend ("to
-    start · level 1 · 2 · 3 · patched", "learned" for a set), the state
+    learn · level 1 · 2 · 3 · mastered", for a set as for a tier), the state
     line, and the one button with its line -- the practice home's own
-    state machine (FIX ONE / PRACTICE / KEEP GOING / PRACTICE ANYWAY /
+    state machine (TRAIN / KEEP GOING / PRACTICE ANYWAY /
     START / TRY);
   - **where they stand**: the ladder in words ("8 at level 1, 5 at level
     2, 3 at level 3.") and what is due ("12 due now · 3 new today", or

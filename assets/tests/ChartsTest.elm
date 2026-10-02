@@ -340,7 +340,7 @@ mastery =
                     { total = 61
                     , inProgress = 30
                     , patched = 23
-                    , sentence = "Very bad · 30 in progress · 23 patched · of 61"
+                    , sentence = "Very bad · 30 learning · 23 mastered · of 61"
                     }
                     |> Query.fromHtml
                     |> Expect.all
@@ -355,7 +355,7 @@ mastery =
                         -- bar itself is not read out a second time.
                         , Query.has [ attr "aria-hidden" "true" ]
                         , Query.find [ tag "title" ]
-                            >> Query.has [ text "Very bad · 30 in progress · 23 patched · of 61" ]
+                            >> Query.has [ text "Very bad · 30 learning · 23 mastered · of 61" ]
                         , Query.has
                             [ attr "data-total" "61"
                             , attr "data-in-progress" "30"
@@ -370,7 +370,7 @@ mastery =
                     { total = 111
                     , inProgress = 50
                     , patched = 0
-                    , sentence = "Very bad · 50 in progress · 0 patched · of 111"
+                    , sentence = "Very bad · 50 learning · 0 mastered · of 111"
                     }
                     |> Query.fromHtml
                     |> Expect.all
@@ -384,7 +384,7 @@ mastery =
                     { total = 12
                     , inProgress = 0
                     , patched = 0
-                    , sentence = "Bad · 0 in progress · 0 patched · of 12"
+                    , sentence = "Bad · 0 learning · 0 mastered · of 12"
                     }
                     |> Query.fromHtml
                     |> Expect.all
@@ -398,7 +398,7 @@ mastery =
                     { total = 12
                     , inProgress = 0
                     , patched = 12
-                    , sentence = "Bad · 0 in progress · 12 patched · of 12"
+                    , sentence = "Bad · 0 learning · 12 mastered · of 12"
                     }
                     |> Query.fromHtml
                     |> Expect.all
@@ -412,7 +412,7 @@ mastery =
                     { total = 0
                     , inProgress = 0
                     , patched = 0
-                    , sentence = "Dubious · 0 in progress · 0 patched · of 0"
+                    , sentence = "Dubious · 0 learning · 0 mastered · of 0"
                     }
                     |> Query.fromHtml
                     |> Expect.all
@@ -425,7 +425,7 @@ mastery =
                     { total = 10
                     , inProgress = 0
                     , patched = 40
-                    , sentence = "Bad · 0 in progress · 40 patched · of 10"
+                    , sentence = "Bad · 0 learning · 40 mastered · of 10"
                     }
                     |> Query.fromHtml
                     |> Query.find [ tag "rect", attr "data-part" "patched" ]
@@ -439,7 +439,7 @@ mastery =
                     { total = 10
                     , inProgress = 9
                     , patched = 8
-                    , sentence = "Bad · 9 in progress · 8 patched · of 10"
+                    , sentence = "Bad · 9 learning · 8 mastered · of 10"
                     }
                     |> Query.fromHtml
                     |> Expect.all

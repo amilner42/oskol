@@ -12,7 +12,7 @@
  *   01-card-<size>        the card settled (data-settled="true")
  *   02-reduced-<size>     the same moment with reduced motion: drawn at once
  *   03-keep-going-phone   KEEP GOING: the run goes on, the ring at 5/8
- *   04-set-<size>         a run through the openings: "N of 15 learned."
+ *   04-set-<size>         a run through the openings: "N of 15 mastered."
  *   05-all-missed-phone   a run of misses: "Every one of these is back on its way"
  *   frames/phone-NN-Tms   the phone's card as it plays, T ms in (about 75 ms apart)
  *   video/phone-run.webm  the phone's run, recorded
@@ -235,7 +235,7 @@ const ringOf = (page) => page.evaluate(() => { const r = document.querySelector(
       const steps = (await page.textContent('#pz-today-steps')).trim();
       must(steps === '2 stepped up a level', `${size.name}: what moved: "${steps}"`);
       must(await page.locator('#pz-today-grid .grid-step').count() === 2, `${size.name}: the two that stepped up step up on the grid`);
-      must(/^Patched so far: \d+\.\d PR won back\.$/.test((await page.textContent('#pz-today-tail')).trim()), `${size.name}: what patching has won back`);
+      must(/^Mastered so far: \d+\.\d PR won back\.$/.test((await page.textContent('#pz-today-tail')).trim()), `${size.name}: what mastering has won back`);
       must(await page.isVisible('#pz-keep-going') && await page.isVisible('#pz-done'), `${size.name}: KEEP GOING beside I'M DONE`);
       await noSideways(page, size.name);
       await page.mouse.move(0, 0);
@@ -295,7 +295,7 @@ const ringOf = (page) => page.evaluate(() => { const r = document.querySelector(
         await settled(page);
         must((await page.textContent('#pz-today-eyebrow')).trim() === 'OPENINGS', 'the set is named over the card');
         const tail = (await page.textContent('#pz-today-tail')).trim();
-        must(/^\d+ of 15 learned\.$/.test(tail), `a set says how much of it is learned: "${tail}"`);
+        must(/^\d+ of 15 mastered\.$/.test(tail), `a set says how much of it is mastered: "${tail}"`);
         await page.mouse.move(0, 0);
         await shot(page, { path: `${OUT}/04-set-${size.name}.png`, fullPage: size === PHONE });
         await context.close();

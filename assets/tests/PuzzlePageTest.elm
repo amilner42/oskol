@@ -813,8 +813,8 @@ schedule =
                 ]
                     |> Expect.equal
                         [ "Marked as known — back in a year"
-                        , "Patched. Four right in a row — back in 21 days"
-                        , "Patched. Four right in a row — back in 21 days"
+                        , "Mastered. Four right in a row — back in 21 days"
+                        , "Mastered. Four right in a row — back in 21 days"
                         ]
         , test "a guest: no level line at all" <|
             \_ ->
@@ -861,7 +861,7 @@ schedule =
                 rendered (withReveal "move_pass" (scheduleJson 3 4 True))
                     |> Expect.all
                         [ Query.find [ id "pz-level-line" ]
-                            >> Query.has [ text "Patched. Four right in a row" ]
+                            >> Query.has [ text "Mastered. Four right in a row" ]
                         , Query.find [ id "pz-level" ] >> Query.has [ class "is-patched" ]
                         ]
         , test "an answer that did not cross the rung keeps the level line" <|
@@ -2106,25 +2106,25 @@ deckLine =
     describe "what the run patched"
         [ test "the mistakes it crossed the rung on, counted by band, worst first" <|
             \_ ->
-                Page.patchedLine
+                Page.masteredLine
                     [ answer "very_bad" True
                     , answer "doubtful" True
                     , answer "bad" False
                     , answer "very_bad" True
                     , answer "bad" True
                     ]
-                    |> Expect.equal (Just "You patched 2 very bad moves, 1 bad move and 1 dubious move.")
+                    |> Expect.equal (Just "You mastered 2 very bad moves, 1 bad move and 1 dubious move.")
         , test "one band alone" <|
             \_ ->
-                Page.patchedLine [ answer "very_bad" True, answer "bad" False ]
-                    |> Expect.equal (Just "You patched 1 very bad move.")
+                Page.masteredLine [ answer "very_bad" True, answer "bad" False ]
+                    |> Expect.equal (Just "You mastered 1 very bad move.")
         , test "a run that patched nothing says nothing: the score has said it" <|
             \_ ->
-                Page.patchedLine [ answer "very_bad" False, answer "bad" False ]
+                Page.masteredLine [ answer "very_bad" False, answer "bad" False ]
                     |> Expect.equal Nothing
         , test "a guest's run keeps no schedules, so there is nothing to say" <|
             \_ ->
-                Page.patchedLine [ { verdict = Pass, schedule = Nothing, grade = "" } ]
+                Page.masteredLine [ { verdict = Pass, schedule = Nothing, grade = "" } ]
                     |> Expect.equal Nothing
         , test "the end card prints the line, and a run that patched nothing has none" <|
             \_ ->
@@ -2136,7 +2136,7 @@ deckLine =
                             |> Tuple.first
                             |> rendered
                             |> Query.find [ id "pz-patched" ]
-                            |> Query.has [ text "You patched 1 very bad move." ]
+                            |> Query.has [ text "You mastered 1 very bad move." ]
                     , \_ ->
                         ended Session.empty
                             |> (\m -> { m | ended = Nothing })

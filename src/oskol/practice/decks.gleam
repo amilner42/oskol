@@ -114,7 +114,7 @@ pub fn joined(standing: Standing) -> Bool {
   standing.total > 0
 }
 
-/// Everything not patched: what "left to learn" counts.
+/// Everything not patched: what "left to master" counts.
 pub fn left(standing: Standing) -> Int {
   int.max(standing.total - standing.patched, 0)
 }

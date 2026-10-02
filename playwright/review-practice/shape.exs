@@ -16,7 +16,7 @@
 #
 #   ladder     (default) the very bad moves have work today: some due, the
 #              day's three new ones still to come, two already answered.
-#              FIX ONE.
+#              TRAIN.
 #   keep_going today's set is done everywhere: nothing due, the day's new
 #              ones started and answered. The very bad moves lead with
 #              KEEP GOING.
@@ -26,7 +26,7 @@
 #              today's set is three away everywhere: the very bad moves have
 #              nothing due, two answered today and the day's three new ones
 #              still to come (5 in all); each set has three of its new ones
-#              left and nothing due. FIX ONE's run of three ends on the
+#              left and nothing due. TRAIN's run of three ends on the
 #              celebration (`review-celebration`).
 #
 # It replaces the account's mistakes and sets rather than adding to them,

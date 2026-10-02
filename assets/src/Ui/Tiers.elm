@@ -14,7 +14,7 @@ words are all `Ui.Mistakes`; the bar is `Ui.Charts.patched`.
 
 **Which tier is in front.** The worst tier the player has made a mistake
 in at all, unless they tapped another. If that tier still has work today
-the button is FIX ONE. If it has none -- nothing due, and the day's new
+the button is TRAIN. If it has none -- nothing due, and the day's new
 ones done -- the card says so warmly and offers the worst tier that does
 have work (the server's `lead`) as its own button. When no tier has any
 work, there is one warm line and nothing to press.
@@ -84,7 +84,7 @@ view : Config msg -> Html msg
 view config =
     case shown config of
         -- No mistakes of any tier. The page has its own words for a
-        -- player with nothing to fix yet.
+        -- player with nothing to master yet.
         Nothing ->
             Html.text ""
 
@@ -111,7 +111,7 @@ card config band =
         )
 
 
-{-| The head: the tier's name, and then either the number left to fix or
+{-| The head: the tier's name, and then either the number left to master or
 the sentence that says there is nothing to.
 -}
 headWords : Config msg -> Band -> List (Html msg)
@@ -119,8 +119,8 @@ headWords config band =
     if Mistakes.hasWork band then
         [ Html.p [ class "tier-name" ] [ Html.text (Mistakes.tierName band.grade) ]
         , Html.p [ id (config.prefix ++ "-tier-left"), class "tier-left" ]
-            [ Html.text (Mistakes.leftToFix band) ]
-        , case Mistakes.patchedAside band of
+            [ Html.text (Mistakes.leftToMaster band) ]
+        , case Mistakes.masteredAside band of
             Just aside ->
                 Html.p [ id (config.prefix ++ "-tier-patched"), class "tier-aside" ]
                     [ Html.text aside ]
@@ -159,7 +159,7 @@ bar band =
 
 {-| One button, or none.
 
-FIX ONE while this tier has work. When it has not, the worst tier that
+TRAIN while this tier has work. When it has not, the worst tier that
 does, by name -- and when no tier does, nothing at all: the warm line is
 the whole of it, and a button under it would take the moment back.
 -}
@@ -178,7 +178,7 @@ action config band =
                     "STARTING…"
 
                  else
-                    "FIX ONE"
+                    "TRAIN"
                 )
             ]
         ]

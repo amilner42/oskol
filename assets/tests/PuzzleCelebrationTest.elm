@@ -317,7 +317,7 @@ saying =
                     |> rendered
                     |> card
                     |> Query.find [ id "pz-today-steps" ]
-                    |> Query.has [ text "2 stepped up a level · 1 patched" ]
+                    |> Query.has [ text "2 stepped up a level · 1 mastered" ]
         , test "a run of misses: every one of them coming back, never 'nothing moved'" <|
             \_ ->
                 answered { session = account, deck = Nothing }
@@ -343,7 +343,7 @@ saying =
                     |> rendered
                     |> card
                     |> Query.find [ id "pz-today-tail" ]
-                    |> Query.has [ text "Patched so far: 0.6 PR won back." ]
+                    |> Query.has [ text "Mastered so far: 0.6 PR won back." ]
         , test "a tier nothing has been patched in says nothing there, and keeps the line's place" <|
             \_ ->
                 answered { session = account, deck = Nothing }
@@ -363,8 +363,8 @@ saying =
                     |> Expect.all
                         [ Query.find [ id "pz-today-title" ] >> Query.has [ text "Today's 5 done." ]
                         , Query.find [ id "pz-today-eyebrow" ] >> Query.has [ text "OPENINGS" ]
-                        , Query.find [ id "pz-today-steps" ] >> Query.has [ text "2 stepped up a level · 1 learned" ]
-                        , Query.find [ id "pz-today-tail" ] >> Query.has [ text "4 of 15 learned." ]
+                        , Query.find [ id "pz-today-steps" ] >> Query.has [ text "2 stepped up a level · 1 mastered" ]
+                        , Query.find [ id "pz-today-tail" ] >> Query.has [ text "4 of 15 mastered." ]
                         ]
         ]
 

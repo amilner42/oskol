@@ -136,7 +136,7 @@ fetch session toMsg =
     Api.get session "/papi/practice" practiceDecoder toMsg
 
 
-{-| FIX ONE: one tier's own queue, due before new and worst first inside
+{-| TRAIN: one tier's own queue, due before new and worst first inside
 the tier. The grade is one of the server's three; anything else is a 422
 rather than the whole deck.
 -}
