@@ -22,10 +22,14 @@ mix ecto.migrate >/dev/null
 mix assets.build >/dev/null
 KEEP_SETS=1 mix run -e 'Code.eval_file("playwright/review-analysis/setup.exs")' | tail -1
 
-# The stand-in serves until its input closes.
-tail -f /dev/null | mix run --no-start -e 'Code.eval_file("playwright/test-analysis/setup.exs")' &
+# The stand-in serves until its input closes: a fifo this script holds open
+# on fd 3, closed (and so the engine stopped) whenever this script ends.
+fifo="$(mktemp -u "${TMPDIR:-/tmp}/review-analysis-engine.XXXXXX")"
+mkfifo "$fifo"
+mix run --no-start -e 'Code.eval_file("playwright/test-analysis/setup.exs")' <"$fifo" &
 engine=$!
-trap 'kill $engine 2>/dev/null || true; lsof -ti "tcp:$ANALYSIS_STUB_PORT" | xargs kill 2>/dev/null || true' EXIT
+exec 3>"$fifo"
+trap 'exec 3>&-; kill $engine 2>/dev/null || true; rm -f "$fifo"' EXIT
 
 echo "http://localhost:$PORT/analysis  (the replay: /backgammon/821900/replay; sign in as analysis-review@oskol.test from /dev/mailbox)"
 mix phx.server
