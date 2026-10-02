@@ -276,7 +276,7 @@ assets/src/Games/Backgammon/Setup.elm   a position set up on the analysis board:
                                  puzzle as its page shows it (`fromQuestion`)
 assets/src/Games/Backgammon/Xgid.elm    eXtreme Gammon's position id in and out of a
                                  Setup, pinned by vectors (XgidTest); the field meanings,
-                                 checked against gnubg, are its module doc; the server
+                                 checked against gnubg, in docs/analysis.md; the server
                                  never reads one
 assets/src/Games/Backgammon/Words.elm   the engine's verdict in words and numbers, pure:
                                  the move's two sentences, the cube's from either side,

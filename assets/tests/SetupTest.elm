@@ -76,10 +76,12 @@ suite =
                 \_ -> Setup.check opening31 |> Expect.equal Nothing
             , test "the opening with no roll yet" <|
                 \_ -> Setup.check opening |> Expect.equal (Just "Pick a roll")
+            , test "not a board" <|
+                \_ -> Setup.check { opening31 | points = List.drop 1 opening31.points } |> Expect.equal (Just "A board has 24 points")
             , test "a point over fifteen" <|
                 \_ -> Setup.check { opening31 | points = 16 :: List.drop 1 opening31.points } |> Expect.equal (Just Setup.countMessage)
             , test "a bar below none" <|
-                \_ -> Setup.check { opening31 | blackBar = -1 } |> Expect.equal (Just Setup.countMessage)
+                \_ -> Setup.check { opening31 | blackBar = -1 } |> Expect.equal (Just "A point holds 0 to 15 checkers")
             , test "too many of a colour" <|
                 \_ ->
                     Setup.check { opening31 | whiteBar = 2 }
@@ -90,22 +92,34 @@ suite =
                         |> Expect.equal (Just "Put some Black checkers on the board")
             , test "an empty board asks for White first" <|
                 \_ -> Setup.check Setup.empty |> Expect.equal (Just "Put some White checkers on the board")
+            , test "a color missing while the other has all fifteen out is a board being set up" <|
+                \_ ->
+                    Setup.check { opening31 | points = List.map (min 0) opening31.points }
+                        |> Expect.equal (Just "Put some White checkers on the board")
+            , test "a color all borne off while the other has borne some off too is a finished race" <|
+                \_ ->
+                    Setup.check { opening31 | points = List.map (min 0) opening31.points |> List.map (\n -> if n == -2 then 0 else n) }
+                        |> Expect.equal (Just "The game is over in this position")
+            , test "and that comes after the roll: a finished race with no roll asks for the roll" <|
+                \_ ->
+                    Setup.check { opening | points = List.map (min 0) opening31.points |> List.map (\n -> if n == -2 then 0 else n) }
+                        |> Expect.equal (Just "Pick a roll")
             , test "a die outside 1..6" <|
                 \_ -> Setup.check { opening | ask = Move (Just ( 7, 1 )) } |> Expect.equal (Just Setup.dieMessage)
             , test "a cube that is not a power of two to 64" <|
                 \_ -> Setup.check { opening31 | cubeValue = 3, cubeOwner = Just White } |> Expect.equal (Just Setup.cubeValueMessage)
             , test "an owned cube on 1" <|
-                \_ -> Setup.check { opening31 | cubeOwner = Just White } |> Expect.equal (Just Setup.centeredMessage)
+                \_ -> Setup.check { opening31 | cubeOwner = Just White } |> Expect.equal (Just Setup.ownedAtOneMessage)
             , test "a centered cube on 2" <|
-                \_ -> Setup.check { opening31 | cubeValue = 2 } |> Expect.equal (Just Setup.ownerMessage)
+                \_ -> Setup.check { opening31 | cubeValue = 2 } |> Expect.equal (Just Setup.unownedMessage)
             , test "a match to 26" <|
-                \_ -> Setup.check { opening31 | match = Just { length = 26, white = 0, black = 0, crawford = False } } |> Expect.equal (Just Setup.matchLengthMessage)
+                \_ -> Setup.check { opening31 | match = Just { length = 26, white = 0, black = 0, crawford = False } } |> Expect.equal (Just Setup.lengthMessage)
             , test "a score that has already won" <|
                 \_ ->
                     Setup.check { opening31 | match = Just { length = 7, white = 7, black = 0, crawford = False } }
-                        |> Expect.equal (Just "In a match to 7 a score is 0 to 6")
+                        |> Expect.equal (Just "Each score is 0 to 6 in a match to 7")
             , test "Crawford with nobody one away" <|
-                \_ -> Setup.check { opening31 | match = Just { length = 7, white = 5, black = 3, crawford = True } } |> Expect.equal (Just Setup.crawfordAwayMessage)
+                \_ -> Setup.check { opening31 | match = Just { length = 7, white = 5, black = 3, crawford = True } } |> Expect.equal (Just Setup.crawfordMessage)
             , test "Crawford at 1-away against 7-away" <|
                 \_ -> Setup.check { opening31 | match = Just { length = 7, white = 0, black = 6, crawford = True } } |> Expect.equal Nothing
             , test "a double on the other side's cube" <|

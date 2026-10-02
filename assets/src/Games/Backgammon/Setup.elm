@@ -3,10 +3,9 @@ module Games.Backgammon.Setup exposing
     , opening, empty, flip, other
     , offWhite, offBlack, canDouble
     , check
-    , countMessage, tooManyMessage, nothingOnBoardMessage, pickARollMessage, dieMessage
-    , cubeValueMessage, centeredMessage, ownerMessage, matchLengthMessage, scoreMessage
-    , crawfordMoneyMessage, crawfordAwayMessage
-    , noDoubleOwnerMessage, noDoubleCrawfordMessage, noDoubleDeadMessage, gameOverMessage
+    , pointsMessage, countMessage, tooManyMessage, noneMessage, noRollMessage, dieMessage
+    , cubeValueMessage, ownedAtOneMessage, unownedMessage, lengthMessage, scoreMessage
+    , crawfordMessage, cubeOwnedMessage, crawfordDoubleMessage, deadCubeMessage, gameOverMessage
     , toJson, decoder
     , fromQuestion
     )
@@ -24,7 +23,8 @@ field, and the same JSON on the wire.
                 and for a double, the taker for a take
     ask         Move (Just (high, low)) a roll to play; Move Nothing no
                 roll picked yet (what `/analysis` opens on, and what
-                `check` answers "Pick a roll" to); Double the mover's cube
+                `check` answers "Pick a roll" to; the Gleam twin's `no_roll`,
+                0-0, and `dice: null` on the wire); Double the mover's cube
                 decision before the roll; Take the answer to a double the
                 other colour has just offered
     cubeValue, cubeOwner
@@ -206,16 +206,16 @@ doubleRefusal color setup =
                     )
     in
     if setup.cubeOwner == Just (other color) then
-        Just (noDoubleOwnerMessage (other color))
+        Just (cubeOwnedMessage (other color))
 
     else if Maybe.map .crawford setup.match == Just True then
-        Just noDoubleCrawfordMessage
+        Just crawfordDoubleMessage
 
     else
         case away of
             Just a ->
                 if setup.cubeValue >= a then
-                    Just (noDoubleDeadMessage color)
+                    Just (deadCubeMessage color)
 
                 else
                     Nothing
@@ -226,25 +226,42 @@ doubleRefusal color setup =
 
 
 -- CHECK
+--
+-- Word for word the refusals of `src/oskol/analysis/setup.gleam`, under the
+-- same names in camel case, so the line under the board is the sentence
+-- the server would answer with.
 
 
+{-| The wire sent something that is not a board. The editor never does.
+-}
+pointsMessage : String
+pointsMessage =
+    "A board has 24 points"
+
+
+{-| A point or a bar with a count outside 0..15.
+-}
 countMessage : String
 countMessage =
-    "A point or the bar holds 0 to 15 checkers"
+    "A point holds 0 to 15 checkers"
 
 
+{-| "White has 17 checkers; 15 is the most".
+-}
 tooManyMessage : Color -> Int -> String
 tooManyMessage color n =
     colorName color ++ " has " ++ String.fromInt n ++ " checkers; 15 is the most"
 
 
-nothingOnBoardMessage : Color -> String
-nothingOnBoardMessage color =
+{-| "Put some Black checkers on the board".
+-}
+noneMessage : Color -> String
+noneMessage color =
     "Put some " ++ colorName color ++ " checkers on the board"
 
 
-pickARollMessage : String
-pickARollMessage =
+noRollMessage : String
+noRollMessage =
     "Pick a roll"
 
 
@@ -258,51 +275,49 @@ cubeValueMessage =
     "The cube is 1, 2, 4, 8, 16, 32 or 64"
 
 
-centeredMessage : String
-centeredMessage =
-    "A cube on 1 sits in the center"
+ownedAtOneMessage : String
+ownedAtOneMessage =
+    "A cube at 1 sits in the center"
 
 
-ownerMessage : String
-ownerMessage =
-    "A cube above 1 belongs to the side that took it"
+unownedMessage : String
+unownedMessage =
+    "A cube above 1 belongs to somebody"
 
 
-matchLengthMessage : String
-matchLengthMessage =
-    "A match is to 1 to 25 points"
+lengthMessage : String
+lengthMessage =
+    "A match is 1 to 25 points"
 
 
+{-| "Each score is 0 to 6 in a match to 7".
+-}
 scoreMessage : Int -> String
 scoreMessage length =
-    "In a match to " ++ String.fromInt length ++ " a score is 0 to " ++ String.fromInt (length - 1)
+    "Each score is 0 to " ++ String.fromInt (length - 1) ++ " in a match to " ++ String.fromInt length
 
 
-{-| The Gleam check's word for a Crawford flag beside `match: null` on the
-wire. A `Setup` cannot say that, so `check` never returns it.
+crawfordMessage : String
+crawfordMessage =
+    "Crawford needs somebody one point away"
+
+
+{-| The doubler does not hold the cube: `owner` does.
 -}
-crawfordMoneyMessage : String
-crawfordMoneyMessage =
-    "Crawford is a match rule"
-
-
-crawfordAwayMessage : String
-crawfordAwayMessage =
-    "Crawford is only the game after a side reaches one away"
-
-
-noDoubleOwnerMessage : Color -> String
-noDoubleOwnerMessage owner =
+cubeOwnedMessage : Color -> String
+cubeOwnedMessage owner =
     "No double is possible here: the cube is " ++ colorName owner ++ "'s"
 
 
-noDoubleCrawfordMessage : String
-noDoubleCrawfordMessage =
+crawfordDoubleMessage : String
+crawfordDoubleMessage =
     "No double is possible here: this is the Crawford game"
 
 
-noDoubleDeadMessage : Color -> String
-noDoubleDeadMessage doubler =
+{-| The cube already covers what the doubler needs to win the match.
+-}
+deadCubeMessage : Color -> String
+deadCubeMessage doubler =
     "No double is possible here: the cube already covers what " ++ colorName doubler ++ " needs"
 
 
@@ -313,26 +328,28 @@ gameOverMessage =
 
 {-| The first thing that stops this position being asked, in the sentence
 the page shows under the board, or Nothing when it can be asked. The same
-order and the same words as the Gleam `setup.check`.
+order and the same words as the Gleam `setup.check`: the board's shape,
+the counts, too many of a color, a color with none on the board, the
+roll, the cube, the match, Crawford, a double or take the doubler could
+not have made, and a game that is over.
 
-Three of the Gleam check's refusals cannot arise from a `Setup` and are
-kept only as the shared words: a point holding both colors (a count is
-signed), Crawford in unlimited play (`crawfordMoneyMessage`: unlimited is
-`match = Nothing`, which carries no flag), and the game over (a side with
-all fifteen off has nothing on the board, which is refused first).
+A color with nothing on the board is "Put some ... checkers" while the
+other color has none borne off (a board being set up); when the other has
+borne some off too, it is a race somebody has finished, and that is
+`gameOverMessage`.
 
-A take is refused exactly where the doubler (the other colour) could not
-have doubled, in the same words a double ask gets: "the cube is White's"
-reads as well from the taker's side.
+The one refusal of the server's this cannot give is a roll that plays
+nothing ("That roll has no legal moves here", from `setup.turn`): that
+takes a move generator, which the client does not have.
 
 -}
 check : Setup -> Maybe String
 check setup =
     let
-        whiteTotal =
+        white =
             onBoard White setup
 
-        blackTotal =
+        black =
             onBoard Black setup
 
         when condition reason =
@@ -342,10 +359,16 @@ check setup =
             else
                 Nothing
 
+        inRange low high n =
+            n >= low && n <= high
+
         dice =
             case setup.ask of
+                Move Nothing ->
+                    Just noRollMessage
+
                 Move (Just ( a, b )) ->
-                    when (a < 1 || a > 6 || b < 1 || b > 6) dieMessage
+                    when (not (inRange 1 6 a && inRange 1 6 b)) dieMessage
 
                 _ ->
                     Nothing
@@ -354,14 +377,14 @@ check setup =
             setup.match
                 |> Maybe.andThen
                     (\m ->
-                        if m.length < 1 || m.length > 25 then
-                            Just matchLengthMessage
+                        if not (inRange 1 25 m.length) then
+                            Just lengthMessage
 
-                        else if m.white < 0 || m.white >= m.length || m.black < 0 || m.black >= m.length then
+                        else if not (inRange 0 (m.length - 1) m.white && inRange 0 (m.length - 1) m.black) then
                             Just (scoreMessage m.length)
 
                         else
-                            when (m.crawford && m.white /= m.length - 1 && m.black /= m.length - 1) crawfordAwayMessage
+                            when (m.crawford && m.white /= m.length - 1 && m.black /= m.length - 1) crawfordMessage
                     )
 
         cube =
@@ -374,23 +397,20 @@ check setup =
 
                 Move _ ->
                     Nothing
-
-        badCount n =
-            n < 0 || n > 15
     in
-    [ when (List.length setup.points /= 24 || List.any (\n -> badCount (abs n)) setup.points || badCount setup.whiteBar || badCount setup.blackBar) countMessage
-    , when (whiteTotal > 15) (tooManyMessage White whiteTotal)
-    , when (blackTotal > 15) (tooManyMessage Black blackTotal)
-    , when (whiteTotal == 0) (nothingOnBoardMessage White)
-    , when (blackTotal == 0) (nothingOnBoardMessage Black)
-    , when (setup.ask == Move Nothing) pickARollMessage
+    [ when (List.length setup.points /= 24) pointsMessage
+    , when (not (List.all (inRange -15 15) setup.points && inRange 0 15 setup.whiteBar && inRange 0 15 setup.blackBar)) countMessage
+    , when (white > 15) (tooManyMessage White white)
+    , when (black > 15) (tooManyMessage Black black)
+    , when (white == 0 && (black == 0 || black == 15)) (noneMessage White)
+    , when (black == 0 && (white == 0 || white == 15)) (noneMessage Black)
     , dice
     , when (not (List.member setup.cubeValue [ 1, 2, 4, 8, 16, 32, 64 ])) cubeValueMessage
-    , when (setup.cubeValue == 1 && setup.cubeOwner /= Nothing) centeredMessage
-    , when (setup.cubeValue > 1 && setup.cubeOwner == Nothing) ownerMessage
+    , when (setup.cubeValue == 1 && setup.cubeOwner /= Nothing) ownedAtOneMessage
+    , when (setup.cubeValue /= 1 && setup.cubeOwner == Nothing) unownedMessage
     , match
     , cube
-    , when (offWhite setup == 15 || offBlack setup == 15) gameOverMessage
+    , when (white == 0 || black == 0) gameOverMessage
     ]
         |> List.filterMap identity
         |> List.head

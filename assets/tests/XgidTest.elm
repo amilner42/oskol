@@ -170,7 +170,7 @@ suite =
                 \_ ->
                     Xgid.decode "XGID=-b----E-C---eE---c-e----B-:0:0:1:31:5:3:1:7:10"
                         |> Result.map Setup.check
-                        |> Expect.equal (Ok (Just Setup.crawfordAwayMessage))
+                        |> Expect.equal (Ok (Just Setup.crawfordMessage))
             ]
         , describe "refuses, in one sentence"
             ([ ( "the opening one character short", "XGID=-b----E-C---eE---c-e----B:0:0:1:31:0:0:1:0:10" )
