@@ -2730,7 +2730,17 @@ viewCubeReveal model puzzle cube =
     in
     [ Words.inWords words
     , cubeLine review
-    , cubeChances "White" review
+
+    -- The chances are the doubler's, named as the replay names them: White
+    -- is asked whether to double, and on a take White is the one doubled.
+    , cubeChances
+        (if puzzle.kind == "take" then
+            "Black"
+
+         else
+            "White"
+        )
+        review
     ]
 
 

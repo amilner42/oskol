@@ -763,6 +763,7 @@ cube =
                         , hasNot [ id "pz-scale" ]
                         , \q -> q |> Query.find [ class "rp-cube-eq", class "is-pick" ] |> Query.has [ text "Double, pass" ]
                         , \q -> q |> Query.find [ id "pz-reveal" ] |> Query.has [ text "White is winning here by enough that Black should pass." ]
+                        , \q -> q |> Query.find [ class "rp-cube-row" ] |> Query.find [ class "rp-cand-move" ] |> Query.has [ text "White" ]
                         ]
         , test "a take is answered from the taker's side" <|
             \_ ->
@@ -770,6 +771,9 @@ cube =
                     |> Expect.all
                         [ \q -> q |> Query.find [ id "pz-verdict" ] |> Query.has [ attribute (Html.Attributes.attribute "data-verdict" "pass") ]
                         , \q -> q |> Query.find [ id "pz-reveal" ] |> Query.has [ text "White is losing here by too much to take" ]
+
+                        -- the chances are the doubler's, and on a take that is Black
+                        , \q -> q |> Query.find [ class "rp-cube-row" ] |> Query.find [ class "rp-cand-move" ] |> Query.has [ text "Black" ]
                         ]
         ]
 
