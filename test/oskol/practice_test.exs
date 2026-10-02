@@ -27,7 +27,7 @@ defmodule Oskol.PracticeTest do
 
     {:practice_caps, put_user, put_items, cards, relapse, queue, start, start_new, review, amend,
      defer_until, defer_tomorrow, master, suspend, resume, summary, ladder, days, day, severity,
-     band_queue, cells, answered_today_by_band, start_new_in_band, intervals} =
+     band_queue, cells, answered_today_by_band, start_new_in_band, intervals, _place} =
       Practice.build()
 
     caps = %{

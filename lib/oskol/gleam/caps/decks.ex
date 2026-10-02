@@ -3,9 +3,13 @@ defmodule Oskol.Gleam.Caps.Decks do
   Real IO for src/oskol/caps/decks.gleam. Keep constructor tags and field
   order in lockstep:
 
-      DeckCaps(practice, members, size, store)
+      DeckCaps(practice, members, size, store, own, create, rename, delete,
+               add_member, remove_member)
       Member(puzzle_id, position, kind, question_json)
       Stored(puzzles, upgraded, members)
+      OwnDeck(id, user_id, name, new_per_day)
+      Refusal: NameTaken | IdTaken (the atoms name_taken, id_taken)
+      Added(added, position)
       NewPuzzle is caps/puzzles.gleam's, read as that cap reads it.
 
   `practice` hands back the practice caps over a retain scope
@@ -15,7 +19,38 @@ defmodule Oskol.Gleam.Caps.Decks do
 
   def build do
     {:deck_caps, &Oskol.Gleam.Caps.Practice.build/1, &members/1, &Oskol.Puzzles.deck_size/1,
-     &store/2}
+     &store/2, &own/1, &create/4, &rename/2, &delete/1, &add_member/2,
+     &Oskol.OwnDecks.remove_member/2}
+  end
+
+  defp own(user_id), do: Enum.map(Oskol.OwnDecks.own(user_id), &own_deck/1)
+
+  defp create(user_id, id, name, new_per_day) do
+    case Oskol.OwnDecks.create(user_id, id, name, new_per_day) do
+      {:ok, deck} -> {:ok, own_deck(deck)}
+      {:error, refusal} -> {:error, refusal}
+    end
+  end
+
+  defp rename(id, name) do
+    case Oskol.OwnDecks.rename(id, name) do
+      {:ok, deck} -> {:ok, own_deck(deck)}
+      {:error, refusal} -> {:error, refusal}
+    end
+  end
+
+  defp delete(id) do
+    :ok = Oskol.OwnDecks.delete(id)
+    nil
+  end
+
+  defp add_member(deck, puzzle_id) do
+    {added, position} = Oskol.OwnDecks.add_member(deck, puzzle_id)
+    {:added, added, position}
+  end
+
+  defp own_deck(%Oskol.OwnDecks.Deck{} = deck) do
+    {:own_deck, deck.id, deck.user_id, deck.name, deck.new_per_day}
   end
 
   defp members(deck) do

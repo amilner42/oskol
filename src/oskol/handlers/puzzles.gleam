@@ -513,7 +513,8 @@ pub type Attempted {
 }
 
 /// The same answer, counted against a named deck: "" is the player's own
-/// mistakes, anything else one of the universal decks (`practice/decks`),
+/// mistakes, anything else one of the universal decks or the caller's own
+/// sets (`practice/decks`),
 /// whose ladder then stands where the mistakes' does. Only the schedule
 /// moves elsewhere -- the grade, the reveal and the attempt row are the
 /// puzzle's, whichever deck it was reached from.
@@ -526,7 +527,7 @@ pub fn attempt_in_json(
   now_ms: Int,
   deck_id: String,
 ) -> Result(String, ApiError) {
-  use ctx <- result.try(in_deck(ctx, deck_id))
+  use ctx <- result.try(in_deck(ctx, session, deck_id))
   attempt_json(ctx, session, id, attempted, share, now_ms)
 }
 
@@ -540,19 +541,19 @@ pub fn outcome_in_json(
   outcome: String,
   deck_id: String,
 ) -> Result(String, ApiError) {
-  use ctx <- result.try(in_deck(ctx, deck_id))
+  use ctx <- result.try(in_deck(ctx, session, deck_id))
   outcome_json(ctx, session, id, key, outcome)
 }
 
-fn in_deck(ctx: Ctx, deck_id: String) -> Result(Ctx, ApiError) {
+/// A universal deck, or the caller's own set; anybody else's set is not
+/// found, exactly as an id that names nothing is.
+fn in_deck(ctx: Ctx, session: Session, deck_id: String) -> Result(Ctx, ApiError) {
   case deck_id {
     "" -> Ok(ctx)
     _ ->
-      decks.find(deck_id)
+      decks.find_for(ctx, session, deck_id)
       |> result.map(decks.in_deck(ctx, _))
-      |> result.replace_error(error.validation_failed(
-        decks.unknown_deck_message,
-      ))
+      |> result.replace_error(error.NotFound(decks.unknown_deck_message))
   }
 }
 

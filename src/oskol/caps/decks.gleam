@@ -11,6 +11,10 @@
 //// in a retain scope of its own (`practice`), so a deck's budget of new
 //// positions, its queue and its levels never touch any other deck's.
 ////
+//// A player's own sets (`OwnDeck`) are the same machinery with an owner:
+//// a `decks` row says who it belongs to and what it is called, and its
+//// positions are `deck_puzzles` rows under its id like any other deck's.
+////
 //// What a deck is called, how many new positions a day it introduces and
 //// what it is for are decisions, and live in `oskol/practice/decks`.
 
@@ -43,6 +47,27 @@ pub type Stored {
   )
 }
 
+/// A player's own set, as its row says (`decks`): never one of the
+/// registry's, whose ids are lowercase words where these are eight
+/// characters of the room-code alphabet.
+pub type OwnDeck {
+  OwnDeck(id: String, user_id: String, name: String, new_per_day: Int)
+}
+
+/// Why a write to an own set's row was refused by the row itself: the
+/// owner already has a live set of that name (any case), or the minted id
+/// is somebody's already.
+pub type Refusal {
+  NameTaken
+  IdTaken
+}
+
+/// What putting a position into a set did: whether the membership row is
+/// new, and where the position stands in the set either way.
+pub type Added {
+  Added(added: Bool, position: Int)
+}
+
 pub type DeckCaps {
   DeckCaps(
     /// The practice caps over this retain scope: the same ladder, queue and
@@ -58,6 +83,22 @@ pub type DeckCaps {
     /// puzzle at the position it is paired with, in one transaction. A
     /// member already there keeps its row and takes the new position.
     store: fn(String, List(#(NewPuzzle, Int))) -> Result(Stored, String),
+    /// An account's own sets that are not deleted, oldest first.
+    own: fn(String) -> List(OwnDeck),
+    /// Write a new own set: (user id, id, name, new per day). The name is
+    /// already trimmed and checked; the row's unique index is the last word
+    /// on a name taken by a request racing this one.
+    create: fn(String, String, String, Int) -> Result(OwnDeck, Refusal),
+    /// Rename a live own set: (id, name).
+    rename: fn(String, String) -> Result(OwnDeck, Refusal),
+    /// Soft-delete an own set: it leaves `own`, and its membership and its
+    /// ladder stay where they are.
+    delete: fn(String) -> Nil,
+    /// Put a puzzle into a set at the end (one past its highest position),
+    /// or leave it where it is if it is there already.
+    add_member: fn(String, String) -> Added,
+    /// Take a puzzle out of a set. True if a row went.
+    remove_member: fn(String, String) -> Bool,
   )
 }
 
@@ -67,5 +108,11 @@ pub fn stub() -> DeckCaps {
     members: fn(_) { panic as "stub decks.members" },
     size: fn(_) { panic as "stub decks.size" },
     store: fn(_, _) { panic as "stub decks.store" },
+    own: fn(_) { panic as "stub decks.own" },
+    create: fn(_, _, _, _) { panic as "stub decks.create" },
+    rename: fn(_, _) { panic as "stub decks.rename" },
+    delete: fn(_) { panic as "stub decks.delete" },
+    add_member: fn(_, _) { panic as "stub decks.add_member" },
+    remove_member: fn(_, _) { panic as "stub decks.remove_member" },
   )
 }
