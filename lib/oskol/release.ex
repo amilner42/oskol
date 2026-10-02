@@ -108,6 +108,33 @@ defmodule Oskol.Release do
   end
 
   @doc """
+  Give every mistake the owner its seat has, and fill the decks that were
+  missing them, from a release (`puzzles-stale-owner`):
+
+      bin/oskol eval 'Oskol.Release.refresh_owners(dry_run: true)'
+      bin/oskol eval 'Oskol.Release.refresh_owners(dry_run: false)'
+
+  One line per room and per account. A dry run reads and writes nothing; a
+  second run finds nothing. No engine is asked. A bare `eval` VM runs no
+  queue, so nothing races it.
+  """
+  def refresh_owners(opts \\ []) do
+    write? = Keyword.get(opts, :dry_run, true) == false
+    Application.load(@app)
+    # The deck is retain's, and retain reads a learner's day off tz.
+    {:ok, _} = Application.ensure_all_started(:retain)
+
+    {:ok, result, _} =
+      Ecto.Migrator.with_repo(Oskol.Repo, fn _repo ->
+        result = Oskol.Practice.refresh_owners(write?)
+        Enum.each(Oskol.Practice.describe_refresh(result, write?), &IO.puts/1)
+        result
+      end)
+
+    result
+  end
+
+  @doc """
   Build again the reviews that came back empty, from a release: the games
   whose row says `done` with nothing in it go back to pending and their
   rooms are queued.

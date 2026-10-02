@@ -307,8 +307,15 @@ exception crosses the cap boundary instead of being logged and lost.
 
 **What the queries are keyed on.** `puzzle_sources.owner_user_id` is the
 account whose seat made the mistake, written from `games.players[seat]` in
-the same transaction as the sources and again when a sign-in stamps that
-game's seats (`Oskol.Puzzles.refresh_owners/1`). It is an index key, never
+the same transaction as the sources and again in every write that can
+hand a seat to an account -- a sign-in stamping that game's seats, and a
+room writing its seat list (a join, a signed-in claim, a start:
+`Persistence.update_players/2`) -- with the room's row locked so neither
+side can commit past the other (`Oskol.Puzzles.refresh_owners/1`). A room
+left behind before that (`puzzles-stale-owner`: a signed-in claim used to
+skip it) is put right by `mix oskol.puzzles.refresh_owners`, which also
+syncs the decks it affects (dry run unless `--write`;
+`Oskol.Release.refresh_owners/1` the release twin). It is an index key, never
 an authority: `seat.holder` still decides, in Gleam, of every row handed
 back. Without it the sweep's question is a lateral join over every unsynced
 row every minute, and since a guest's mistakes are never synced that set
