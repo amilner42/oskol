@@ -92,13 +92,16 @@ arrive at any of them cold, and moving between them afterwards is a
   and the page is the plain one. Only the seat that made the mistake can
   mint one (`POST /papi/puzzles/:id/shares`), and it names the sharer
   only, never the opponent.
-- `/analysis` the analysis board:
-  `/analysis?xgid=<id>` opens a position id (`Xgid.decode`; `href` writes
-  it with its `=` and `:` percent-encoded, and a hand-typed one with them
-  bare reads the same), `/analysis?p=<puzzle id>` a puzzle as its page
-  shows it. A client route (`Route.Analysis`) until the page lands with
-  analysis-page-editor; until then the client draws its not-found page and
-  the server, which reads `/analysis` as a game slug, answers 404.
+- `/analysis` the analysis board (`SpaController.analysis`, declared
+  before `/:slug` so "analysis" is a reserved word): a position set up by
+  tapping, asked of the engine on a press (`docs/analysis.md`). Open to
+  anyone, indexable and in the sitemap; the head is "Analysis", "Set up any
+  backgammon position and ask the engine what it would play.", canonical
+  `/analysis`, the same for every position. `/analysis?xgid=<id>` opens a
+  position id (`Xgid.decode`; `href` writes it with its `=` and `:`
+  percent-encoded, and a hand-typed one with them bare reads the same),
+  `/analysis?p=<puzzle id>` a puzzle as its page shows it (the client
+  reads `GET /papi/puzzles/:id`; no engine time). Neither changes the head.
 - `/login/<token>` the page a mailed sign-in link opens. It **reads** the
   token and writes nothing: the page says "Sign in as you@example.com" with
   one button, and that button POSTs `/papi/auth/link`, which is the only

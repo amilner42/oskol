@@ -131,6 +131,12 @@ defmodule OskolWeb.Router do
     get "/puzzles", SpaController, :puzzles
     get "/puzzles/:id", SpaController, :puzzle
 
+    # The analysis board: set up any position and ask the engine about it.
+    # Open to anyone and indexable; declared before "/:slug" so "analysis"
+    # is a reserved word like "puzzles". `?xgid=` and `?p=` are read by the
+    # client and change nothing in the head.
+    get "/analysis", SpaController, :analysis
+
     # A deck's own page: /practice/very-bad, /practice/openings... Declared
     # before "/:slug" so "practice" is a reserved word like "puzzles". A
     # bare "/practice" names no game, so it is a 404 like "/login".

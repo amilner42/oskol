@@ -10,6 +10,7 @@ Three routes, and they are the server's three routes:
     /login/:token  Page.Login — what a mailed sign-in link opens
     /puzzles     Page.Puzzles — the practice home
     /puzzles/:id   Page.Puzzle — one position and its question
+    /analysis    Page.Analysis — the analysis board (?xgid=, ?p=)
     /:slug/:id   Page.Play — the game, unchanged
     /:slug/:id/replay   Page.Replay — a game played again, with its analysis
 
@@ -51,6 +52,7 @@ import Page.GameLanding
 import Page.Home
 import Page.Login
 import Page.Play
+import Page.Analysis
 import Page.Puzzle
 import Page.Practice
 import Page.Puzzles
@@ -138,6 +140,7 @@ type Page
     | Puzzle Page.Puzzle.Model
     | Puzzles Page.Puzzles.Model
     | Practice Page.Practice.Model
+    | Analysis Page.Analysis.Model
 
 
 type Msg
@@ -151,6 +154,7 @@ type Msg
     | PuzzleMsg Page.Puzzle.Msg
     | PuzzlesMsg Page.Puzzles.Msg
     | PracticeMsg Page.Practice.Msg
+    | AnalysisMsg Page.Analysis.Msg
     | OpenedJoin
     | ClosedJoin
     | JoinCodeInput String
@@ -283,6 +287,9 @@ withSession session model =
 
                 Practice pageModel ->
                     Practice (Page.Practice.withSession session pageModel)
+
+                Analysis pageModel ->
+                    Analysis (Page.Analysis.withSession session pageModel)
 
                 Replay pageModel ->
                     Replay (Page.Replay.withSession session pageModel)
@@ -423,10 +430,11 @@ openRoute url oldModel =
                 }
                 |> wrap model Play PlayMsg
 
-        -- The analysis board's page lands with the editor
-        -- (analysis-page-editor); until then the route resolves to nothing.
-        Just (Route.Analysis _ _) ->
-            ( { model | page = NotFound }, Cmd.none )
+        -- The analysis board: the opening position, or the position an
+        -- XGID or a puzzle id in the URL names.
+        Just (Route.Analysis xgid puzzleId) ->
+            Page.Analysis.init model.session { xgid = xgid, puzzle = puzzleId }
+                |> wrap model Analysis AnalysisMsg
 
         Just Route.Puzzles ->
             Page.Puzzles.init model.session { tz = model.tz }
@@ -1011,6 +1019,10 @@ update msg model =
                 Page.Puzzles.SignedIn user ->
                     signedIn user withPage |> Tuple.mapSecond more
 
+        ( AnalysisMsg pageMsg, Analysis pageModel ) ->
+            Page.Analysis.update pageMsg pageModel
+                |> wrap model Analysis AnalysisMsg
+
         -- A deck's own page: its runs come back to it.
         ( PracticeMsg pageMsg, Practice pageModel ) ->
             let
@@ -1341,6 +1353,9 @@ page model =
             Puzzle pageModel ->
                 underBar model (Html.map PuzzleMsg (Page.Puzzle.view pageModel))
 
+            Analysis pageModel ->
+                underBar model (Html.map AnalysisMsg (Page.Analysis.view pageModel))
+
             Puzzles pageModel ->
                 framed model [ Html.map PuzzlesMsg (Page.Puzzles.view pageModel) ]
 
@@ -1431,6 +1446,9 @@ title model =
 
         Practice pageModel ->
             Page.Practice.title pageModel
+
+        Analysis pageModel ->
+            Page.Analysis.title pageModel
 
         Home pageModel ->
             Page.Home.title pageModel

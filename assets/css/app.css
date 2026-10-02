@@ -1666,6 +1666,14 @@ a.bg-match-door:hover { background: var(--paper-2); }
 .rp-page.pz-page { height: auto; min-height: var(--page-h); overflow: visible; }
 /* A puzzle is one position, not a match: the bars' score chips say nothing. */
 .pz-page .score-chip { display: none; }
+
+/* The analysis board (`Page/Analysis.elm`): the replay's page and board
+   (`.rp-*`, `.bg-still`), the puzzle page's size upright. `:where` keeps
+   this under the sideways and desktop rules below, as the puzzle's is. */
+:where(.an-page) .bg-still { --bg-point-h: 9rem; }
+.rp-page.an-page { height: auto; min-height: var(--page-h); overflow: visible; }
+/* The scores are the strip's: the bars' chips would say them twice. */
+.an-page .score-chip { display: none; }
 /* Where this session is, over the question (`Page.Puzzle.viewProgress`).
    One row that is 28px tall at every width and never wraps: the deck's
    mark or name, today's ring for that deck with "3/5" beside it, then a
@@ -3352,4 +3360,162 @@ oskol-demo-board {
   .lh-roll { width: 100%; max-width: 300px; height: 54px; }
   /* no room above the sentence: a menu is the bottom sheet, as on a phone */
   .lh-pick-menu { position: fixed; left: auto; right: 12px; bottom: 12px; width: min(340px, calc(100vw - 24px)); transform: none; min-width: 0; max-height: calc(100svh - 24px); overflow-y: auto; }
+}
+
+/* ---------- The analysis board (`Page/Analysis.elm`) ----------
+   Upright: the brushes, the board, then the strip, the quick starts and
+   the position id, the line and ANALYZE, then the answer's place. Sideways
+   the board takes the screen's height and the rest is the column beside
+   it; on a desktop the brushes sit over the board and the column beside
+   both. Every control has a fixed size, so nothing moves when one changes:
+   the strip is two rows at every width, its labels and buttons never
+   change width with what they say, and the line under it is two lines
+   tall whether or not it says anything. */
+.an-board .edit-zone { cursor: pointer; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+@media (hover: hover) and (pointer: fine) {
+  .an-board .bg-point.edit-zone:hover, .an-board .bg-bar-row.edit-zone:hover { box-shadow: inset 0 0 0 2px rgba(255, 210, 63, 0.75); }
+}
+.an-brushes { flex: none; display: flex; align-items: center; gap: 6px; height: 34px; min-width: 0; }
+.an-brush {
+  flex: none; width: 42px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--ink); border-radius: 7px; background: #fff; color: var(--ink); cursor: pointer;
+  transition: background 0.12s;
+}
+.an-brush:hover:not(.is-on) { background: var(--paper-2); }
+.an-brush.is-on { background: var(--ink); color: #fff; }
+.an-chip { display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--ink); flex: none; }
+.an-chip.white { background: #f6f1e4; }
+.an-chip.black { background: #2b2c40; }
+.is-on > .an-chip { border-color: #fff; }
+.an-x { font-size: 15px; line-height: 1; font-weight: 700; }
+.an-hint { flex: 1; min-width: 0; font-size: 12px; color: var(--pencil); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.an-hint-mouse { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .an-hint-mouse { display: block; }
+  .an-hint-touch { display: none; }
+}
+
+.an-side { gap: 10px; }
+.an-strip { flex: none; display: flex; flex-direction: column; gap: 8px; }
+.an-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
+.an-group { display: flex; flex-direction: column; gap: 4px; flex: none; }
+.an-label { font-size: 6px; line-height: 7px; height: 7px; color: var(--pencil); letter-spacing: 0.04em; white-space: nowrap; }
+.an-controls { display: flex; gap: 4px; height: 30px; }
+.an-segs, .an-stepper {
+  display: flex; height: 30px; border: 1.5px solid var(--ink); border-radius: 7px; overflow: hidden; background: #fff; flex: none;
+}
+.an-seg, .an-step {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; height: 100%; padding: 0;
+  border: 0; background: #fff; color: var(--ink); cursor: pointer; white-space: nowrap;
+  font-family: "Press Start 2P", monospace; font-size: 7px; line-height: 1;
+  transition: background 0.12s, color 0.12s;
+}
+.an-seg + .an-seg, .an-stepper > * + * { border-left: 1.5px solid var(--ink); }
+.an-seg:hover:not(:disabled):not(.is-on), .an-step:hover:not(:disabled) { background: var(--paper-2); }
+.an-seg.is-on { background: var(--ink); color: #fff; }
+.an-seg:disabled, .an-step:disabled { color: #a9a9b2; cursor: default; }
+.an-step { width: 20px; font-family: inherit; font-size: 15px; font-weight: 700; }
+#an-turn-white, #an-turn-black { width: 30px; }
+#an-dice { width: 46px; }
+#an-ask-double { width: 57px; }
+#an-ask-take { width: 43px; }
+#an-cube { width: 30px; font-size: 8px; }
+#an-cube-owner { width: 50px; }
+#an-game { width: 85px; }
+#an-crawford { width: 34px; }
+.an-score-value {
+  display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 100%; font-size: 8px;
+}
+.an-score-value.white { background: #f6f1e4; color: var(--ink); }
+.an-score-value.black { background: #2b2c40; color: #fff; }
+.an-dice { display: inline-flex; gap: 3px; }
+.an-die {
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 1px;
+  width: 15px; height: 15px; padding: 2px; border: 1.2px solid var(--ink); border-radius: 3px; background: #fff; flex: none;
+}
+.an-pip.on { background: var(--ink); border-radius: 50%; }
+.an-die.blank { display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.an-die-q { font-size: 7px; color: var(--pencil); }
+
+.an-quicks { flex: none; display: flex; flex-direction: column; gap: 8px; }
+.an-quick-row, .an-xgid-row { display: flex; gap: 8px; align-items: center; }
+.an-quick { height: 30px; padding: 0 8px; font-size: 7px; border-radius: 7px; box-shadow: 2px 2px 0 0 var(--ink); white-space: nowrap; }
+.an-quick-row .an-quick { flex: 1 1 0; }
+.an-xgid-row .an-quick { flex: none; width: 64px; }
+.an-xgid {
+  flex: 1; min-width: 0; height: 30px; padding: 0 7px; border-radius: 6px;
+  font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); background: var(--paper-2);
+}
+.an-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.an-check {
+  flex: none; height: 2.7em; margin: 0; overflow: hidden;
+  font-size: 13px; line-height: 1.35; font-weight: 600; color: var(--ink);
+}
+.an-analyze { flex: none; width: 100%; height: 44px; font-size: 11px; letter-spacing: 0.06em; border-radius: 10px; }
+.an-panel { flex: none; }
+.an-import-error { margin: 0; height: 1.3em; font-size: 13px; font-weight: 600; color: var(--red); }
+
+/* The 21 rolls: a sheet from the bottom on a phone, a card in the middle
+   on anything wider; it floats over the page, so opening it moves
+   nothing. One row per high die, its double at the end. */
+.an-sheet-layer { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; }
+.an-sheet-dim { position: fixed; inset: 0; background: rgba(20, 22, 38, 0.55); }
+.an-sheet {
+  position: relative; width: 100%; max-width: 24rem; border-radius: 16px 16px 0 0;
+  padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
+}
+.an-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.an-rolls { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-template-rows: repeat(6, 34px); gap: 5px; }
+.an-roll {
+  display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+  border: 1.5px solid var(--ink); border-radius: 7px; background: #fff; cursor: pointer;
+}
+.an-roll:hover { background: var(--paper-2); }
+.an-roll.is-on { background: var(--highlighter); }
+@media (min-width: 640px), (orientation: landscape) and (max-height: 600px) {
+  .an-sheet-layer { align-items: center; }
+  .an-sheet { border-radius: 16px; padding-bottom: 14px; }
+}
+@media (orientation: landscape) and (max-height: 600px) {
+  .an-rolls { grid-template-rows: repeat(6, 30px); gap: 4px; }
+}
+
+/* A sixteenth checker refused: that colour's tray flashes once where it
+   is. The class alternates with every refusal so the flash starts again. */
+.an-flash-white-0 .player-bar.is-me .bg-tray, .an-flash-black-0 .player-bar:not(.is-me) .bg-tray { animation: an-flash-0 0.7s ease-out; }
+.an-flash-white-1 .player-bar.is-me .bg-tray, .an-flash-black-1 .player-bar:not(.is-me) .bg-tray { animation: an-flash-1 0.7s ease-out; }
+@keyframes an-flash-0 { 0%, 45% { background: rgba(255, 210, 63, 0.85); box-shadow: 0 0 0 3px #ffd23f; } 100% { background: transparent; box-shadow: 0 0 0 3px transparent; } }
+@keyframes an-flash-1 { 0%, 45% { background: rgba(255, 210, 63, 0.85); box-shadow: 0 0 0 3px #ffd23f; } 100% { background: transparent; box-shadow: 0 0 0 3px transparent; } }
+
+/* A narrow phone: the same two rows, a size down. */
+@media (max-width: 359px) {
+  .an-seg { font-size: 6px; }
+  .an-step { width: 18px; }
+  #an-turn-white, #an-turn-black { width: 26px; }
+  #an-dice { width: 42px; }
+  #an-ask-double { width: 48px; }
+  #an-ask-take { width: 37px; }
+  #an-cube { width: 28px; }
+  #an-cube-owner { width: 43px; }
+  #an-game { width: 72px; }
+  #an-crawford { width: 30px; }
+  .an-score-value { width: 18px; }
+  .an-row { gap: 4px; }
+  .an-hint { font-size: 11px; }
+}
+
+/* Sideways: the board down the left at the screen's height, everything
+   else the column beside it, the brushes at its top. */
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
+  .rp-page.an-page { height: auto; min-height: var(--page-h); overflow: visible; grid-template-rows: auto auto 1fr; }
+  .an-page .an-brushes { grid-column: 2; grid-row: 2; }
+  .an-page .rp-board, .an-page .rp-side { align-self: start; }
+}
+
+/* A desktop: the brushes over the board, the column beside both. */
+@media (min-width: 1024px) {
+  .an-page .rp-main { grid-template-rows: auto auto; row-gap: 8px; }
+  .an-page .an-brushes { grid-column: 1; grid-row: 1; }
+  .an-page .rp-board { grid-column: 1; grid-row: 2; }
+  .an-page .rp-side { grid-column: 2; grid-row: 1 / span 2; }
 }

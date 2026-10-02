@@ -81,6 +81,14 @@ the three schedule shapes).
   calling an answer close, what each of the four choices would do, the
   early and KNEW IT lines, the cost lines, and the hub's and a deck page's
   words, and that none of them says "fix", "patched" or "learned".
+- `AnalysisPageTest`: the analysis board's editor: a tap adds the brush's
+  colour and paints over the other one, a right click and a long press are
+  the other brush (once, whichever comes first; a slide is a scroll), the
+  x, the bar's halves, the sixteenth refused with its tray's flash, OPENING
+  / CLEAR / FLIP, the XGID field following every change, IMPORT and its
+  refusal, `?xgid=` and `?p=` on every `PuzzleApiFixtures` question, a gone
+  puzzle, the check line's sentences and ANALYZE, CRAWFORD only one away,
+  the cube's owner at 1, the match's bounds.
 - `PuzzlePageTest`: the page on the generated fixtures: the reveal decodes
   (a fifth verdict word fails it), a tap walks and UNDO walks back, a lazy
   node is fetched and merged, PLAY posts exactly the path with the key (and
@@ -223,6 +231,17 @@ node playwright/test-puzzle/test.js             # a puzzle from a link: setup.ex
 node playwright/review-puzzle/test.js           # screenshots of the puzzle page: question, staged,
                                                # reveal, a candidate, the cube scale (phone, small,
                                                # landscape, desktop)
+node playwright/test-analysis/test.js           # the analysis board (part 1, setting up): ☰ Analysis;
+                                               # a desktop by left and right clicks, the x, the bar,
+                                               # the sixteenth's flash, ROLL, the cube, DOUBLE? and
+                                               # TAKE?, a match and Crawford, FLIP, IMPORT, COPY; a
+                                               # phone by taps and long presses (CDP touch); every
+                                               # point hit where it is drawn at 320x568 and 844x390;
+                                               # ?xgid= and a gone ?p=. The board, the strip, each
+                                               # control, the line and ANALYZE keep their boxes
+                                               # throughout. Screenshots: screenshots/analysis-*.png.
+                                               # `playwright/test-analysis/run.sh` serves its own
+                                               # port and database around it.
 node playwright/test-puzzles-hub/test.js        # the practice home and a run: setup.exs's game, the
                                                # first seat trimmed to 12 mistakes; a stranger's TRY
                                                # ONE, a guest's run to the score and the sign-in ask,

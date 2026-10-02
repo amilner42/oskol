@@ -128,6 +128,26 @@ defmodule OskolWeb.SpaController do
   end
 
   @doc """
+  The analysis board (`/analysis`): a position set up by tapping, asked of
+  the engine on a press. The same head for everyone, whatever position the
+  URL carries (`?xgid=`, `?p=`): the page is the board, not the position.
+  """
+  def analysis(conn, _params) do
+    conn
+    |> assign(:page_title, analysis_title())
+    |> assign(:meta_description, analysis_description())
+    |> assign(:canonical, url(~p"/analysis"))
+    |> assign(:og_title, analysis_title())
+    |> assign(:og_description, analysis_description())
+    |> render_spa()
+  end
+
+  def analysis_title, do: "Analysis"
+
+  def analysis_description,
+    do: "Set up any backgammon position and ask the engine what it would play."
+
+  @doc """
   A deck's page (`/practice/:slug`): one of the three tiers of a player's
   mistakes, or one of the universal sets. `oskol/handlers/practice.deck_head`
   writes the title and description and says whether the page may be

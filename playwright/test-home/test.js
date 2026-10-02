@@ -102,7 +102,7 @@ async function run(browser, errors, fixture) {
     const name = (await a.page.textContent('#nav-menu #nav-who')).trim();
     if (!name.includes(fixture.username)) throw new Error(`☰ should name the account: "${name}"`);
     if (name.includes('@')) throw new Error(`☰ must never show the email: "${name}"`);
-    for (const item of ['#home-play', '#nav-puzzles', '#nav-join-game', '#nav-logout']) {
+    for (const item of ['#home-play', '#nav-puzzles', '#nav-analysis', '#nav-join-game', '#nav-logout']) {
       if (!(await a.page.$(`#nav-menu ${item}`))) throw new Error(`☰ is missing ${item}`);
     }
     await a.page.keyboard.press('Escape');

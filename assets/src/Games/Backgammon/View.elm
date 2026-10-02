@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), PlayBoard, PlayOut(..), Presence(..), Roll, Save(..), Side, Snapshot, Step, StillBoard, TapContext, Turn, autoRoll, defaultTheme, init, noteEvents, presenceFlashMs, presenceOf, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewPlay, viewStill)
+module Games.Backgammon.View exposing (Ctx, EditBoard, EditEvent(..), Model, Move, Msg(..), Out(..), PlayBoard, PlayOut(..), Presence(..), Roll, Save(..), Side, Snapshot, Step, StillBoard, TapContext, Turn, autoRoll, defaultTheme, init, noteEvents, presenceFlashMs, presenceOf, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewEdit, viewPlay, viewStill)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -39,7 +39,7 @@ so the board never invents legality.
 import Dict
 import Html exposing (Html, button, div, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, style, title)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onClick, preventDefaultOn)
 import Html.Keyed as Keyed
 import Json.Decode as D
 import Json.Encode as E
@@ -96,6 +96,7 @@ type Msg
     | ClosedSave -- the between-games sign-in sheet's close
     | SaveMsg Ui.SignIn.Msg
     | PracticeGame Int -- a result card's PRACTICE THIS GAME'S N MISTAKES, by game number
+    | Edit String EditEvent -- a pointer on one of an editor board's places (`viewEdit`)
     | Ignore
 
 
@@ -285,6 +286,9 @@ update msg model =
 
         ViewLive ->
             ( { model | viewing = Nothing, stale = False }, NoOut )
+
+        Edit _ _ ->
+            ( model, NoOut )
 
         Ignore ->
             ( model, NoOut )
@@ -665,6 +669,7 @@ view arrived =
             , myColor = myColor
             , sources = sources
             , resolve = resolveTap tap
+            , zone = \_ -> []
             , landed = lastLanded live
             }
     in
@@ -1262,6 +1267,11 @@ type alias Board =
     -- against the server's legal moves; a still board answers nothing; a
     -- puzzle board answers only the taps its tree can honour (`viewPlay`).
     , resolve : String -> Maybe Msg
+
+    -- What a place on the board carries beyond its drawing: an editor
+    -- board's id and pointer listeners (`viewEdit`), nothing elsewhere.
+    -- "point:N", or "bar:<player id>" for a half of the bar.
+    , zone : String -> List (Html.Attribute Msg)
     , landed : Landed -- where the last turn landed checkers, and whose they are
     }
 
@@ -1385,6 +1395,7 @@ viewPoint board isTop index point =
                     []
                )
             ++ click
+            ++ board.zone ("point:" ++ id)
         )
         (viewStackTinted board.landed.color (Dict.get point board.landed.points |> Maybe.withDefault 0) tokens)
 
@@ -1528,13 +1539,13 @@ viewBarColumn board themId =
                )
             ++ click
         )
-        [ div [ class "bg-bar-row theirs flex flex-col items-center justify-between gap-px w-full py-1" ]
+        [ div (class "bg-bar-row theirs flex flex-col items-center justify-between gap-px w-full py-1" :: board.zone ("bar:" ++ themId))
             [ div [ class "flex flex-col items-center gap-px w-full" ] (viewStack theirTokens)
             , viewCube board Theirs
             ]
         , div [ class "bg-bar-row centre flex items-center justify-center w-full" ]
             [ viewCube board Centred ]
-        , div [ class "bg-bar-row mine flex flex-col-reverse items-center justify-between gap-px w-full py-1" ]
+        , div (class "bg-bar-row mine flex flex-col-reverse items-center justify-between gap-px w-full py-1" :: board.zone ("bar:" ++ seat))
             [ div [ class "flex flex-col-reverse items-center gap-px w-full" ]
                 (viewStack myTokens)
             , viewCube board Mine
@@ -2968,6 +2979,7 @@ type alias Taps =
     , spent : Maybe (List Int) -- the dice still to play; Nothing leaves every die standing
     , swaps : Int -- taps on the dice: which one plays next
     , honours : Msg -> Bool -- a tap the caller can actually carry out
+    , zone : String -> List (Html.Attribute Msg) -- an editor board's places (`viewEdit`)
     }
 
 
@@ -2979,6 +2991,7 @@ stillOnly =
     , spent = Nothing
     , swaps = 0
     , honours = \_ -> False
+    , zone = \_ -> []
     }
 
 
@@ -3125,6 +3138,7 @@ slab s taps =
                                 else
                                     Nothing
                             )
+            , zone = taps.zone
             , landed =
                 { color = moverColour
                 , points = List.foldl (\p acc -> Dict.update p (\c -> Just (1 + Maybe.withDefault 0 c)) acc) Dict.empty s.landed
@@ -3213,6 +3227,102 @@ dropFirst x list =
 
 
 
+-- AN EDITOR BOARD
+--
+-- The still board with every place on it listening: each point and each
+-- half of the bar carries an id and the pointer events a set-up page reads
+-- (a press, a slide, a lift, a right click). They are the slab's own
+-- elements, so they sit exactly where the board draws them at every size.
+-- What a press means -- add, remove, which colour, a long press -- is the
+-- page's to decide; this board only says where and how.
+
+
+{-| A pointer on one place of an editor board. `Down` is a primary press
+(the left button, or a finger: `touch`) where it landed on the screen;
+`Moved` is that press sliding (only while a button or finger is down);
+`Up` lifts it; `Cancelled` is the browser taking it back (a scroll);
+`Context` is a right click, or what some phones send for a long press.
+-}
+type EditEvent
+    = Down Bool Float Float
+    | Moved Float Float
+    | Up
+    | Cancelled
+    | Context
+
+
+{-| A still board whose places answer the pointer: `zoneId` names each
+place's element ("point:7" -> an id the page chooses), `onEdit` hears what
+happens on it.
+-}
+type alias EditBoard msg =
+    { still : StillBoard
+    , zoneId : String -> String
+    , onEdit : String -> EditEvent -> msg
+    , noop : msg
+    }
+
+
+viewEdit : EditBoard msg -> Html msg
+viewEdit eb =
+    Html.map
+        (\msg ->
+            case msg of
+                Edit zone event ->
+                    eb.onEdit zone event
+
+                _ ->
+                    eb.noop
+        )
+        (slab eb.still { stillOnly | zone = editZone eb.zoneId })
+
+
+editZone : (String -> String) -> String -> List (Html.Attribute Msg)
+editZone zoneId zone =
+    let
+        point =
+            D.map2 Tuple.pair (D.field "clientX" D.float) (D.field "clientY" D.float)
+
+        down =
+            D.map4 (\button ctrl touch ( x, y ) -> { button = button, ctrl = ctrl, touch = touch, x = x, y = y })
+                (D.field "button" D.int)
+                (D.oneOf [ D.field "ctrlKey" D.bool, D.succeed False ])
+                (D.oneOf [ D.field "pointerType" D.string |> D.map (\t -> t /= "mouse"), D.succeed False ])
+                point
+                |> D.andThen
+                    (\p ->
+                        -- the main button alone: a right click is `Context`,
+                        -- and so is a Mac's control-click
+                        if p.button == 0 && not p.ctrl then
+                            D.succeed (Edit zone (Down p.touch p.x p.y))
+
+                        else
+                            D.fail "not a primary press"
+                    )
+
+        -- a hovering mouse moves too: only a press that is down slides
+        moved =
+            D.field "buttons" D.int
+                |> D.andThen
+                    (\buttons ->
+                        if buttons == 0 then
+                            D.fail "nothing pressed"
+
+                        else
+                            D.map (\( x, y ) -> Edit zone (Moved x y)) point
+                    )
+    in
+    [ Html.Attributes.id (zoneId zone)
+    , class "edit-zone"
+    , Html.Events.on "pointerdown" down
+    , Html.Events.on "pointermove" moved
+    , Html.Events.on "pointerup" (D.succeed (Edit zone Up))
+    , Html.Events.on "pointercancel" (D.succeed (Edit zone Cancelled))
+    , preventDefaultOn "contextmenu" (D.succeed ( Edit zone Context, True ))
+    ]
+
+
+
 -- A PLAYABLE BOARD, WITH NO ROOM BEHIND IT
 --
 -- The still board with its taps switched on: a puzzle hands it the moves
@@ -3266,6 +3376,7 @@ viewPlay pb =
             , spent = Just pb.diceLeft
             , swaps = pb.swaps
             , honours = \msg -> playSteps pb msg /= Nothing
+            , zone = \_ -> []
             }
         )
 

@@ -167,8 +167,7 @@ assets/src/Run.elm               a practice run, pure, kept by Main: its source 
                                  from the end card (KEEP GOING, PRACTICE ANYWAY); when
                                  today's set is done (`celebrate`, once a run)
 assets/src/Route.elm             the client routes, mirroring the server's
-                                 (`Analysis` -- /analysis?xgid=&p= -- is the client's
-                                 alone until the analysis page lands)
+                                 (`Analysis` -- /analysis?xgid=&p=)
 assets/src/Api.elm               the /papi envelope + CSRF header
 assets/src/Api/Catalog.elm       the landing pages' data and its decoders
 assets/src/Page/GameLanding.elm  "/" the guest's home page (`home`: the site's bar,
@@ -229,6 +228,14 @@ assets/src/Page/Puzzles.elm      "/puzzles" the practice home: the five decks fr
                                  and four rows; the streak and the day, what the
                                  mistakes cost; a guest's "23 mistakes from your 4
                                  games", a stranger's TRY ONE
+assets/src/Page/Analysis.elm     "/analysis" the analysis board: the brushes, the board
+                                 as `View.viewEdit` draws it (a tap, a right click, a
+                                 long press per point and bar half), the settings
+                                 strip, OPENING / CLEAR / FLIP, the XGID with COPY (the
+                                 `copyText` port) and IMPORT, the check line and
+                                 ANALYZE; the doors in (?xgid=, ?p=)
+assets/src/Api/Analysis.elm      POST /papi/analysis and GET /papi/analysis/:key, and
+                                 their status decoder (the verdict reads them)
 assets/src/Page/Practice.elm     "/practice/<slug>" one deck's page: the card at page
                                  size, the ladder in words, what is due, the month,
                                  and for a tier what it cost
@@ -280,8 +287,9 @@ assets/src/Games/Backgammon/Replay.elm  the record and reviews as the replay rea
                                  engine wrote), and its answer into `Response`
 assets/src/Games/Backgammon/Setup.elm   a position set up on the analysis board: the
                                  twin of src/oskol/analysis/setup.gleam (its wire shape,
-                                 `check`'s sentences), `opening`, `empty`, `flip`, and a
-                                 puzzle as its page shows it (`fromQuestion`)
+                                 `check`'s sentences), `opening`, `empty`, `flip`, a
+                                 puzzle as its page shows it (`fromQuestion`), and the
+                                 board the slab draws for it (`snapshot`)
 assets/src/Games/Backgammon/Xgid.elm    eXtreme Gammon's position id in and out of a
                                  Setup, pinned by vectors (XgidTest); the field meanings,
                                  checked against gnubg, in docs/analysis.md; the server
