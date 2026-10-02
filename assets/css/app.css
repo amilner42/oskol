@@ -1091,6 +1091,87 @@ a.q-card:hover, a.q-card:focus-visible {
   background: rgba(0, 0, 0, 0.35); color: rgba(255, 255, 255, 0.8);
   pointer-events: none;
 }
+/* The bear-off trays as a real board keeps them (`viewTrayColumn`): one
+   column on the board's outer edge at the end of the home boards, in the
+   frame's wood beside the felt. Its rows are the bar's -- points, band,
+   points -- so its top half runs alongside the top home board and its
+   bottom half alongside the bottom one, each the tray of the player who
+   bears off there. A half has a slot for all fifteen from the start, so
+   nothing grows as a game comes off: a checker borne off is a thin sliver
+   of its colour, edge-on, filling from the outer end. The count is a small
+   plate in the band's row, between the halves, where no sliver reaches.
+
+   A phone held upright keeps the strips in the identity bars: across 390px
+   the column would cost every point a fifth of its width. Everywhere else
+   -- a phone on its side (both layouts), a tablet, a desktop -- the column
+   replaces the strips, and its width comes out of the frame and out of the
+   chrome the strips no longer need, never out of the points (the felt is
+   the size it was; the board is the column wider). */
+.bg-tray-col { display: none; }
+/* The column is a track of its own at the home boards' end: the last, or
+   the first on a board whose home boards are on the left (`tray-left`).
+   Every layout below that spells out the grid's tracks names both, so the
+   column is never pushed onto a row of its own. */
+.bg-grid.has-tray-col {
+  --bg-tray-r: auto;
+  grid-template-columns: var(--bg-tray-l,) minmax(0, 6fr) auto minmax(0, 6fr) var(--bg-tray-r,);
+}
+.bg-grid.has-tray-col.tray-left { --bg-tray-l: auto; --bg-tray-r: initial; }
+@media (min-width: 640px), (orientation: landscape) and (max-height: 600px) {
+  .bg-page {
+    /* a point is 0.21 of its height wide; the tray is most of a point */
+    --bg-tray-w: calc(var(--bg-pw) * 0.8);
+    --bg-tray-gap: 4px;
+    --off-pad: 2px;
+    --off-gap: 1px;
+    /* a sliver is a checker's edge: a quarter of a point's width, and never
+       so tall that fifteen of them overflow the slot */
+    --sliver-h: min(calc(var(--bg-pw) * 0.24), calc((var(--bg-point-h) - 2 * var(--off-pad) - 14 * var(--off-gap)) / 15));
+  }
+  .bg-page .player-bar .bg-tray { display: none; }
+  .bg-tray-col {
+    display: grid;
+    width: var(--bg-tray-w);
+    margin-left: var(--bg-tray-gap);
+    grid-template-rows: var(--bg-point-h) minmax(var(--bg-band-h), 1fr) var(--bg-point-h);
+  }
+  .bg-tray-col.left { order: -1; margin-left: 0; margin-right: var(--bg-tray-gap); }
+  .bg-off {
+    position: relative;
+    grid-template-rows: repeat(15, var(--sliver-h));
+    row-gap: var(--off-gap);
+    align-content: start;
+    padding: var(--off-pad);
+    border-radius: 4px;
+    background: var(--bg-slot);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45);
+  }
+  .bg-off.bottom { align-content: end; }
+  /* Where a checker bearing off is tapped to: a quiet ring, drawn outside
+     the slot so it costs no room, and a reach into the wood either side so
+     a thumb does not have to find a column a point wide. */
+  .bg-off.can-tap { outline: 2px solid color-mix(in oklab, var(--bg-accent) 75%, transparent); outline-offset: 1px; }
+  .bg-off.can-tap::after { content: ""; position: absolute; inset: -2px -8px; }
+  .off-sliver { border-radius: 2px; }
+  .off-sliver.white { background: var(--bg-checker-light); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.3); }
+  .off-sliver.black { background: var(--bg-checker-dark); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45); }
+  /* the last turn's own checkers off, ringed the way a landed checker is */
+  .off-sliver.just-moved { box-shadow: 0 0 0 1.5px #ffd23f; }
+  .bg-off-mid { padding: 3px 0; pointer-events: none; }
+  .off-plate {
+    font-size: 7px; line-height: 1;
+    min-width: calc(2ch + 4px); text-align: center;
+    padding: 2px 2px; border-radius: 3px;
+    background: rgba(0, 0, 0, 0.35); color: rgba(255, 255, 255, 0.85);
+  }
+}
+/* A tablet held upright is sized by its width: the column comes out of the
+   twelve points' share of it, shared by all twelve. */
+@media (min-width: 640px) {
+  .bg-page {
+    --bg-pw: calc((var(--bg-slab-w) - 2 * var(--bg-frame-w) - var(--bg-bar-w) - var(--bg-tray-gap) - 2 * 6px - 10 * 0.25rem) / 12.8);
+  }
+}
 .die {
   --die-size: 2.5rem;
   display: grid; place-items: center;
@@ -1520,7 +1601,7 @@ a.bg-match-door:hover { background: var(--paper-2); }
   .bg-page .bg-grid {
     /* The halves are exactly six points wide, so no button and no message
        in a centre band can ever widen the board or shift its points. */
-    grid-template-columns: var(--bg-half) auto var(--bg-half);
+    grid-template-columns: var(--bg-tray-l,) var(--bg-half) auto var(--bg-half) var(--bg-tray-r,);
   }
   .bg-page .bg-points { gap: 1px; }
   .bg-page .bg-band {
@@ -1671,8 +1752,18 @@ a.bg-match-door:hover { background: var(--paper-2); }
     /* Every track is spelled out, so a button or a message in a centre band
        can never widen the board or shift its points, and no rounding slack
        can leak into the bar. */
-    grid-template-columns: var(--bg-half) var(--bg-bar-w) var(--bg-half);
+    grid-template-columns: var(--bg-tray-l,) var(--bg-half) var(--bg-bar-w) var(--bg-half) var(--bg-tray-r,);
     justify-content: center;
+  }
+  /* The tray column goes on the rail beside the home boards: the rail on
+     that side gives up its width, so the felt stays exactly where it was,
+     in the middle of the screen, and the same size. */
+  .bg-page.is-expanded .bg-board:has(> .bg-grid.has-tray-col) {
+    padding-right: calc(var(--bg-frame-w) - var(--bg-tray-w) - var(--bg-tray-gap));
+  }
+  .bg-page.is-expanded .bg-board:has(> .bg-grid.has-tray-col.tray-left) {
+    padding-right: var(--bg-frame-w);
+    padding-left: calc(var(--bg-frame-w) - var(--bg-tray-w) - var(--bg-tray-gap));
   }
   .bg-page.is-expanded .bg-points { gap: 1px; }
   /* The stack is `display: contents` here and paints no outline, so a past
@@ -1876,7 +1967,7 @@ a.bg-match-door:hover { background: var(--paper-2); }
   .bg-page .bg-grid {
     /* The halves are exactly six points wide, so no button and no message
        in a centre band can ever widen the board or shift its points. */
-    grid-template-columns: var(--bg-half) auto var(--bg-half);
+    grid-template-columns: var(--bg-tray-l,) var(--bg-half) auto var(--bg-half) var(--bg-tray-r,);
   }
   .bg-page .player-bar { padding: 10px 16px; }
   .bg-page .bg-tray { --holder-h: 1.4rem; --stick-w: 4px; }

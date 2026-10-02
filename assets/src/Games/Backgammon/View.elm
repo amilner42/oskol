@@ -705,6 +705,7 @@ view arrived =
             , resolve = resolveTap tap
             , zone = \_ -> []
             , landed = lastLanded live
+            , trayColumn = True
             }
     in
     -- On a desktop screen (`lg` and up) the board is sized by the window's
@@ -1335,6 +1336,12 @@ type alias Board =
     -- "point:N", or "bar:<player id>" for a half of the bar.
     , zone : String -> List (Html.Attribute Msg)
     , landed : Landed -- where the last turn landed checkers, and whose they are
+
+    -- The trays drawn as a real board keeps them: a column at the end of
+    -- the home boards (`viewTrayColumn`). The table sets it; app.css decides
+    -- the layouts that show it (all but a phone held upright, which keeps
+    -- the strips in the identity bars). The still boards leave it off.
+    , trayColumn : Bool
     }
 
 
@@ -1376,11 +1383,24 @@ viewBoard board =
     div [ class "bg-board relative select-none" ]
         -- minmax(0, 6fr) so a wide button in a band can never steal width
         -- from the other half's points.
-        [ div [ class "bg-grid grid grid-cols-[minmax(0,6fr)_auto_minmax(0,6fr)]" ]
-            [ viewHalf board topLeft (viewLeftBand board) bottomLeft
-            , viewBarColumn board themId
-            , viewHalf board topRight (viewRightBand board) bottomRight
+        [ div
+            [ classList
+                [ ( "bg-grid grid grid-cols-[minmax(0,6fr)_auto_minmax(0,6fr)]", True )
+                , ( "has-tray-col", board.trayColumn )
+                , ( "tray-left", board.trayColumn && not (homeOnRight board.myColor) )
+                ]
             ]
+            ([ viewHalf board topLeft (viewLeftBand board) bottomLeft
+             , viewBarColumn board themId
+             , viewHalf board topRight (viewRightBand board) bottomRight
+             ]
+                ++ (if board.trayColumn then
+                        [ viewTrayColumn board ]
+
+                    else
+                        []
+                   )
+            )
         , if board.ctx.model.resigning && hasAction "resign" board.ctx.legal then
             viewResignPanel board.ctx
 
@@ -1683,6 +1703,177 @@ viewTray board ownerId isMine =
                     []
                )
         )
+
+
+{-| The points a colour bears off from: white's 1 to 6, black's 19 to 24,
+as the board numbers them.
+-}
+homePoints : String -> List Int
+homePoints color =
+    if color == "black" then
+        List.range 19 24
+
+    else
+        List.range 1 6
+
+
+{-| Whether the home boards are on the right of the board as drawn for a
+viewer of `myColor`: read off `rows`, the one place that lays the points
+out, rather than assumed. Both home boards are always on one side (each
+player's home faces the other's across the band), so the viewer's tells
+the side for both.
+-}
+homeOnRight : String -> Bool
+homeOnRight myColor =
+    let
+        ( _, bottom ) =
+            rows myColor
+    in
+    List.all (\p -> List.member p (homePoints myColor)) (List.drop 6 bottom)
+
+
+{-| The bear-off trays as a real board keeps them: one column on the
+board's outer edge at the end of the home boards (`homeOnRight`), its top
+half the tray of the player whose home board is the top one, its bottom
+half the other's. Each half has room for all fifteen from the start; a
+checker borne off is a thin sliver of its colour, edge-on, filling from
+the outer end, so the column never changes size as a game comes off.
+The count is a small plate in the band's row, between the halves, where
+no sliver can reach it. The viewer's half is where a bearing-off checker
+is tapped to, as the strip in their bar is.
+
+Any board can draw it through `trayColumn`; the table is the one that
+does today (app.css shows it everywhere but a phone held upright).
+-}
+viewTrayColumn : Board -> Html Msg
+viewTrayColumn board =
+    let
+        ( top, bottom ) =
+            rows board.myColor
+
+        onRight =
+            homeOnRight board.myColor
+
+        quadrant row =
+            if onRight then
+                List.drop 6 row
+
+            else
+                List.take 6 row
+
+        -- whose home board a quadrant is: the colour that bears off there
+        ownerOf row =
+            board.ctx.scene.players
+                |> List.filter (\p -> List.all (\q -> List.member q (homePoints (colorOf (Just p)))) (quadrant row))
+                |> List.head
+
+        countOf owner =
+            owner
+                |> Maybe.andThen (\p -> Protocol.findZone ("off:" ++ p.id) board.ctx.scene)
+                |> Maybe.map .count
+                |> Maybe.withDefault 0
+
+        plate isTop owner =
+            let
+                n =
+                    countOf owner
+            in
+            span
+                [ classList
+                    [ ( "off-plate pixel", True )
+                    , ( "top", isTop )
+                    , ( "bottom", not isTop )
+                    , ( "invisible", n == 0 )
+                    ]
+                ]
+                [ text (String.fromInt n) ]
+
+        half isTop owner =
+            let
+                color =
+                    colorOf owner
+
+                n =
+                    clamp 0 15 (countOf owner)
+
+                ownerId =
+                    owner |> Maybe.map .id |> Maybe.withDefault ""
+
+                -- the last turn's own checkers borne off: the innermost
+                -- of the filled slivers, ringed as a landed checker is
+                landed =
+                    if board.landed.color == color then
+                        min n board.landed.off
+
+                    else
+                        0
+
+                click =
+                    if ownerId == board.ctx.playerId then
+                        case board.resolve "off" of
+                            Just msg ->
+                                [ onClick msg, class "cursor-pointer can-tap" ]
+
+                            Nothing ->
+                                []
+
+                    else
+                        []
+
+                -- from the outer end inwards: the checkers off, then the
+                -- room left for the rest
+                slivers =
+                    List.range 0 14
+                        |> List.map
+                            (\i ->
+                                if i < n then
+                                    div [ classList [ ( "off-sliver " ++ color, True ), ( "just-moved", i >= n - landed ) ] ] []
+
+                                else
+                                    div [ class "off-sliver empty" ] []
+                            )
+            in
+            div
+                ([ classList
+                    [ ( "bg-off grid", True )
+                    , ( "top", isTop )
+                    , ( "bottom", not isTop )
+                    , ( "mine", ownerId == seatId board.ctx )
+                    , ( "theirs", ownerId /= seatId board.ctx )
+                    ]
+                 , title "Borne off"
+                 , attribute "data-count" (String.fromInt n)
+                 ]
+                    ++ click
+                )
+                (if isTop then
+                    slivers
+
+                 else
+                    List.reverse slivers
+                )
+
+        topOwner =
+            ownerOf top
+
+        bottomOwner =
+            ownerOf bottom
+    in
+    div
+        [ classList [ ( "bg-tray-col grid", True ), ( "left", not onRight ), ( "right", onRight ) ]
+        , attribute "data-home"
+            (if onRight then
+                "right"
+
+             else
+                "left"
+            )
+        ]
+        [ half True topOwner
+        , div [ class "bg-off-mid flex flex-col justify-between items-center" ]
+            [ plate True topOwner, plate False bottomOwner ]
+        , half False bottomOwner
+        ]
 
 
 
@@ -2777,16 +2968,34 @@ lastLanded live =
         Just (TurnEntry turn) ->
             { color = colorOf (Protocol.findPlayer turn.player live.scene)
             , points = List.foldl (\p acc -> Dict.update p (\c -> Just (1 + Maybe.withDefault 0 c)) acc) Dict.empty turn.landed
+            , off = List.map offIn turn.moves |> List.sum
             }
 
         _ ->
-            { color = "", points = Dict.empty }
+            { color = "", points = Dict.empty, off = 0 }
+
+
+{-| How many checkers one move of the notation bore off: `6/off` is one,
+`6/off(2)` two, anything that ends on a point none. The record's
+`landed` has no point for a checker borne off, so the tray reads it here.
+-}
+offIn : String -> Int
+offIn move =
+    case String.split "/off" move of
+        [ _, "" ] ->
+            1
+
+        [ _, times ] ->
+            times |> String.dropLeft 1 |> String.dropRight 1 |> String.toInt |> Maybe.withDefault 1
+
+        _ ->
+            0
 
 
 {-| The checkers a turn landed: the mover's colour, and point to how many.
 -}
 type alias Landed =
-    { color : String, points : Dict.Dict Int Int }
+    { color : String, points : Dict.Dict Int Int, off : Int }
 
 
 {-| The index of the last turn in the list, to open the review on.
@@ -3228,7 +3437,9 @@ slab s taps =
             , landed =
                 { color = moverColour
                 , points = List.foldl (\p acc -> Dict.update p (\c -> Just (1 + Maybe.withDefault 0 c)) acc) Dict.empty s.landed
+                , off = 0
                 }
+            , trayColumn = False
             }
     in
     div [ class ("bg-still " ++ themeClass s.theme) ]
