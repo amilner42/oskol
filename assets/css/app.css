@@ -1339,7 +1339,16 @@ a.q-card:hover, a.q-card:focus-visible {
 :is(.bg-page, .bg-still) .bar-pr { color: rgba(255, 255, 255, 0.6); }
 :is(.bg-page, .bg-still) .score-chip { border: 2px solid rgba(255, 255, 255, 0.55); background: transparent; color: #fff; padding: 2px 6px; }
 :is(.bg-page, .bg-still) .clock-chip { border: 2px solid rgba(255, 255, 255, 0.45); color: rgba(255, 255, 255, 0.85); background: transparent; padding: 1px 6px; }
-:is(.bg-page, .bg-still) .clock-chip.running { border-color: var(--bg-accent); color: var(--bg-accent); background: transparent; }
+/* The clock that is running is a lit chip: ink on the site's yellow, the
+   same on every board. The theme's accent on the bar's wood was the old
+   treatment, and on walnut it was yellow on brown at well under 4.5:1;
+   a chip that carries its own background reads the same against every one
+   of the twelve boards (ink on #ffd23f is 12:1), and it only repaints, so
+   nothing moves when the clock starts or stops. The time a delay holds is
+   dimmed less than elsewhere (0.72: still 5.7:1), and the free seconds
+   beside it at 0.8 (7.2:1). */
+:is(.bg-page, .bg-still) .clock-chip.running { border-color: #ffd23f; color: var(--ink); background: #ffd23f; }
+:is(.bg-page, .bg-still) .clock-chip.running .clock-time.held { opacity: 0.72; }
 :is(.bg-page, .bg-still) .clock-chip.expired { border-color: var(--red); color: var(--red); }
 
 /* The game-over card. */

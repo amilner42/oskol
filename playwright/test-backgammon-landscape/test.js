@@ -374,7 +374,59 @@ async function assertClockLine(page, label) {
   if (plain) {
     must(Math.abs(plain.chip.width - held.chip.width) < 0.5, `${label}: a clock is as wide with its free seconds as without`);
   }
+
+  // The running clock reads on every board: its time and its free seconds
+  // reach WCAG AA (4.5:1) against the chip they sit on, under each of the
+  // twelve themes. The theme is swapped on the page's class and read back at
+  // once; nothing about the chip depends on anything else the theme sets.
+  const ratios = await page.evaluate((themes) => {
+    const pageEl = document.querySelector('.bg-page');
+    const original = pageEl.className;
+    const rgb = (s) => s.match(/[\d.]+/g).map(Number);
+    const lum = ([r, g, b]) => {
+      const f = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    };
+    const contrast = (a, b) => {
+      const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+      return (x + 0.05) / (y + 0.05);
+    };
+    // the colour a text paints, its opacities up to the chip folded in
+    const painted = (el, chip, bg) => {
+      let alpha = 1;
+      for (let e = el; e && e !== chip.parentElement; e = e.parentElement) alpha *= Number(getComputedStyle(e).opacity);
+      const c = rgb(getComputedStyle(el).color);
+      alpha *= c.length > 3 ? c[3] : 1;
+      return c.slice(0, 3).map((v, i) => v * alpha + bg[i] * (1 - alpha));
+    };
+    const out = [];
+    for (const theme of themes) {
+      pageEl.className = original.replace(/bg-theme-[a-z]+/, `bg-theme-${theme}`);
+      const chip = document.querySelector('.clock-chip.running');
+      if (!chip) continue;
+      const bg = rgb(getComputedStyle(chip).backgroundColor);
+      if (bg.length > 3 && bg[3] < 1) {
+        out.push({ theme, error: 'the running clock has no background of its own' });
+        continue;
+      }
+      const time = contrast(painted(chip.querySelector('.clock-time'), chip, bg), bg);
+      const pipEl = chip.querySelector('.delay-pip');
+      const pip = pipEl ? contrast(painted(pipEl, chip, bg), bg) : null;
+      out.push({ theme, time, pip });
+    }
+    pageEl.className = original;
+    return out;
+  }, THEMES);
+  must(ratios.length === THEMES.length, `${label}: a running clock is on the board under every theme`);
+  for (const r of ratios) {
+    must(!r.error, `${label}, ${r.theme}: ${r.error || 'the running clock paints its own chip'}`);
+    must(r.time >= 4.5, `${label}, ${r.theme}: the running time reads at ${r.time.toFixed(1)}:1`);
+    if (r.pip !== null) must(r.pip >= 4.5, `${label}, ${r.theme}: its free seconds read at ${r.pip.toFixed(1)}:1`);
+  }
 }
+
+/** The twelve boards (`themes` in View.elm). */
+const THEMES = ['midnight', 'walnut', 'forest', 'ocean', 'sunset', 'sakura', 'cherry', 'copper', 'espresso', 'sand', 'slate', 'neon'];
 
 async function clockLines(browser, watch) {
   const guest = () => require('crypto').randomBytes(16).toString('base64url');
@@ -407,6 +459,12 @@ async function clockLines(browser, watch) {
         await sleep(400);
       }
       await assertClockLine(a, `clock @ ${screen.name}${mode === 'expanded' || mode === 'compressed' ? `, ${mode}` : ''}`);
+      // the board the running clock was hardest to read on, for the eye
+      await a.evaluate(() => {
+        const el = document.querySelector('.bg-page');
+        el.className = el.className.replace(/bg-theme-[a-z]+/, 'bg-theme-walnut');
+      });
+      await a.screenshot({ path: `${SHOTS}/07-clock-walnut-${screen.name}-${mode}.png` });
     }
     for (const c of contexts) await c.close();
   }
