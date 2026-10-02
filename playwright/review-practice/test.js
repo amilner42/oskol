@@ -4,14 +4,14 @@
  * 320x568, 844x390 and 1440x900 -- with the page held still: every shot
  * also measures what must not move and fails if it did.
  *
- *   01 account, the very bad moves with work today: FIX ONE, the ring part
+ *   01 account, the very bad moves with work today: TRAIN, the ring part
  *      full, every colour of the grid, the cost lines and what patching won
  *      back
  *   02 the same with the replies tapped into the front (a 15x21 grid)
  *   03 account, today's set done: KEEP GOING
  *   04 account, everything started and nothing due: PRACTICE ANYWAY
  *   05 a fresh account: nothing of theirs yet, the openings in front, START
- *   06 a guest with games: their worst tier, PRACTICE, nothing kept
+ *   06 a guest with games: their worst tier, TRAIN, nothing kept
  *   07 a stranger: what this is, TRY ONE, the five as rows
  *   08 a stranger with the openings tapped in front: TRY
  *   09 (no shot) OPEN on the hub's card sits inside the eyebrow's line
@@ -19,11 +19,11 @@
  * And each deck's own page (/practice/<slug>):
  *
  *   10-14 the shaped account on all five: very bad, bad, dubious, the
- *         openings, the replies (FIX ONE / PRACTICE)
+ *         openings, the replies (TRAIN)
  *   15    the very bad moves with today's set done: KEEP GOING
  *   16    every very bad move started, none due: PRACTICE ANYWAY
  *   17-18 a fresh account: the openings (START), a tier with nothing yet
- *   19    a guest on their worst tier: their count, all paper, PRACTICE
+ *   19    a guest on their worst tier: their count, all paper, TRAIN
  *   20-21 a stranger: the openings (TRY, the sign-in), a tier (one line)
  *
  * A deck page's loading state holds 320px; once drawn, its card and the

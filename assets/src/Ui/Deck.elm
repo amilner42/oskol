@@ -29,14 +29,14 @@ one shape the server gives all five (`Api.PracticeDecks`). The card is:
   - **the mastery grid**: a square per position, coloured by its rung,
     so a deck's size and how much of it is learnt are one picture, and
     the square an answer lit is the thing that changed;
-  - **the state line**, which is the grid's legend in words: "12 patched
-    · 20 in progress · 12 to start · of 44";
+  - **the state line**, which is the grid's legend in words: "12 mastered
+    · 20 learning · 12 to learn · of 44";
   - for a tier, **what it cost**: "These cost you 11.3 points over 11
     games. Without them your PR would be 4.8, not 8.3.";
   - **one button**, never absent where there is anything to practise:
-    FIX ONE while today has work, KEEP GOING once today's set is done
+    TRAIN while today has work, KEEP GOING once today's set is done
     and something is still unstarted, PRACTICE ANYWAY once everything
-    is, START / PRACTICE / TRY on a set; and under it one quiet line for
+    is, START / TRAIN / TRY on a set; and under it one quiet line for
     the state it is in.
 
 **Nothing moves.** The button's label changes inside a slot of fixed
@@ -116,12 +116,12 @@ type Action
 {-| The button a deck offers this visitor, decided from the deck's own
 standing and nothing else:
 
-  - an account's tier: FIX ONE while it has something due or new today;
+  - an account's tier: TRAIN (`FixOne`) while it has something due or new today;
     once today's set is done, KEEP GOING while anything is unstarted,
     then PRACTICE ANYWAY;
   - an account's set: START until it is added, then the same three, with
-    PRACTICE where a tier says FIX ONE;
-  - a guest's tier with mistakes in it: PRACTICE (nothing is kept);
+    TRAIN (`Practice`) where a tier has `FixOne`;
+  - a guest's tier with mistakes in it: TRAIN (`Practice`; nothing is kept);
   - a set for a guest or a stranger: TRY.
 
 -}
@@ -185,10 +185,10 @@ actionLabel : Action -> String
 actionLabel which =
     case which of
         FixOne ->
-            "FIX ONE"
+            "TRAIN"
 
         Practice ->
-            "PRACTICE"
+            "TRAIN"
 
         KeepGoing ->
             "KEEP GOING"
@@ -450,8 +450,8 @@ ringSentence standing =
 
 
 {-| The grid's squares. An account's are drawn from its standing, in the
-order that reads as progress (patched first, then the yellows, then
-what is still to start); anybody else's deck is all paper, one square
+order that reads as progress (mastered first, then the yellows, then
+what is still to learn); anybody else's deck is all paper, one square
 per position, which is its size.
 -}
 cells : Deck -> List { level : Int, status : String }
@@ -726,8 +726,8 @@ row config =
         Html.p (class "dk-row is-quiet" :: common) inside
 
 
-{-| A row's number: what is still to fix or to learn. A tier's is
-everything not patched; a set's the same once added, else its size; a
+{-| A row's number: what is still to master. A tier's is
+everything not mastered; a set's the same once added, else its size; a
 guest's tier its count.
 -}
 left : Who -> Deck -> String

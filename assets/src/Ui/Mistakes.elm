@@ -30,7 +30,6 @@ module Ui.Mistakes exposing
     , stateLine
     , stateParts
     , stepsLine
-    , stepsLineIn
     , todayDone
     , todayEyebrow
     , unsavedLine
@@ -44,7 +43,7 @@ module Ui.Mistakes exposing
     , hasWork
     , knewItWhy
     , knownLine
-    , leftToFix
+    , leftToMaster
     , line
     , mark
     , milestone
@@ -52,8 +51,8 @@ module Ui.Mistakes exposing
     , moves
     , neverWhy
     , nextTierLabel
-    , patchedAside
-    , patchedRun
+    , masteredAside
+    , masteredRun
     , practiceOnlyRun
     , practiceOnlyTag
     , runSummary
@@ -64,11 +63,15 @@ module Ui.Mistakes exposing
 
 {-| The words practice is said in.
 
-One rule holds all of them: **the unit is a mistake you made**, and the
-thing to do with it is fix it. Nothing a player reads here says "card",
+One rule holds all of them: **the unit is a mistake you made**, and what
+you do with it is **train** it. Nothing a player reads here says "card",
 "deck" or "flashcard" -- those are how it is stored, not what it is. A
-mistake you have stopped making is **patched**, which is a word about the
-mistake and not about a schedule.
+mistake you have started on is **learning**, one you have not is **to
+learn**, and one you have stopped making is **mastered** -- the same
+three words for the sets (`Ui.Decks`), because it is the same ladder.
+Nothing a player reads says "fix" or "patched" (pinned in
+`MistakesTest`); `patched` survives only as the wire's name for the top
+rungs.
 
 They live in one module because the same sentence is printed in three
 places (the practice home, the session, the end of a run) and a phrase
@@ -79,12 +82,12 @@ them is pinned in `MistakesTest`.
 
 
 {-| A band as the server counts it, in its three states: how bad, how
-many, how many are in progress, how many are patched. What is neither is
-untouched.
+many, how many are learning (`inProgress`), how many are mastered
+(`patched`). What is neither is still to learn.
 
-**Three states, not two.** Patched is four right answers over twelve days
+**Three states, not two.** Mastered is four right answers over twelve days
 at the very earliest, so a player halfway through fifty of their mistakes
-would read "0 patched" for weeks. What they are working on is progress
+would read "0 mastered" for weeks. What they are working on is progress
 and is said out loud.
 
 -}
@@ -92,7 +95,7 @@ type alias Band =
     { grade : String, total : Int, inProgress : Int, patched : Int, due : Int, newLeft : Int }
 
 
-{-| Does this tier still have something to fix today? The server has
+{-| Does this tier still have something to train today? The server has
 already capped `newLeft` at the day's budget, so this is a read and not
 a rule.
 -}
@@ -175,28 +178,29 @@ tierName grade =
 
 
 {-| The one number the hub leads with: how many of this tier are still
-to fix. Everything not patched -- what is *due* changes hour to hour and
-is not what anyone is trying to get to zero.
+to master. Everything not mastered -- what is *due* changes hour to hour
+and is not what anyone is trying to get to zero. The sets say it the same
+way.
 
-    "31 left to fix"
+    "31 left to master"
 
 -}
-leftToFix : Band -> String
-leftToFix band =
-    String.fromInt (max 0 (band.total - max 0 band.patched)) ++ " left to fix"
+leftToMaster : Band -> String
+leftToMaster band =
+    String.fromInt (max 0 (band.total - max 0 band.patched)) ++ " left to master"
 
 
-{-| Quieter, beside it: "23 patched". Nothing at all when none is, so a
+{-| Quieter, beside it: "23 mastered". Nothing at all when none is, so a
 player on their first day is not shown a zero.
 -}
-patchedAside : Band -> Maybe String
-patchedAside band =
+masteredAside : Band -> Maybe String
+masteredAside band =
     case max 0 band.patched of
         0 ->
             Nothing
 
         n ->
-            Just (String.fromInt n ++ " patched")
+            Just (String.fromInt n ++ " mastered")
 
 
 {-| A tier with nothing due and no new ones left today. The moment the
@@ -243,10 +247,10 @@ nextTierLabel grade =
 
 
 {-| The day: a plain count of what has been answered, misses and all,
-and nothing to measure it against. **Practised, never "fixed"**: a miss
-fixes nothing, and a count that said "8 fixed" over six red misses is the
-number that lies. "Fixed" and "patched" are kept for a mistake that has
-actually crossed the patched rung.
+and nothing to measure it against. **Practised, never "mastered"**: a
+miss masters nothing, and a count that said "8 mastered" over six red
+misses is the number that lies. "Mastered" is kept for a mistake that has
+actually crossed the top rung.
 
     "3 practised today"
     "1 practised today"
@@ -288,9 +292,9 @@ runSummary score =
 
 
 {-| One band's own line, in the order the bar is drawn in: what is being
-worked on, what is patched, and how many there are in all.
+worked on, what is mastered, and how many there are in all.
 
-    "Very bad · 30 in progress · 12 patched · of 61"
+    "Very bad · 30 learning · 12 mastered · of 61"
 
 -}
 line : Band -> String
@@ -298,9 +302,9 @@ line band =
     bandName band.grade
         ++ " · "
         ++ String.fromInt (max 0 band.inProgress)
-        ++ " in progress · "
+        ++ " learning · "
         ++ String.fromInt (max 0 band.patched)
-        ++ " patched · of "
+        ++ " mastered · of "
         ++ String.fromInt (max 0 band.total)
 
 
@@ -309,7 +313,7 @@ The rest of that line says when it comes back.
 -}
 milestone : Int -> String
 milestone level =
-    "Patched. " ++ String.toUpper (String.left 1 (word level)) ++ String.dropLeft 1 (word level) ++ " right in a row"
+    "Mastered. " ++ String.toUpper (String.left 1 (word level)) ++ String.dropLeft 1 (word level) ++ " right in a row"
 
 
 {-| After the reveal the four choices select before they act, and the
@@ -503,13 +507,13 @@ whyLine why =
            )
 
 
-{-| The end of a run, when it patched anything: "You patched 2 very bad
+{-| The end of a run, when it mastered anything: "You mastered 2 very bad
 moves and 1 bad move." Counted by band, worst first, from the grade of
 each mistake the run crossed the rung on. Nothing when it crossed none --
 the score has already said how it went.
 -}
-patchedRun : List String -> Maybe String
-patchedRun grades =
+masteredRun : List String -> Maybe String
+masteredRun grades =
     let
         counted grade =
             List.length (List.filter ((==) grade) grades)
@@ -531,7 +535,7 @@ patchedRun grades =
             Nothing
 
         _ ->
-            Just ("You patched " ++ join clauses ++ ".")
+            Just ("You mastered " ++ join clauses ++ ".")
 
 
 {-| "a, b and c": an "and" before the last, commas before the rest.
@@ -602,11 +606,11 @@ word n =
 
 
 {-| A tier in its three states, in the order the grid is filled in:
-what is patched, what is in progress, what is still to start, and how
+what is mastered, what is learning, what is still to learn, and how
 many there are in all. Each part is said even at zero: the line is also
 the grid's legend, and a legend that loses a colour is another legend.
 
-    "12 patched · 20 in progress · 12 to start · of 44"
+    "12 mastered · 20 learning · 12 to learn · of 44"
 
 -}
 stateLine : { total : Int, untouched : Int, inProgress : Int, patched : Int } -> String
@@ -615,14 +619,15 @@ stateLine counts =
 
 
 {-| The same line in its parts, each with the state it names
-("patched", "in-progress", "to-start", "total"), so a page can put the
-grid's own colour beside each.
+("patched", "in-progress", "to-start", "total": the grid's names, not a
+player's), so a page can put the grid's own colour beside each. A set
+says it in the same words (`Ui.Decks.stateParts` is this).
 -}
 stateParts : { total : Int, untouched : Int, inProgress : Int, patched : Int } -> List ( String, String )
 stateParts counts =
-    [ ( "patched", String.fromInt (max 0 counts.patched) ++ " patched" )
-    , ( "in-progress", String.fromInt (max 0 counts.inProgress) ++ " in progress" )
-    , ( "to-start", String.fromInt (max 0 counts.untouched) ++ " to start" )
+    [ ( "patched", String.fromInt (max 0 counts.patched) ++ " mastered" )
+    , ( "in-progress", String.fromInt (max 0 counts.inProgress) ++ " learning" )
+    , ( "to-start", String.fromInt (max 0 counts.untouched) ++ " to learn" )
     , ( "total", "of " ++ String.fromInt (max 0 counts.total) )
     ]
 
@@ -669,23 +674,23 @@ costLine cost =
         ++ "."
 
 
-{-| What patching has won back of one tier's cost, once there is any:
-the PR the patched ones were worth.
+{-| What mastering has won back of one tier's cost, once there is any:
+the PR the mastered ones were worth.
 
-    "Patched so far: 0.6 PR won back."
+    "Mastered so far: 0.6 PR won back."
 
 -}
 wonBackLine : { pr : Float, prPatched : Float } -> Maybe String
 wonBackLine cost =
-    wonBack cost |> Maybe.map (\back -> "Patched so far: " ++ back ++ " PR won back.")
+    wonBack cost |> Maybe.map (\back -> "Mastered so far: " ++ back ++ " PR won back.")
 
 
 {-| The head of the practice home, over every mistake at once: how much
 of the player's rating their mistakes are, and -- once anything is
-patched -- what that has won back.
+mastered -- what that has won back.
 
     ( "Your mistakes are 8.0 of your 8.3 PR."
-    , Just "You have won back 0.6 so far."
+    , Just "Mastering them has won back 0.6 so far."
     )
 
 -}
@@ -693,11 +698,11 @@ costHeadline : { pr : Float, prWithout : Float, prPatched : Float } -> ( String,
 costHeadline cost =
     ( "Your mistakes are " ++ oneDecimal (gap cost.pr cost.prWithout) ++ " of your " ++ oneDecimal cost.pr ++ " PR."
     , wonBack { pr = cost.pr, prPatched = cost.prPatched }
-        |> Maybe.map (\back -> "You have won back " ++ back ++ " so far.")
+        |> Maybe.map (\back -> "Mastering them has won back " ++ back ++ " so far.")
     )
 
 
-{-| How much PR the patched ones were worth, to one decimal -- and
+{-| How much PR the mastered ones were worth, to one decimal -- and
 nothing at all until that is something a reader could see.
 -}
 wonBack : { pr : Float, prPatched : Float } -> Maybe String
@@ -744,8 +749,8 @@ dayStreakLine day =
                 ++ String.dropLeft 1 today
 
 
-{-| Under FIX ONE: what today still asks of this tier. Empty when it
-asks nothing (and then FIX ONE is not the button).
+{-| Under TRAIN: what today still asks of this tier. Empty when it
+asks nothing (and then TRAIN is not the button).
 
     "4 due now · 3 new today"
 
@@ -787,30 +792,18 @@ todayEyebrow =
 
 
 {-| What this run's answers did, under the celebration's head: how many
-climbed a rung and how many of those it patched. Never "nothing moved":
+climbed a rung and how many of those it mastered. Never "nothing moved":
 a run of misses is said as what it is, every one of them coming back.
 
-    "2 stepped up a level · 1 patched"
+    "2 stepped up a level · 1 mastered"
     "1 stepped up a level"
     "Every one of these is back on its way"
 
-The sets say it in their own word (`Ui.Decks.stepsLine`).
+The sets say it in the same words (`Ui.Decks.stepsLine`).
 
 -}
 stepsLine : { stepped : Int, patched : Int } -> String
 stepsLine counts =
-    steps "patched" counts
-
-
-{-| The same line in another word for the top rung (a set's "learned").
--}
-stepsLineIn : String -> { stepped : Int, patched : Int } -> String
-stepsLineIn =
-    steps
-
-
-steps : String -> { stepped : Int, patched : Int } -> String
-steps top counts =
     if counts.stepped <= 0 && counts.patched <= 0 then
         "Every one of these is back on its way"
 
@@ -821,7 +814,7 @@ steps top counts =
           else
             Nothing
         , if counts.patched > 0 then
-            Just (String.fromInt counts.patched ++ " " ++ top)
+            Just (String.fromInt counts.patched ++ " mastered")
 
           else
             Nothing
@@ -869,7 +862,7 @@ scheduledLine =
     "Everything here is scheduled. Practising early moves nothing."
 
 
-{-| Under a guest's PRACTICE: the order it comes in. That nothing is
+{-| Under a guest's TRAIN: the order it comes in. That nothing is
 kept is said once, over the card.
 -}
 guestPracticeLine : String
@@ -884,7 +877,7 @@ unsavedLine =
     "Your progress is not saved until you sign in."
 
 
-{-| A row's number: what is still to fix ("23 left"), or for a tier the
+{-| A row's number: what is still to master ("23 left"), or for a tier the
 visitor has made no mistakes in, that there are none yet.
 -}
 rowLeft : Int -> String
@@ -936,10 +929,9 @@ oneDecimal value =
 
 
 {-| The legend under a deck page's grid, a part per paint in the order a
-position climbs them, the last said in the deck's own word ("patched"
-for a mistake, "learned" in a set):
+position climbs them, the same for a mistake and a set:
 
-    "to start · level 1 · 2 · 3 · patched"
+    "to learn · level 1 · 2 · 3 · mastered"
 
 Each part carries the state it names, so the page can draw the grid's
 own colour beside it.
@@ -947,7 +939,7 @@ own colour beside it.
 -}
 legendParts : String -> List ( String, String )
 legendParts top =
-    [ ( "to-start", "to start" )
+    [ ( "to-start", "to learn" )
     , ( "level-1", "level 1" )
     , ( "level-2", "2" )
     , ( "level-3", "3" )
@@ -955,19 +947,19 @@ legendParts top =
     ]
 
 
-{-| A mistake at the top of the ladder.
+{-| A position at the top of the ladder, a mistake's or a set's.
 -}
 legendTop : String
 legendTop =
-    "patched"
+    "mastered"
 
 
 {-| The ladder in words, over the positions that have been started: how
 many went back to the start, how many sit on each rung below the top,
-and how many are at the top, in the deck's own word. A rung with nobody
+and how many are at the top, mastered. A rung with nobody
 on it is left out; nothing started is nothing said.
 
-    "2 back at the start, 8 at level 1, 5 at level 2, 3 at level 3, 6 patched."
+    "2 back at the start, 8 at level 1, 5 at level 2, 3 at level 3, 6 mastered."
 
 -}
 ladderLine : { patchedLevel : Int, started : List Int } -> String

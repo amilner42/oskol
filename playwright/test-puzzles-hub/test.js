@@ -3,20 +3,20 @@
  * arranges a finished game graded against a stubbed engine; Alice's seat
  * is then trimmed to twelve mistakes, so the numbers below are known:
  * a guest's session is all twelve, an account's first is the day's three
- * new (worst first), which is what one tier's FIX ONE run holds.
+ * new (worst first), which is what one tier's TRAIN run holds.
  *
  *  1. A stranger (a fresh browser) opens /puzzles: what this is, TRY ONE,
  *     and TRY ONE opens a puzzle with no NEXT (one puzzle is not a run).
  *  2. Alice, a guest holding the seat that made the mistakes, opens
  *     /puzzles: "12 mistakes from your 1 game", that nothing is saved,
- *     her worst tier in front with PRACTICE. The run: that tier's
+ *     her worst tier in front with TRAIN. The run: that tier's
  *     puzzles, PLAY and NEXT each, then the score and the sign-in ask. She signs in right there (the mail read
  *     from /dev/last-login) and CONTINUE lands her back on /puzzles with
  *     a deck: the counts line, and her timezone sent once.
  *  3. As an account: five decks, one in front -- the worst tier, by its
- *     mark, with its grid (a square a mistake), today's ring and FIX ONE
+ *     mark, with its grid (a square a mistake), today's ring and TRAIN
  *     -- and the others as rows; tapping a row and back leaves the page
- *     the height it was. FIX ONE runs that tier -- the counter and the
+ *     the height it was. TRAIN runs that tier -- the counter and the
  *     marks watched over each of them -- and ends on the summary with the
  *     way back. I'M DONE ends a run after one. Once today's set is done
  *     the ring is full and the one button is still there: KEEP GOING (or
@@ -248,7 +248,7 @@ async function run(browser, setup, errors) {
     must(headline === `${KEPT} mistakes from your 1 game`, `a guest reads what is hers: "${headline}"`);
     must(await alice.locator('#hub-unsaved').count(), 'and that nothing is saved yet');
     must(posts.length === 0, 'a guest\'s timezone is nobody\'s to keep');
-    // Her worst tier is in front, and PRACTICE runs that tier.
+    // Her worst tier is in front, and TRAIN runs that tier.
     const guestTier = await alice.getAttribute('#hub-card', 'data-deck');
     const guestDecks = (await (await alice.request.get(`${BASE}/papi/practice/decks`)).json()).decks;
     const guestSize = guestDecks.find((d) => d.id === guestTier).size;
@@ -258,7 +258,7 @@ async function run(browser, setup, errors) {
     must(squares === guestSize, `a square a mistake (${squares})`);
     await alice.click('#hub-go');
     await alice.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
-    log('PRACTICE started the run');
+    log('TRAIN started the run');
     await runToEnd(alice, guestSize);
     await alice.waitForSelector('#pz-signin-ask');
     must(await alice.locator('#signin-email').count(), 'a guest is asked to sign in, in the one component');
@@ -316,7 +316,7 @@ async function run(browser, setup, errors) {
     const ring = await alice.getAttribute('#hub-today svg', 'data-target');
     must(Number(ring) === front.standing.target_today, `today's ring is today's set (${ring})`);
     const fix = (await alice.textContent('#hub-go')).trim();
-    must(fix === 'FIX ONE', `one button, and it asks for one: "${fix}"`);
+    must(fix === 'TRAIN', `one button, and it says what it is: "${fix}"`);
     // The other decks are rows, and the one in front is not also a row.
     const rows = await alice.locator('#hub-rows .dk-row').count();
     must(rows === decks.decks.length - 1, `every other deck is a row (${rows} of ${decks.decks.length - 1})`);
@@ -338,7 +338,7 @@ async function run(browser, setup, errors) {
     must(posts.length === 2, `the timezone goes once per load of the page, never per fetch (${posts.length} for 2 loads)`);
 
     // ---- 3b. one mistake is a whole session ----
-    // FIX ONE, answer one, stop. That has to read as finished.
+    // TRAIN, answer one, stop. That has to read as finished.
     await alice.click('#hub-go');
     await alice.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
     await alice.waitForSelector('#pz-board .bg-stack');

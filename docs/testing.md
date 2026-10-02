@@ -72,15 +72,15 @@ the three schedule shapes).
   games, MORE appending the next page of rooms and then going, the grade
   band a rating is coloured by, a guest's answer handing the shell
   `SignedOut` rather than drawing an empty home, and the practice section
-  as the one-tier card (its mark, what is left to fix, FIX ONE with its
+  as the one-tier card (its mark, what is left to master, TRAIN with its
   tier, the quiet rows and tapping one).
 - `MistakesTest`: every word practice is said in, pinned -- the tiers by
-  mark and name, "31 left to fix" and "23 patched", what a tier in good
+  mark and name, "31 left to master" and "23 mastered", what a tier in good
   shape says and why, the all-clear line, the next tier's button, "3
   practised today", a run of one reading as a finished thing and no run
   calling an answer close, what each of the four choices would do, the
   early and KNEW IT lines, the cost lines, and the hub's and a deck page's
-  words.
+  words, and that none of them says "fix", "patched" or "learned".
 - `PuzzlePageTest`: the page on the generated fixtures: the reveal decodes
   (a fifth verdict word fails it), a tap walks and UNDO walks back, a lazy
   node is fetched and merged, PLAY posts exactly the path with the key (and
@@ -96,12 +96,12 @@ the three schedule shapes).
   a run of one reading as a whole session, the card for a guest (the
   sign-in, going on to where the run began) and for an account (the score,
   the way on -- KEEP GOING or PRACTICE ANYWAY, held in a fixed band -- and
-  the way back), and what the run patched.
+  the way back), and what the run mastered.
 - `PuzzlesHubTest`: the practice home on `/papi/practice/decks` -- five
   decks, one in front and four rows, for an account, a guest and a
   stranger: the lead or the one tapped, the grid and the ring, the one
-  button in each state (FIX ONE, KEEP GOING, PRACTICE ANYWAY, START,
-  PRACTICE, TRY) and what each press asks and hands the shell, the cost
+  button in each state (TRAIN, KEEP GOING, PRACTICE ANYWAY, START,
+  TRY) and what each press asks and hands the shell, the cost
   lines there and not there, a fresh account with the openings in front, a
   stranger's TRY ONE and the empty pool's sentence, and decoders that
   refuse a malformed count rather than defaulting it.
@@ -214,9 +214,9 @@ node playwright/test-puzzles-hub/test.js        # the practice home and a run: s
                                                # first seat trimmed to 12 mistakes; a stranger's TRY
                                                # ONE, a guest's run to the score and the sign-in ask,
                                                # sign in there (timezone sent once), the five decks
-                                               # with the worst tier in front, FIX ONE's run watching
+                                               # with the worst tier in front, TRAIN's run watching
                                                # the strip, I'M DONE after one, the run asking its
-                                               # queue again, FIX ONE's run ending on the today's-set
+                                               # queue again, TRAIN's run ending on the today's-set
                                                # card (no shift at four sizes) and KEEP GOING (3/6);
                                                # phones;
                                                # past the twentieth with many_due.exs (DUE_COUNT;

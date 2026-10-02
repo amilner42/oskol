@@ -420,7 +420,7 @@ anAccount =
                         [ Query.has [ dataAttr "data-deck" "very_bad", dataAttr "data-action" "fix-one" ]
                         , Query.has [ text "??" ]
                         , Query.find [ id "hub-name" ] >> Query.has [ text "Very bad moves" ]
-                        , Query.find [ id "hub-go" ] >> Query.has [ text "FIX ONE" ]
+                        , Query.find [ id "hub-go" ] >> Query.has [ text "TRAIN" ]
                         , Query.find [ dataAttr "data-target" "9" ] >> Query.has [ dataAttr "data-done" "2", dataAttr "data-target" "9" ]
                         , Query.find [ id "hub-quiet" ] >> Query.has [ text "4 due now · 3 new today" ]
                         ]
@@ -439,7 +439,7 @@ anAccount =
             \_ ->
                 card accountJson
                     |> Query.find [ id "hub-state" ]
-                    |> Query.has [ dataAttr "aria-label" "6 patched · 18 in progress · 20 to start · of 44" ]
+                    |> Query.has [ dataAttr "aria-label" "6 mastered · 18 learning · 20 to learn · of 44" ]
         , test "the other four are rows, in order, each with what is left" <|
             \_ ->
                 loaded accountJson
@@ -616,7 +616,7 @@ costs =
                     |> Query.find [ id "hub-cost-all" ]
                     |> Expect.all
                         [ Query.has [ text "Your mistakes are 8.1 of your 8.3 PR." ]
-                        , Query.find [ id "hub-won-all" ] >> Query.has [ text "You have won back 0.6 so far." ]
+                        , Query.find [ id "hub-won-all" ] >> Query.has [ text "Mastering them has won back 0.6 so far." ]
                         ]
         , test "a tier's cost line, and what patching won back of it" <|
             \_ ->
@@ -624,7 +624,7 @@ costs =
                     |> Query.find [ id "hub-cost" ]
                     |> Expect.all
                         [ Query.has [ text "These cost you 3.5 PR over 11 games. Without them your PR would be 4.8, not 8.3." ]
-                        , Query.find [ id "hub-won" ] >> Query.has [ text "Patched so far: 0.6 PR won back." ]
+                        , Query.find [ id "hub-won" ] >> Query.has [ text "Mastered so far: 0.6 PR won back." ]
                         ]
         , test "nothing patched yet: the cost, and no won-back line" <|
             \_ ->
@@ -693,7 +693,7 @@ aGuest =
                         [ Query.find [ id "hub-headline" ] >> Query.has [ text "23 mistakes from your 4 games" ]
                         , Query.find [ id "hub-unsaved" ] >> Query.has [ text Mistakes.unsavedLine ]
                         , Query.find [ id "hub-card" ] >> Query.has [ dataAttr "data-deck" "bad" ]
-                        , Query.find [ id "hub-go" ] >> Query.has [ text "PRACTICE" ]
+                        , Query.find [ id "hub-go" ] >> Query.has [ text "TRAIN" ]
                         , Query.find [ id "hub-state" ] >> Query.has [ text "21 bad moves from your games" ]
                         , Query.findAll [ id "hub-today" ] >> Query.count (Expect.equal 0)
                         ]

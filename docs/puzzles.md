@@ -477,7 +477,7 @@ GOT IT after a miss is `aria-disabled` in its column ("You missed this
 one."). Once NEVER is applied the four stay, disabled, under "Set aside".
 The reveal's height is fixed across taps. A schedule carries `patched`, true
 when that answer took the mistake to `deck.patched_level` from below (the
-level line then reads "Patched. Four right in a row — back in 21 days",
+level line then reads "Mastered. Four right in a row — back in 21 days",
 `.pz-level.is-patched`). SHARE is the table's `shareInvite` port on the
 clean URL.
 
@@ -530,7 +530,8 @@ cells and the way on (`Run.way`). The card (`#pz-today-done`) sits **under
 the reveal**, laid out hidden from its first frame: the ring at 64px
 filling to a check, "Today's 5 done.", what this run moved (from its own
 schedules), the deck's grid with the squares this run stepped up
-(`Ui.Charts.gridStepping`), for a tier what patching won back, and KEEP
+(`Ui.Charts.gridStepping`), for a tier what mastering won back ("Mastered
+so far: 0.6 PR won back."), and KEEP
 GOING (or PRACTICE ANYWAY) beside I'M DONE in one fixed band; ANOTHER is
 not drawn on that reveal and the band under the board keeps SHARE. The
 `celebrateCard` port scrolls it into view and `celebrationInView` starts
@@ -550,8 +551,9 @@ rows (`Ui.Deck.row`). The card is the mark or name, OPEN (to the deck's
 page), today's ring (`Ui.Charts.ring`), the mastery grid
 (`Ui.Charts.grid`, a square per position coloured by rung), the state line,
 for a tier the cost lines, and one button that never disappears where
-there is anything to practise (`Ui.Deck.action`: FIX ONE, KEEP GOING,
-PRACTICE ANYWAY, START, PRACTICE, TRY). A row has `Ui.Charts.miniRing`.
+there is anything to practise (`Ui.Deck.action`: TRAIN, KEEP GOING,
+PRACTICE ANYWAY, START, TRY). TRAIN is the one word for running a deck,
+a tier's, a set's and a guest's pile alike. A row has `Ui.Charts.miniRing`.
 Signed in, the page POSTs the browser's zone
 (`Intl.DateTimeFormat().resolvedOptions().timeZone`, boot flag `tz`) to
 `/papi/practice/tz` once per visit, never for a guest. Decisions on the
@@ -563,7 +565,7 @@ the database's random order, the first that qualifies).
 `GET /papi/practice/decks/:slug`: the same card at page size
 (`Ui.Deck.Size` `OnPage`, the grid as wide as the page with its legend),
 the ladder in words, what is due, the last thirty days, and for a tier what
-it cost and what patching won back. A run started here comes back here.
+it cost and what mastering won back. A run started here comes back here.
 
 The signed-in home's practice section is still the one-tier card
 (`assets/src/Ui/Tiers.elm`, on `/papi/me/home`'s `practice`); the
@@ -572,10 +574,18 @@ good-shape and all-clear lines and "WORK ON ? BAD MOVES" live there only.
 **The words are one module.** Every sentence practice is said in lives in
 `assets/src/Ui/Mistakes.elm` (sets: `assets/src/Ui/Decks.elm`) and is pinned
 in `MistakesTest`: the unit a player reads about is **a mistake they made**,
-what they do with it is **fix** it, and one they have stopped making is
-**patched**; a set's position is **learned**. The day is "practised", never
-"fixed": "3 practised today". Nothing a player reads says card, deck or
-flashcard.
+and what they do with it is **train** it (the button is TRAIN). The same
+three states for all five decks, mistakes and sets alike: **to learn**
+(never started), **learning** (started, below `deck.patched_level`) and
+**mastered** (at or above it) -- "6 mastered · 18 learning · 20 to learn ·
+of 44", "31 left to master", the legend "to learn · level 1 · 2 · 3 ·
+mastered", and on the reveal "Mastered. Four right in a row — back in 21
+days". The end of a run says "You mastered 2 very bad moves." (a set: "You
+mastered 2 of them."). The day is "practised", never "mastered": "3
+practised today". Nothing a player reads says card, deck or flashcard, nor
+"fix", "patched" or "learned" (`MistakesTest` and `DecksTest` hold it);
+`patched` lives on only as the wire's and the code's name for the top
+rungs.
 
 ## Universal sets
 
@@ -604,7 +614,8 @@ also somebody's mistake is one puzzle in two places).
   player's mistakes, a name that is no set is a 422. The run carries it
   (`Run.deck`), the strip names the set and draws its own ring, and the
   page asks no `/why` (a set's position came from no
-  game). A set is "learned", never fixed or patched (`Ui.Decks`).
+  game). A set's position is "mastered", the mistakes' own word
+  (`Ui.Decks`).
 - **Adding is an account's; playing is anybody's.** `POST /papi/decks/:id/join`
   enrols every member in the set's scope at its position, with the
   browser's zone; a guest, a stranger and an account that has not added
@@ -629,7 +640,7 @@ also somebody's mistake is one puzzle in two places).
   (test_support), a stub that answers every legal play.
 - **The pages**: a set is one of the five decks (above): a row or the card
   on `/puzzles`, and its own page at `/practice/<slug>`, with START (adds
-  it), PRACTICE (its queue), TRY (a walk, for anybody without an account).
+  it), TRAIN (its queue), TRY (a walk, for anybody without an account).
   `/papi/decks` and `/papi/decks/:id` stay its session's endpoints. A new
   set is a registry entry (its slug is its id with `-` for `_`), a build for
   its positions, and nothing else.

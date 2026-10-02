@@ -28,7 +28,7 @@ port module Page.Puzzle exposing
     , levelLineFor
     , memoryLine
     , offering
-    , patchedLine
+    , masteredLine
     , preselected
     , runProgress
     , runScore
@@ -274,7 +274,7 @@ draws it and plays it.
     to date by the shell: a choice applied after the card is drawn
     changes what it says);
   - `deck`: the deck as the server has it now (its cells for the grid,
-    what it cost, how much of a set is learned), read once when the card
+    what it cost, how much of a set is mastered), read once when the card
     appears;
   - `way`: KEEP GOING or PRACTICE ANYWAY, from where the deck stands;
   - `ready`: the card is drawn -- once the deck is read, or failing that
@@ -355,7 +355,7 @@ type Msg
 {-| What one answer did, as the run keeps it: how it was graded, where
 the mistake now stands (an account whose deck holds it; nothing for a
 guest, and nothing for one put out of the deck), and how bad the mistake
-was, so the end of the run can say what it patched.
+was, so the end of the run can say what it mastered.
 -}
 type alias Answer =
     { verdict : Verdict
@@ -1403,7 +1403,7 @@ viewEnd model end =
             :: p [ id "pz-score", class "text-[24px] sm:text-[28px] font-bold leading-tight mb-4", attribute "style" "color: var(--ink)" ]
                 [ text (runScoreIn model end.score) ]
             :: viewPracticeOnly model
-            :: viewPatched model end.answers
+            :: viewMastered model end.answers
             :: viewToday model
             :: viewWay model end
             :: viewAfter model end.after
@@ -1552,14 +1552,14 @@ viewToday model =
             text ""
 
 
-{-| What the run patched, under the score: "You patched 2 very bad
+{-| What the run mastered, under the score: "You mastered 2 very bad
 moves." Nothing when it crossed nobody over the rung -- the score has
 already said how it went -- and nothing for a guest, whose mistakes
 nothing is keeping.
 -}
-viewPatched : Model -> List Answer -> Html Msg
-viewPatched model answers =
-    case patchedLineIn model answers of
+viewMastered : Model -> List Answer -> Html Msg
+viewMastered model answers =
+    case masteredLineIn model answers of
         Just line ->
             p [ id "pz-patched", class "q-note text-[13px] leading-snug mb-4" ] [ text line ]
 
@@ -1568,27 +1568,27 @@ viewPatched model answers =
 
 
 {-| The sentence, from the answers the run collected: the grade of every
-mistake whose schedule says this answer patched it.
+mistake whose schedule says this answer mastered it.
 -}
-patchedLine : List Answer -> Maybe String
-patchedLine answers =
+masteredLine : List Answer -> Maybe String
+masteredLine answers =
     crossed answers
         |> List.map .grade
         |> List.filter (\grade -> grade /= "")
-        |> Mistakes.patchedRun
+        |> Mistakes.masteredRun
 
 
 {-| The same, in the words of what the run was of: a set is made of no
-mistake, so there is no band to count by, only how many were learned.
+mistake, so there is no band to count by, only how many were mastered.
 -}
-patchedLineIn : Model -> List Answer -> Maybe String
-patchedLineIn model answers =
+masteredLineIn : Model -> List Answer -> Maybe String
+masteredLineIn model answers =
     case model.deck of
         Just _ ->
-            Decks.learnedRun (List.length (crossed answers))
+            Decks.masteredRun (List.length (crossed answers))
 
         Nothing ->
-            patchedLine answers
+            masteredLine answers
 
 
 {-| The answers whose schedule says this answer took them over the rung.
@@ -2616,11 +2616,11 @@ nothing above it moves.
   - today's ring at 64 pixels, its arc running from where it stood before
     this answer to full, then the check drawn in;
   - "Today's 5 done.", with the highlighter swept under it;
-  - what the run did: "2 stepped up a level · 1 patched";
+  - what the run did: "2 stepped up a level · 1 mastered";
   - the deck's grid, the squares this run moved stepping up a shade one
     after another, oldest first;
-  - for a tier what patching has won back, for a set how much of it is
-    learned;
+  - for a tier what mastering has won back, for a set how much of it is
+    mastered;
   - the way on, KEEP GOING (or PRACTICE ANYWAY) beside I'M DONE, in one
     band whose height is fixed: never a wall.
 
@@ -2655,7 +2655,7 @@ viewCelebration model =
                 steps =
                     case model.deck of
                         Just _ ->
-                            Decks.stepsLine { stepped = counts.stepped, learned = counts.patched }
+                            Decks.stepsLine { stepped = counts.stepped, mastered = counts.patched }
 
                         Nothing ->
                             Mistakes.stepsLine counts
@@ -2666,7 +2666,7 @@ viewCelebration model =
                             case page.deck.kind of
                                 PracticeDecks.Set ->
                                     page.deck.standing
-                                        |> Maybe.map (\st -> Decks.learnedOf { learned = st.patched, total = st.total })
+                                        |> Maybe.map (\st -> Decks.masteredOf { mastered = st.patched, total = st.total })
 
                                 PracticeDecks.Tier ->
                                     page.deck.cost
@@ -2749,7 +2749,7 @@ boolText b =
 
 
 {-| How many of this run's answers climbed a rung, and how many of those
-patched (or, in a set, learned) the position.
+mastered the position.
 -}
 stepCounts : List ( String, Answer ) -> { stepped : Int, patched : Int }
 stepCounts answered =

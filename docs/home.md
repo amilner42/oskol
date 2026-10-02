@@ -94,8 +94,8 @@ and recent matches.
   three states -- untouched, in progress, patched -- with what each band
   still has to do today, plus `lead`, the tier to put in front. The page
   draws the same one-tier card the hub does (`Ui.Tiers`): the mark, "31
-  left to fix", "23 patched", the bar -- highlighter yellow for what is
-  in progress, the best move's green for what is patched -- and FIX ONE,
+  left to master", "23 mastered", the bar -- highlighter yellow for what is
+  in progress, the best move's green for what is patched -- and TRAIN,
   with the other tiers as quiet rows, and nothing else: `ladder` and `days` are still sent but no longer drawn.
 - Decisions: `src/oskol/handlers/home.gleam`. Reading never creates a
   deck, and never queues a review.

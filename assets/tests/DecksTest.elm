@@ -113,17 +113,17 @@ words =
         [ test "the celebration says how much of a set is learned, and what a run moved in its word" <|
             \_ ->
                 Expect.all
-                    [ \_ -> Ui.Decks.learnedOf { learned = 4, total = 15 } |> Expect.equal "4 of 15 learned."
-                    , \_ -> Ui.Decks.stepsLine { stepped = 2, learned = 1 } |> Expect.equal "2 stepped up a level · 1 learned"
-                    , \_ -> Ui.Decks.stepsLine { stepped = 0, learned = 0 } |> Expect.equal "Every one of these is back on its way"
+                    [ \_ -> Ui.Decks.masteredOf { mastered = 4, total = 15 } |> Expect.equal "4 of 15 mastered."
+                    , \_ -> Ui.Decks.stepsLine { stepped = 2, mastered = 1 } |> Expect.equal "2 stepped up a level · 1 mastered"
+                    , \_ -> Ui.Decks.stepsLine { stepped = 0, mastered = 0 } |> Expect.equal "Every one of these is back on its way"
                     ]
                     ()
         , test "left first, learned beside it once there is some, all of them at the end" <|
             \_ ->
                 Expect.all
-                    [ \_ -> Ui.Decks.standingLine (standing 15 0) |> Expect.equal "15 left to learn"
-                    , \_ -> Ui.Decks.standingLine (standing 11 4) |> Expect.equal "11 left to learn · 4 learned"
-                    , \_ -> Ui.Decks.standingLine (standing 0 15) |> Expect.equal "All 15 learned"
+                    [ \_ -> Ui.Decks.standingLine (standing 15 0) |> Expect.equal "15 left to master"
+                    , \_ -> Ui.Decks.standingLine (standing 11 4) |> Expect.equal "11 left to master · 4 mastered"
+                    , \_ -> Ui.Decks.standingLine (standing 0 15) |> Expect.equal "All 15 mastered"
                     ]
                     ()
         , test "a run of one is a whole session, in a set's words" <|
@@ -132,23 +132,23 @@ words =
                     [ \_ -> Ui.Decks.runSummary { right = 1, total = 1 } |> Expect.equal "One right. That is how it is done."
                     , \_ -> Ui.Decks.runSummary { right = 3, total = 5 } |> Expect.equal "3 of 5 right"
                     , \_ -> Ui.Decks.runSummary { right = 0, total = 1 } |> Expect.equal "One played. It comes back tomorrow."
-                    , \_ -> Ui.Decks.learnedRun 0 |> Expect.equal Nothing
-                    , \_ -> Ui.Decks.learnedRun 2 |> Expect.equal (Just "You learned 2 of them.")
+                    , \_ -> Ui.Decks.masteredRun 0 |> Expect.equal Nothing
+                    , \_ -> Ui.Decks.masteredRun 2 |> Expect.equal (Just "You mastered 2 of them.")
                     , \_ -> Ui.Decks.doneToday 3 |> Expect.equal "3 practised today"
                     ]
                     ()
         , test "a set's page: learned at the top of its legend and its ladder, and the sign-in" <|
             \_ ->
                 Expect.all
-                    [ \_ -> Ui.Decks.legendTop |> Expect.equal "learned"
-                    , \_ -> Ui.Decks.ladderLine { patchedLevel = 4, started = [ 3, 7, 0, 0, 2, 2, 0, 0 ] } |> Expect.equal "3 back at the start, 7 at level 1, 4 learned."
+                    [ \_ -> Ui.Decks.legendTop |> Expect.equal "mastered"
+                    , \_ -> Ui.Decks.ladderLine { patchedLevel = 4, started = [ 3, 7, 0, 0, 2, 2, 0, 0 ] } |> Expect.equal "3 back at the start, 7 at level 1, 4 mastered."
                     , \_ -> Ui.Decks.signInLine |> Expect.equal "Sign in to keep your place in these."
                     ]
                     ()
         , test "a set in its three states, which is its grid's legend" <|
             \_ ->
                 Ui.Decks.stateLine { total = 15, untouched = 5, inProgress = 6, patched = 4 }
-                    |> Expect.equal "4 learned · 6 in progress · 5 to start · of 15"
+                    |> Expect.equal "4 mastered · 6 learning · 5 to learn · of 15"
         , test "its size, what START means at its pace, and what TRY is" <|
             \_ ->
                 Expect.all
@@ -158,7 +158,7 @@ words =
                     , \_ -> Ui.Decks.startLine 10 |> Expect.equal "Ten new a day, and each comes back until you know it."
                     , \_ -> Ui.Decks.tryLine |> Expect.equal "Played in order, nothing kept. Sign in to keep your place."
                     , \_ -> Ui.Decks.rowLeft 11 |> Expect.equal "11 left"
-                    , \_ -> Ui.Decks.rowLeft 0 |> Expect.equal "All learned"
+                    , \_ -> Ui.Decks.rowLeft 0 |> Expect.equal "All mastered"
                     ]
                     ()
         , test "nothing a set says calls it a mistake, a card or a deck" <|
@@ -174,8 +174,16 @@ words =
                 , Ui.Decks.endSignIn
                 , Ui.Decks.runSummary { right = 0, total = 1 }
                 , Ui.Decks.doneToday 2
+                , Ui.Decks.startLabel { signedIn = True, joined = True }
+                , Ui.Decks.standingLine (standing 0 15)
+                , Ui.Decks.masteredOf { mastered = 4, total = 15 }
+                , Ui.Decks.stepsLine { stepped = 2, mastered = 1 }
+                , Ui.Decks.ladderLine { patchedLevel = 4, started = [ 3, 7, 0, 0, 2, 2, 0, 0 ] }
+                , Ui.Decks.legendTop
+                , Ui.Decks.rowLeft 0
                 ]
-                    |> List.filter (\line -> List.any (\word -> String.contains word (String.toLower line)) [ "mistake", "card", "deck", "fix" ])
+                    ++ List.filterMap identity [ Ui.Decks.masteredRun 1, Ui.Decks.masteredRun 2 ]
+                    |> List.filter (\line -> List.any (\word -> String.contains word (String.toLower line)) [ "mistake", "card", "deck", "fix", "patched", "learned", "in progress", "to start" ])
                     |> Expect.equal []
         ]
 

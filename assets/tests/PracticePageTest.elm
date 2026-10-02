@@ -421,21 +421,22 @@ theFive =
                     |> Query.find [ id "practice-today" ]
                     |> Query.find [ tag "svg" ]
                     |> Query.has [ dataAttr "data-done" "2", dataAttr "data-target" "9" ]
-        , test "the legend under a tier's grid ends on patched" <|
+        , test "the legend under a tier's grid climbs from to learn to mastered" <|
             \_ ->
                 rendered veryBadJson
                     |> Query.find [ id "practice-legend" ]
                     |> Expect.all
-                        [ Query.has [ text "to start" ]
+                        [ Query.has [ text "to learn" ]
                         , Query.has [ text "level 1" ]
-                        , Query.has [ text "patched" ]
+                        , Query.has [ text "mastered" ]
+                        , Query.hasNot [ text "patched" ]
                         , Query.hasNot [ text "learned" ]
                         ]
-        , test "the legend under a set's grid ends on learned" <|
+        , test "the legend under a set's grid says the same words" <|
             \_ ->
                 rendered (setJson "openings" "Openings" 15 True)
                     |> Query.find [ id "practice-legend" ]
-                    |> Expect.all [ Query.has [ text "learned" ], Query.hasNot [ text "patched" ] ]
+                    |> Expect.all [ Query.has [ text "to learn" ], Query.has [ text "mastered" ], Query.hasNot [ text "learned" ], Query.hasNot [ text "patched" ] ]
         , test "no OPEN on the page itself: it is the page" <|
             \_ -> rendered veryBadJson |> Query.findAll [ id "practice-open" ] |> Query.count (Expect.equal 0)
         ]
@@ -449,13 +450,13 @@ theButton : Test
 theButton =
     describe "the one button, the practice home's own"
         [ test "FIX ONE while today has work" <|
-            \_ -> goSays veryBadJson "FIX ONE"
+            \_ -> goSays veryBadJson "TRAIN"
         , test "KEEP GOING once today's set is done and some are unstarted" <|
             \_ -> goSays keepGoingJson "KEEP GOING"
         , test "PRACTICE ANYWAY once everything is started and nothing is due" <|
             \_ -> goSays anywayJson "PRACTICE ANYWAY"
         , test "PRACTICE on a set the account has added" <|
-            \_ -> goSays (setJson "openings" "Openings" 15 True) "PRACTICE"
+            \_ -> goSays (setJson "openings" "Openings" 15 True) "TRAIN"
         , test "START on a set the account has not" <|
             \_ -> goSays (setJson "openings" "Openings" 15 False) "START"
         , test "a run started here is a run of this tier" <|
@@ -507,7 +508,7 @@ theButton =
                     |> Query.fromHtml
                     |> Expect.all
                         [ Query.find [ id "practice-quiet" ] >> Query.has [ text "That's every one of these for now." ]
-                        , Query.find [ id "practice-go" ] >> Query.has [ text "FIX ONE" ]
+                        , Query.find [ id "practice-go" ] >> Query.has [ text "TRAIN" ]
                         ]
         ]
 
@@ -544,7 +545,7 @@ theDetails =
             \_ ->
                 rendered veryBadJson
                     |> Query.find [ id "practice-ladder" ]
-                    |> Query.has [ text "2 back at the start, 3 at level 1, 2 at level 2, 1 at level 3, 6 patched." ]
+                    |> Query.has [ text "2 back at the start, 3 at level 1, 2 at level 2, 1 at level 3, 6 mastered." ]
         , test "the thirty days, and how many had practice" <|
             \_ ->
                 rendered veryBadJson
@@ -559,7 +560,7 @@ theDetails =
                     |> Query.find [ id "practice-cost-block" ]
                     |> Expect.all
                         [ Query.has [ text "These cost you 3.5 PR over 11 games. Without them your PR would be 4.8, not 8.3." ]
-                        , Query.has [ text "Patched so far: 0.6 PR won back." ]
+                        , Query.has [ text "Mastered so far: 0.6 PR won back." ]
                         ]
         , test "no cost counted, no cost card" <|
             \_ -> rendered noCostJson |> Query.findAll [ id "practice-cost-block" ] |> Query.count (Expect.equal 0)
@@ -586,7 +587,7 @@ aGuest =
                         [ Query.find [ id "practice-unsaved" ] >> Query.has [ text Mistakes.unsavedLine ]
                         , Query.find [ id "practice-state" ] >> Query.has [ text "12 bad moves from your games" ]
                         , Query.find [ id "practice-grid" ] >> Query.findAll [ dataAttr "data-status" "new" ] >> Query.count (Expect.equal 12)
-                        , Query.find [ id "practice-go" ] >> Query.has [ text "PRACTICE" ]
+                        , Query.find [ id "practice-go" ] >> Query.has [ text "TRAIN" ]
                         , Query.findAll [ id "practice-today" ] >> Query.count (Expect.equal 0)
                         , Query.findAll [ id "practice-details" ] >> Query.count (Expect.equal 0)
                         , Query.has [ id "practice-signin-open" ]
