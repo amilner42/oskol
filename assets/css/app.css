@@ -1276,7 +1276,13 @@ a.q-card:hover, a.q-card:focus-visible {
   100% { transform: none; }
 }
 /* A clock held by a delay: the number stops moving, so the seconds still
-   free are shown beside it and the frozen figure is dimmed. */
+   free are shown beside it and the frozen figure is dimmed. On the table's
+   clock (`viewClockChip`) the two are one line of text, "10:00 +8": the
+   time, a small gap, the seconds in the same face, lighter and a little
+   smaller, on the same baseline -- no plate of their own. The time keeps
+   the width of "59:59" and the seconds a slot as wide as "+12" whether or
+   not they show, so the chip is as wide as its longest case from the start
+   and nothing in it moves as the clock counts or the seconds come and go. */
 .delay-pip {
   border: 2px solid var(--bg-accent);
   color: var(--bg-accent);
@@ -1285,6 +1291,16 @@ a.q-card:hover, a.q-card:focus-visible {
   line-height: 1.4;
 }
 .held { opacity: 0.55; }
+.clock-chip {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.3em;
+  white-space: nowrap;
+}
+.clock-chip .clock-time { min-width: 5ch; text-align: right; }
+.clock-chip .clock-inc { min-width: 3ch; font-size: 0.85em; font-weight: 400; text-align: left; }
+.clock-chip .delay-pip { border: 0; background: none; padding: 0; color: inherit; font: inherit; line-height: inherit; opacity: 0.8; }
 /* The cube hangs on the bar: white, so it reads there, and sized by the
    bar -- as big as its column allows. */
 .cube {
@@ -1325,7 +1341,7 @@ a.q-card:hover, a.q-card:focus-visible {
 :is(.bg-page, .bg-still) .clock-chip { border: 2px solid rgba(255, 255, 255, 0.45); color: rgba(255, 255, 255, 0.85); background: transparent; padding: 1px 6px; }
 :is(.bg-page, .bg-still) .clock-chip.running { border-color: var(--bg-accent); color: var(--bg-accent); background: transparent; }
 :is(.bg-page, .bg-still) .clock-chip.expired { border-color: var(--red); color: var(--red); }
-:is(.bg-page, .bg-still) .delay-pip { border-color: var(--bg-accent); color: var(--bg-frame); background: var(--bg-accent); }
+
 /* The game-over card. */
 .bg-card { border-radius: 14px; box-shadow: 0 18px 40px rgba(40, 24, 12, 0.4); }
 

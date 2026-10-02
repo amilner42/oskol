@@ -1277,7 +1277,6 @@ viewClockChip ctx playerId =
                             [ classList
                                 [ ( "clock-chip font-mono text-xs sm:text-sm", True )
                                 , ( "running", player.running && not expired )
-                                , ( "held", delay > 0 && not expired )
                                 , ( "expired", expired )
                                 ]
                             , title
@@ -1290,7 +1289,12 @@ viewClockChip ctx playerId =
                                     "Time left"
                                 )
                             ]
-                            [ span [ class "tabular-nums font-bold" ]
+                            -- One line: the time, then the turn's free
+                            -- seconds while there are any ("10:00 +8"),
+                            -- the time dimmed while it is held. The
+                            -- seconds have a slot of their own whether or
+                            -- not they show, so the time never moves.
+                            [ span [ classList [ ( "clock-time tabular-nums font-bold", True ), ( "held", delay > 0 && not expired ) ] ]
                                 [ text
                                     (if expired then
                                         "0:00"
@@ -1299,12 +1303,13 @@ viewClockChip ctx playerId =
                                         Protocol.formatClock remaining
                                     )
                                 ]
-                            , if delay > 0 && not expired then
-                                span [ class "delay-pip pixel text-[7px]" ]
-                                    [ text ("+" ++ String.fromInt ((delay + 999) // 1000)) ]
+                            , span [ class "clock-inc tabular-nums" ]
+                                (if delay > 0 && not expired then
+                                    [ span [ class "delay-pip" ] [ text ("+" ++ String.fromInt ((delay + 999) // 1000)) ] ]
 
-                              else
-                                text ""
+                                 else
+                                    []
+                                )
                             ]
 
                     Nothing ->

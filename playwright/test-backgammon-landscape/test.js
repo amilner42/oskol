@@ -351,6 +351,67 @@ function arrangeDancedRoom() {
   return JSON.parse(resultLine(out));
 }
 
+/**
+ * The clock reads as one line, "5:00 +12": the time and the turn's free
+ * seconds side by side, neither on the other, both inside the chip, and the
+ * chip as wide with the seconds as without them. Checked on a fresh clocked
+ * game at each size, while the first turn's delay is still running.
+ */
+async function assertClockLine(page, label) {
+  await page.waitForSelector('.clock-chip .delay-pip', { timeout: 20000 });
+  const chips = await page.evaluate(() =>
+    [...document.querySelectorAll('.clock-chip')].map((c) => {
+      const r = (e) => e && e.getBoundingClientRect().toJSON();
+      return { chip: r(c), time: r(c.querySelector('.clock-time')), pip: r(c.querySelector('.delay-pip')) };
+    })
+  );
+  const held = chips.find((c) => c.pip);
+  must(held, `${label}: a clock shows its free seconds`);
+  must(!overlaps(held.time, held.pip), `${label}: the time and the free seconds do not overlap`);
+  must(within(held.time, held.chip) && within(held.pip, held.chip), `${label}: both sit inside the clock`);
+  must(Math.abs(held.time.y + held.time.height - (held.pip.y + held.pip.height)) <= 3, `${label}: on one line`);
+  const plain = chips.find((c) => !c.pip);
+  if (plain) {
+    must(Math.abs(plain.chip.width - held.chip.width) < 0.5, `${label}: a clock is as wide with its free seconds as without`);
+  }
+}
+
+async function clockLines(browser, watch) {
+  const guest = () => require('crypto').randomBytes(16).toString('base64url');
+  for (const screen of [
+    { name: '390x844', width: 390, height: 844, modes: ['upright'] },
+    { name: '844x390', width: 844, height: 390, modes: ['expanded', 'compressed'] },
+    { name: '1440x900', width: 1440, height: 900, desktop: true, modes: ['desktop'] },
+  ]) {
+    const contexts = [];
+    for (const seat of [guest(), guest()]) {
+      const c = await browser.newContext({
+        viewport: { width: screen.width, height: screen.height },
+        hasTouch: !screen.desktop,
+        isMobile: !screen.desktop,
+      });
+      await c.addCookies([{ name: '_oskol_guest', value: seat, url: BASE, httpOnly: true, sameSite: 'Lax' }]);
+      await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+      contexts.push(c);
+    }
+    const a = await contexts[0].newPage();
+    watch(a, `clock ${screen.name}`);
+    const { gameId, inviteUrl } = await createGame(a, { name: 'Ada', mode: 'match3', clock: 'bg5' });
+    const b = await contexts[1].newPage();
+    await joinByLink(b, inviteUrl, 'Bo');
+    await a.waitForURL(`**/backgammon/${gameId}**`);
+    await a.waitForSelector('.bg-board', { timeout: 20000 });
+    for (const mode of screen.modes) {
+      if (mode === 'compressed') {
+        await a.click('#bg-focus-toggle');
+        await sleep(400);
+      }
+      await assertClockLine(a, `clock @ ${screen.name}${mode === 'expanded' || mode === 'compressed' ? `, ${mode}` : ''}`);
+    }
+    for (const c of contexts) await c.close();
+  }
+}
+
 async function main() {
   fs.mkdirSync(SHOTS, { recursive: true });
   const browser = await playwright.chromium.launch({
@@ -530,6 +591,9 @@ async function main() {
       watch,
       shot: (screen, mode) => `${SHOTS}/06-bear-off-${screen.name}-${mode}.png`,
     });
+
+    // --- the clock is one line of text at every size ------------------
+    await clockLines(browser, watch);
 
     if (errors.length) throw new Error(`page errors:\n${errors.join('\n')}`);
     log(`PASS (screenshots in ${SHOTS})`);
