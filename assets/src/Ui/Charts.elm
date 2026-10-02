@@ -532,7 +532,7 @@ days marks =
     figure "chart-days"
         "0 0 320 30"
         (daysSentence thirty)
-        [ attribute "data-practised" (String.fromInt (List.length (List.filter identity thirty))) ]
+        [ attribute "data-practiced" (String.fromInt (List.length (List.filter identity thirty))) ]
         (List.indexedMap dayCell thirty
             ++ [ Svg.text_
                     [ SvgAttr.x "3.5"
@@ -546,7 +546,7 @@ days marks =
 
 
 dayCell : Int -> Bool -> Svg msg
-dayCell index practised =
+dayCell index practiced =
     let
         common =
             [ SvgAttr.x (num (3.5 + toFloat index * 10.5))
@@ -557,7 +557,7 @@ dayCell index practised =
             ]
 
         paint =
-            if practised then
+            if practiced then
                 [ SvgAttr.fill "var(--ink)" ]
 
             else
@@ -580,7 +580,7 @@ daysSentence thirty =
         "No practice in the last 30 days."
 
     else
-        "Practised on " ++ plural hit "day" ++ " of the last 30."
+        "Practiced on " ++ plural hit "day" ++ " of the last 30."
 
 
 

@@ -253,7 +253,7 @@ answerWhy taker cube =
         taker ++ " is losing here by too much to take: a pass gives up one point rather than risking two or more."
 
     else if win >= 0.5 then
-        taker ++ " is the favourite here, double or not: an easy take."
+        taker ++ " is the favorite here, double or not: an easy take."
 
     else
         taker ++ " is behind here but has enough to play on for double the stake."

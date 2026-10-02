@@ -274,7 +274,7 @@ days =
                         [ Query.findAll [ tag "rect" ] >> Query.count (Expect.equal 30)
                         , Query.findAll [ tag "text" ] >> Query.index 0 >> Query.has [ text "30 days" ]
                         ]
-        , test "a practised day is filled in ink, an idle one outlined in pencil" <|
+        , test "a practiced day is filled in ink, an idle one outlined in pencil" <|
             \_ ->
                 Charts.days (List.repeat 12 True ++ List.repeat 18 False)
                     |> Query.fromHtml
@@ -283,7 +283,7 @@ days =
                             >> Query.count (Expect.equal 12)
                         , Query.findAll [ tag "rect", attr "stroke" "var(--pencil)" ]
                             >> Query.count (Expect.equal 18)
-                        , Query.has [ attr "aria-label" "Practised on 12 days of the last 30." ]
+                        , Query.has [ attr "aria-label" "Practiced on 12 days of the last 30." ]
                         ]
         , test "today is the rightmost cell" <|
             \_ ->

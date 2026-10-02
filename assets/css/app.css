@@ -2041,9 +2041,16 @@ a.rp-match-row:hover { color: var(--ink); }
 }
 .g-best { color: #1f7a45; background: #e4f4e9; }
 .g-ok { color: #2d6f78; background: #e3f1f3; }
-.g-doubtful { color: #8a5d00; background: #fff1c9; }
-.g-bad { color: #b4430d; background: #ffe5d4; }
-.g-very_bad { color: #b3261e; background: #fde1df; }
+/* The three mistake grades as tokens, so a tier's mark on the practice
+   pages (`.g-mark-*` below) is the very colour the replay grades with. */
+:root {
+  --g-doubtful: #8a5d00; --g-doubtful-soft: #fff1c9;
+  --g-bad: #b4430d; --g-bad-soft: #ffe5d4;
+  --g-very_bad: #b3261e; --g-very_bad-soft: #fde1df;
+}
+.g-doubtful { color: var(--g-doubtful); background: var(--g-doubtful-soft); }
+.g-bad { color: var(--g-bad); background: var(--g-bad-soft); }
+.g-very_bad { color: var(--g-very_bad); background: var(--g-very_bad-soft); }
 /* The engine's top moves, in columns: the move, its equity (or what it
    loses against the best), then how often it wins, wins a gammon, loses a
    gammon. Tap one to see it on the board. */
@@ -2695,7 +2702,9 @@ button.tier-row:active { background: var(--paper-2); transform: translateY(1px);
   border-radius: 10px;
   transition: background 0.15s ease;
 }
-.dk-row + .dk-row {
+/* A divider between two closed drawers; none against the open card,
+   which has its own edge. */
+.dk-slot:not(.is-open) + .dk-slot:not(.is-open) > .dk-row {
   background-image: linear-gradient(rgba(35, 36, 58, 0.09), rgba(35, 36, 58, 0.09));
   background-size: calc(100% - 20px) 1px;
   background-position: 10px 0;
@@ -2705,12 +2714,7 @@ button.dk-row { cursor: pointer; }
 @media (hover: hover) { button.dk-row:hover { background-color: var(--paper-2); } }
 button.dk-row:focus-visible { background-color: var(--paper-2); outline: none; }
 button.dk-row:active { background-color: var(--paper-2); }
-.dk-row-mark {
-  font-family: "Press Start 2P", monospace;
-  font-size: 12px;
-  letter-spacing: -0.04em;
-  color: var(--pen);
-}
+.dk-row-mark { display: flex; align-items: center; }
 .dk-row-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dk-row-ring { width: 20px; height: 20px; }
 .dk-row-ring .chart-ring { width: 20px; height: 20px; }
@@ -2728,7 +2732,6 @@ button.dk-row:hover .dk-row-chev { transform: translateX(2px); color: var(--ink)
   .dk-setname { font-size: 22px; }
   .dk-row { column-gap: 6px; padding: 0 4px; font-size: 13px; grid-template-columns: 22px minmax(0, 1fr) 18px 3.9rem 8px; }
   .dk-row-left { font-size: 12px; }
-  .dk-row-mark { font-size: 10px; }
   .pz-hub-cost-line { font-size: 17px; }
 }
 
@@ -2756,6 +2759,78 @@ button.dk-row:hover .dk-row-chev { transform: translateX(2px); color: var(--ink)
 @media (hover: hover) { .dk-open:hover { background: var(--highlighter); transform: translate(-1px, -1px); box-shadow: 2.5px 2.5px 0 0 var(--ink); } }
 .dk-open:active { transform: translate(1px, 1px); box-shadow: 0 0 0 0 var(--ink); }
 .dk-open:focus-visible { outline: 2px solid var(--pen); outline-offset: 2px; }
+
+/* ---- The deck's icon: a tier's mark in its grade's colour on a wash of
+   it, a set's dice on paper (no grade's colour). The row's tile fits its
+   44px row; the card's sits in the head's 64px. ---- */
+.dk-head-id { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.dk-icon {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ink);
+  background: var(--paper-2);
+  box-shadow: inset 0 0 0 1px rgba(35, 36, 58, 0.08);
+}
+.dk-icon.is-small { width: 28px; height: 28px; border-radius: 8px; }
+.dk-icon.is-large { width: 56px; height: 56px; border-radius: 15px; }
+.dk-icon.is-very_bad { background: var(--g-very_bad-soft); box-shadow: none; }
+.dk-icon.is-bad { background: var(--g-bad-soft); box-shadow: none; }
+.dk-icon.is-doubtful { background: var(--g-doubtful-soft); box-shadow: none; }
+.dk-icon .dk-mark { padding: 0; font-size: 18px; letter-spacing: -0.06em; }
+.dk-icon.is-small .dk-mark { font-size: 9px; }
+.dk-icon .dk-dice { width: 30px; height: 30px; }
+.dk-icon.is-small .dk-dice { width: 21px; height: 21px; }
+.dk-name.is-tier {
+  margin-top: 0;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  color: var(--ink);
+}
+.dk-title { flex: 1; }
+/* Beside the icon the eyebrow and OPEN may take two lines on a phone
+   rather than run into the ring; a deck's head is the same height every
+   time it is drawn. */
+.dk-head-id .dk-name-row { height: auto; min-height: 18px; flex-wrap: wrap; row-gap: 6px; margin-top: 8px; }
+.dk-head-id .dk-name-row:empty { display: none; }
+@media (max-width: 639px) {
+  .dk-icon.is-large { width: 46px; height: 46px; border-radius: 13px; }
+  .dk-icon.is-large .dk-mark { font-size: 15px; }
+  .dk-head-id { gap: 12px; }
+  .dk-head-id .dk-setname { font-size: 22px; }
+  .dk-name.is-tier { font-size: 18px; }
+}
+@media (max-width: 359px) {
+  .dk-icon.is-small { width: 22px; height: 22px; border-radius: 6px; }
+  .dk-icon.is-small .dk-mark { font-size: 8px; }
+  .dk-icon.is-small .dk-dice { width: 18px; height: 18px; }
+  .dk-icon.is-large { width: 46px; height: 46px; border-radius: 12px; }
+  .dk-icon.is-large .dk-mark { font-size: 15px; }
+  .dk-name.is-tier { font-size: 17px; }
+}
+/* A tier's mark, wherever it is drawn, in the replay's colour for it. */
+.g-mark-very_bad { color: var(--g-very_bad); }
+.g-mark-bad { color: var(--g-bad); }
+.g-mark-doubtful { color: var(--g-doubtful); }
+
+/* ---- The drawers: the five in their own order, one open as its card in
+   its own slot. Opening grows the slot from nothing and fades it in;
+   nothing above the tapped row moves, and no slot ever changes place. */
+.dk-drawer { display: grid; grid-template-rows: 1fr; grid-template-columns: minmax(0, 1fr); }
+.dk-drawer-in { min-height: 0; min-width: 0; }
+.dk-drawer .dk-card { margin: 10px 0 14px; }
+.dk-slot:first-child .dk-drawer .dk-card { margin-top: 4px; }
+@media (prefers-reduced-motion: no-preference) {
+  .dk-rows.is-tapped .dk-drawer { animation: dk-drawer-open 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  /* clipped while it grows; the padding keeps the card's shadow inside */
+  .dk-rows.is-tapped .dk-drawer-in { overflow: hidden; padding: 0 6px 6px 0; margin: 0 -6px -6px 0; }
+}
+@keyframes dk-drawer-open {
+  from { grid-template-rows: 0fr; opacity: 0; }
+  to { grid-template-rows: 1fr; opacity: 1; }
+}
 
 /* ---- A deck's own page: /practice/<slug>. The practice home's card at
    page size -- the grid as wide as the card, the ring at 64px, the

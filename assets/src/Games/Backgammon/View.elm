@@ -2467,7 +2467,7 @@ viewCube board slot =
                             "Doubling cube: " ++ ctx.nameOf id ++ " owns it"
 
                         Nothing ->
-                            "Doubling cube: centred, either player may double"
+                            "Doubling cube: centered, either player may double"
                 )
             ]
             [ text shown ]

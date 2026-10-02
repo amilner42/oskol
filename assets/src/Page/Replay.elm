@@ -2070,14 +2070,14 @@ viewAnalysisState model game analysis =
                     if not (seated model) then
                         -- Nobody started this one: an analysis is engine
                         -- time, and only a player's own visit spends it.
-                        line "is-quiet" [ text ("Game " ++ String.fromInt game.number ++ " has not been analysed yet.") ]
+                        line "is-quiet" [ text ("Game " ++ String.fromInt game.number ++ " has not been analyzed yet.") ]
 
                     else if model.polls >= maxPolls then
-                        line "is-quiet" [ text "Still being analysed. Reload the page to check again." ]
+                        line "is-quiet" [ text "Still being analyzed. Reload the page to check again." ]
 
                     else
                         line "is-pending"
-                            [ span [] [ text ("Analysing game " ++ String.fromInt game.number ++ " at 4-ply… this can take a few minutes") ]
+                            [ span [] [ text ("Analyzing game " ++ String.fromInt game.number ++ " at 4-ply… this can take a few minutes") ]
                             , span [ class "rp-progress" ] [ span [] [] ]
                             ]
 
@@ -2101,10 +2101,10 @@ viewAnalysisState model game analysis =
                         ]
 
                 ( Empty, _ ) ->
-                    line "is-quiet" [ text "Nothing to analyse: no turn was completed." ]
+                    line "is-quiet" [ text "Nothing to analyze: no turn was completed." ]
 
                 ( Playing, _ ) ->
-                    line "is-quiet" [ text "This game is still being played; it is analysed when it ends." ]
+                    line "is-quiet" [ text "This game is still being played; it is analyzed when it ends." ]
 
                 ( Done, Nothing ) ->
                     if List.member game.number model.analysisErrors then
@@ -2221,7 +2221,7 @@ viewSummary model record game =
 
             -- where the analysis stands is the note's to say, above the tabs
             Nothing ->
-                [ div [ class "rp-explain" ] [ text "Each player's PR, errors and luck appear here once the game is analysed." ] ]
+                [ div [ class "rp-explain" ] [ text "Each player's PR, errors and luck appear here once the game is analyzed." ] ]
         )
 
 

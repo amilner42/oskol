@@ -199,7 +199,7 @@ pub fn describe(q: Question) -> String {
   let cube = case q.cube_owner {
     Mover -> "Cube at " <> int.to_string(q.cube_value) <> ", White's."
     Opponent -> "Cube at " <> int.to_string(q.cube_value) <> ", Black's."
-    _ -> "Cube centred."
+    _ -> "Cube centered."
   }
   score <> ". " <> cube <> " A backgammon puzzle: play it on the board."
 }

@@ -666,7 +666,7 @@ puzzleOut out model =
                             Run.keepGoing model.session run (GotOnward run.gen way)
 
                         Page.Puzzle.Anyway ->
-                            Run.practiseAnyway model.session run (GotOnward run.gen way)
+                            Run.practiceAnyway model.session run (GotOnward run.gen way)
 
                         Page.Puzzle.NoWay ->
                             Cmd.none
@@ -1189,7 +1189,7 @@ update msg model =
                                 ( { model | run = Just more }, Run.refetch model.session more (GotOnward gen way) )
 
                             else
-                                ( offer (Page.Puzzle.Stopped Mistakes.everyOnePractised) { model | run = Just more }, Cmd.none )
+                                ( offer (Page.Puzzle.Stopped Mistakes.everyOnePracticed) { model | run = Just more }, Cmd.none )
 
                 ( Just _, Err err ) ->
                     ( offer (Page.Puzzle.Stopped (Api.errorMessage err)) model, Cmd.none )

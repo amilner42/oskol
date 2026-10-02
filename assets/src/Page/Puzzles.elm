@@ -13,26 +13,28 @@ module Page.Puzzles exposing
     , withSession
     )
 
-{-| `/puzzles` -- the practice home: five decks, one in front and four
-behind it, read from one answer (`GET /papi/practice/decks`).
+{-| `/puzzles` -- the practice home: five decks as drawers, read from one
+answer (`GET /papi/practice/decks`).
 
 The five are the three tiers of the player's own mistakes (`??` very bad,
 `?` bad, `?!` dubious) and the two universal sets (the openings, the
-replies to them). Each is drawn the one way (`Ui.Deck`): in front, a card
-with its mastery grid -- a square per position, coloured by its rung --
-today's ring, its state in words, what it cost, and one button; behind,
-a row each with its ring and how many are left, tapped to come in front.
+replies to them), always in that order. One drawer is open: its deck is
+drawn as a card (`Ui.Deck`) in its own slot -- its mastery grid, a
+square per position coloured by its rung, today's ring, its state in
+words, what it cost, and one button. The others are rows with their ring
+and how many are left; tapping one opens it in place and closes the one
+that was open. **Nothing ever changes order.**
 
 Three visitors, one page:
 
   - an **account**: how long they have kept at it and what today has come
-    to, what their mistakes cost them in PR, then the deck the server
-    leads with (the worst tier with work, else a set with work, else the
-    worst tier there is) -- or the one they tapped -- and the other four.
-    A fresh account with no mistakes yet has the openings in front.
+    to, what their mistakes cost them in PR, then the five with open the
+    deck the server leads with (the worst tier with work, else a set with
+    work, else the worst tier there is) -- or the one they tapped. A
+    fresh account with no mistakes yet has the openings open.
   - a **guest** with games behind them: "23 mistakes from your 4 games",
-    that nothing is kept until they sign in, their worst tier in front
-    with PRACTICE, the rest as rows (a set says TRY), and the sign-in line.
+    that nothing is kept until they sign in, the five with their worst
+    tier open (PRACTICE; a set says TRY), and the sign-in line.
   - a **stranger**: what this is, TRY ONE, and the five as rows -- their
     tiers quiet (nothing of theirs yet), the sets to try.
 
@@ -182,10 +184,10 @@ who v =
             Stranger
 
 
-{-| The deck in front: the one the player tapped, while it is still one
+{-| The deck whose drawer is open: the one the player tapped, while it is still one
 that can be; else the server's lead; else, for an account with nothing
 of its own yet, the first set -- so there is always a button that starts
-practice. A stranger has nothing in front until they tap a set.
+practice. A stranger has nothing open until they tap a set.
 -}
 front : Maybe String -> Catalog -> Maybe Deck
 front picked catalog =
@@ -259,8 +261,9 @@ update msg model =
         TimezoneSent _ ->
             ( model, Cmd.none, NoOut )
 
-        -- A row: that deck comes in front. Nothing is fetched -- every
-        -- deck's numbers came with the page.
+        -- A row: that deck's drawer opens where it is, and the one that
+        -- was open closes. Nothing is fetched -- every deck's numbers
+        -- came with the page.
         PickedDeck id ->
             ( { model | picked = Just id, note = Nothing }, Cmd.none, NoOut )
 
@@ -443,38 +446,67 @@ body model catalog =
         v =
             visitor catalog
 
-        inFront =
+        open =
             front model.picked catalog
 
-        rows =
-            catalog.decks
-                |> List.filter (\deck -> Just deck.id /= Maybe.map .id inFront)
-                |> List.map (\deck -> Deck.row { who = who v, deck = deck, onPick = PickedDeck, prefix = "hub" })
+        -- Every deck has its slot, in the catalog's order, whichever is
+        -- open: a tap changes what one slot holds and never the order.
+        slot deck =
+            let
+                isOpen =
+                    Maybe.map .id open == Just deck.id
+            in
+            Html.div
+                [ class
+                    (if isOpen then
+                        "dk-slot is-open"
+
+                     else
+                        "dk-slot"
+                    )
+                , id ("hub-slot-" ++ deck.id)
+                , Attr.attribute "data-deck" deck.id
+                ]
+                [ if isOpen then
+                    Html.div
+                        [ class "dk-drawer"
+                        , Attr.attribute "role" "region"
+                        , Attr.attribute "aria-labelledby" "hub-name"
+                        ]
+                        [ Html.div [ class "dk-drawer-in" ]
+                            [ Deck.card
+                                { who = who v
+                                , deck = deck
+                                , patchedLevel = catalog.patchedLevel
+                                , busy = model.busy /= Idle
+                                , pressed = model.busy == Starting deck.id
+                                , onPress = Pressed deck
+                                , prefix = "hub"
+                                , note = model.note
+                                , open = Just (Route.href (Route.practice deck.slug))
+                                , squares = Nothing
+                                , size = Deck.OnHub
+                                }
+                            ]
+                        ]
+
+                  else
+                    Deck.row { who = who v, deck = deck, onPick = PickedDeck, prefix = "hub" }
+                ]
     in
-    headLines model catalog v inFront
-        ++ [ case inFront of
-                Just deck ->
-                    Deck.card
-                        { who = who v
-                        , deck = deck
-                        , patchedLevel = catalog.patchedLevel
-                        , busy = model.busy /= Idle
-                        , pressed = model.busy == Starting deck.id
-                        , onPress = Pressed deck
-                        , prefix = "hub"
-                        , note = model.note
-                        , open = Just (Route.href (Route.practice deck.slug))
-                        , squares = Nothing
-                        , size = Deck.OnHub
-                        }
+    headLines model catalog v open
+        ++ [ Html.div
+                [ -- Only a drawer a tap opened slides open: the page lands still.
+                  class
+                    (if model.picked == Nothing then
+                        "dk-rows"
 
-                Nothing ->
-                    Html.text ""
-           , if List.isEmpty rows then
-                Html.text ""
-
-             else
-                Html.div [ class "dk-rows", id "hub-rows" ] rows
+                     else
+                        "dk-rows is-tapped"
+                    )
+                , id "hub-rows"
+                ]
+                (List.map slot catalog.decks)
            , case v of
                 AnAccount ->
                     Html.text ""

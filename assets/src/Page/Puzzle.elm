@@ -258,7 +258,7 @@ type WayState
     = Asking
     | Offered Way
     | Going Way
-      -- the press found nothing more (every one of these practised), or
+      -- the press found nothing more (every one of these practiced), or
       -- the server said why not
     | Stopped String
 
@@ -1050,7 +1050,7 @@ marked reveal model =
             }
 
 
-{-| Does this answer count toward the day -- the ring, and "3 practised
+{-| Does this answer count toward the day -- the ring, and "3 practiced
 today"? Only one the server moved the mistake for (`amendable`): that is
 exactly what it counts the day by. Not one given early (PRACTICE ANYWAY,
 or a second go), not one it could not grade (a self-grade is deferred,
@@ -1538,7 +1538,7 @@ wayLine model way =
             ""
 
 
-{-| The day, under the score: "3 practised today". The same words the hub
+{-| The day, under the score: "3 practiced today". The same words the hub
 and the session use, and the same plain count.
 -}
 viewToday : Model -> Html Msg
@@ -1629,7 +1629,7 @@ dayLine model done =
             Decks.doneToday done
 
         Nothing ->
-            Mistakes.practisedToday done
+            Mistakes.practicedToday done
 
 
 viewAfter : Model -> After -> List (Html Msg)
@@ -1724,6 +1724,7 @@ viewProgress model =
                 [ div [ class "pz-strip", id "pz-strip" ]
                     [ span
                         [ classList [ ( "pz-strip-label", True ), ( "pixel", model.deck == Nothing ) ]
+                        , class (runLabelClass model)
                         , id "pz-progress-label"
                         ]
                         [ text (runLabel model) ]
@@ -1819,6 +1820,19 @@ runLabel model =
             Maybe.map Mistakes.mark model.tier |> Maybe.withDefault ""
 
 
+{-| A tier's mark at the head of the strip is in its grade's colour, as
+on the hub and in the replay; a set's name is in ink.
+-}
+runLabelClass : Model -> String
+runLabelClass model =
+    case ( model.deck, model.tier ) of
+        ( Nothing, Just tier ) ->
+            Mistakes.markClass tier
+
+        _ ->
+            ""
+
+
 {-| The reserved line's own words: the day's count -- or, in a run of
 early answers, that it is practice only, since nothing in it moves the
 day.
@@ -1832,7 +1846,7 @@ underLine model =
         Maybe.map (\today -> dayLine model today.done) model.today |> Maybe.withDefault ""
 
 
-{-| "?? · 3 of today's 5 done · 3 practised today": the strip as one
+{-| "?? · 3 of today's 5 done · 3 practiced today": the strip as one
 sentence, for a reader who hears it rather than sees it. The mark alone
 for a guest, who has no day counted.
 -}
@@ -2164,7 +2178,7 @@ scoreLine puzzle =
                     "cube " ++ String.fromInt q.cube.value ++ ", Black's"
 
                 _ ->
-                    "cube centred"
+                    "cube centered"
     in
     score ++ " · " ++ cube
 

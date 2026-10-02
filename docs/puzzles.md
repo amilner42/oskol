@@ -384,7 +384,7 @@ nothing the run has not already put in front of the player.
 
 ## The five decks
 
-What a player practises is five decks, in one shape
+What a player practices is five decks, in one shape
 (`src/oskol/practice/catalog.gleam`): the three tiers of their own
 mistakes, worst first (`very_bad` / `very-bad` ??, `bad` / `bad` ?,
 `doubtful` / `dubious` ?!), and the universal sets from the registry
@@ -500,7 +500,7 @@ an answer with nothing new in it ends today's set. The page is told
 (`#pz-progress`): the tier's mark or the set's name, the deck's ring with
 "3/5" beside it, an 18px tile per answer in one row that scrolls sideways
 (opening at its newest end), and one reserved line under it -- the day's
-count ("3 practised today"), or "Practice only" in a run of early answers --
+count ("3 practiced today"), or "Practice only" in a run of early answers --
 with, for a mistake, the `/why` line. It offers ANOTHER (`#pz-next`,
 `WantsNext`) and I'M DONE (`#pz-done`, `WantsEnd`) after every reveal --
 except the one that finishes today's set (below) -- and
@@ -544,14 +544,20 @@ height, scrolling inside, so a tall reveal never stretches the board's
 box.
 
 **The practice home** (`/puzzles`, `assets/src/Page/Puzzles.elm`) is the
-five decks on `GET /papi/practice/decks`'s one answer: one in front as a
-card (`Ui.Deck.card`, `OnHub`; the server's `lead`, the one tapped, or for
-an account with nothing of its own the first set) and the other four as
-rows (`Ui.Deck.row`). The card is the mark or name, OPEN (to the deck's
-page), today's ring (`Ui.Charts.ring`), the mastery grid
+five decks on `GET /papi/practice/decks`'s one answer, as drawers in their
+own fixed order (very bad, bad, dubious, Openings, Opening replies). One
+is open, drawn as its card (`Ui.Deck.card`, `OnHub`) in its own slot: the
+server's `lead`, the one tapped, or for an account with nothing of its own
+the first set; a stranger has none open until they tap one. The others are
+rows (`Ui.Deck.row`, buttons with `aria-expanded`); tapping one opens it in
+place and closes the open one. **Nothing ever changes order.** Every row
+and card starts with the deck's icon: a tier's mark in the replay's colour
+for its grade (`Mistakes.markClass`, the `--g-*` tokens behind `.g-*`; the
+same on a deck's page and a run's strip), a set's dice on paper. The card
+is the icon and name, OPEN (to the deck's page), today's ring (`Ui.Charts.ring`), the mastery grid
 (`Ui.Charts.grid`, a square per position coloured by rung), the state line,
 for a tier the cost lines, and one button that never disappears where
-there is anything to practise (`Ui.Deck.action`: TRAIN, KEEP GOING,
+there is anything to practice (`Ui.Deck.action`: TRAIN, KEEP GOING,
 PRACTICE ANYWAY, START, TRY). TRAIN is the one word for running a deck,
 a tier's, a set's and a guest's pile alike. A row has `Ui.Charts.miniRing`.
 Signed in, the page POSTs the browser's zone
@@ -581,8 +587,8 @@ three states for all five decks, mistakes and sets alike: **to learn**
 of 44", "31 left to master", the legend "to learn · level 1 · 2 · 3 ·
 mastered", and on the reveal "Mastered. Four right in a row — back in 21
 days". The end of a run says "You mastered 2 very bad moves." (a set: "You
-mastered 2 of them."). The day is "practised", never "mastered": "3
-practised today". Nothing a player reads says card, deck or flashcard, nor
+mastered 2 of them."). The day is "practiced", never "mastered": "3
+practiced today". Nothing a player reads says card, deck or flashcard, nor
 "fix", "patched" or "learned" (`MistakesTest` and `DecksTest` hold it);
 `patched` lives on only as the wire's and the code's name for the top
 rungs.
@@ -621,7 +627,7 @@ also somebody's mistake is one puzzle in two places).
   browser's zone; a guest, a stranger and an account that has not added
   it walk the set in order with nothing written. `POST /papi/practice/tz`
   reaches every set the account has added and creates none. The streak
-  counts practice in every scope (`activity.practised`).
+  counts practice in every scope (`activity.practiced`).
 - **Budgets**: Openings five new a day, replies ten, and KEEP GOING
   through a set (`POST /papi/decks/:id/more`) starts that many again.
   Patched is the same rung (`deck.patched_level`), read off the set's own
@@ -634,7 +640,7 @@ also somebody's mistake is one puzzle in two places).
   in its set (by question key) is never asked again, a dry run asks
   nobody, an answer short of every legal play (`openings.answer`) is a
   failure and not a puzzle, and each batch is written as it lands. Money
-  play, Jacoby, cube centred: unlimited play's own opening. A set with no
+  play, Jacoby, cube centered: unlimited play's own opening. A set with no
   positions built is not offered, so the page shows nothing until the
   build has run. Tests build both against `Oskol.CompleteEngine`
   (test_support), a stub that answers every legal play.

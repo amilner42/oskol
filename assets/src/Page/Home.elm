@@ -376,7 +376,7 @@ update msg model =
 
 nothingDueLine : String
 nothingDueLine =
-    "Nothing to practise right now. The ones you get wrong come back on their day."
+    "Nothing to practice right now. The ones you get wrong come back on their day."
 
 
 

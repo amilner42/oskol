@@ -88,7 +88,7 @@ and recent matches.
 - `practice` is the deck as the practice home reads it (`due`, `deck`)
   plus the pictures Retain does not answer on its own and the cap reads
   off its rows: `ladder`, the mistakes at each of the eight levels;
-  `days`, whether the deck was practised on each of the last 30 local
+  `days`, whether the deck was practiced on each of the last 30 local
   days (an attempt counts, a deferral does not); `today: {done}`, a plain
   count of the day's answers; and `severity`, the mistakes by band in
   three states -- untouched, in progress, patched -- with what each band

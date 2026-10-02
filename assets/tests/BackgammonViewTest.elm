@@ -836,7 +836,7 @@ suite =
                         )
                         (Query.has
                             [ class "cube"
-                            , attribute (Html.Attributes.title "Doubling cube: centred, either player may double")
+                            , attribute (Html.Attributes.title "Doubling cube: centered, either player may double")
                             ]
                         )
              , test "both players connected: two lit dots, no wording" <|

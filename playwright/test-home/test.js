@@ -14,7 +14,7 @@
  *  4. Form, at the top of the page: Recent and Career, Recent the better
  *     of the two (the fixture's games improve), the streak beside them,
  *     the sentence, and the line drawn over every graded game.
- *  5. Practice: an account that has never practised is told what fills the
+ *  5. Practice: an account that has never practiced is told what fills the
  *     deck. (A deck with cards in it is drawn in `assets/tests/HomeTest.elm`
  *     on a real answer; filling one here means extracting puzzles from a
  *     played game, which the puzzle smokes already do.)
@@ -124,7 +124,7 @@ async function run(browser, errors, fixture) {
     if (!(streak >= 1)) throw new Error(`the streak should count today: ${streak}`);
     log(`form: recent ${recent}, career ${career}, ${drawn} games on the line, ${streak}-day streak`);
 
-    // 5. Practice, for an account that has never practised.
+    // 5. Practice, for an account that has never practiced.
     const practice = (await a.page.textContent('#home-practice')).trim();
     if (!practice.includes('Your mistakes become puzzles here after your first graded game.')) {
       throw new Error(`the empty deck should say what fills it: "${practice}"`);

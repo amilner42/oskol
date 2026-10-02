@@ -77,7 +77,7 @@ the three schedule shapes).
 - `MistakesTest`: every word practice is said in, pinned -- the tiers by
   mark and name, "31 left to master" and "23 mastered", what a tier in good
   shape says and why, the all-clear line, the next tier's button, "3
-  practised today", a run of one reading as a finished thing and no run
+  practiced today", a run of one reading as a finished thing and no run
   calling an answer close, what each of the four choices would do, the
   early and KNEW IT lines, the cost lines, and the hub's and a deck page's
   words, and that none of them says "fix", "patched" or "learned".

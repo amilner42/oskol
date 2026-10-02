@@ -11,7 +11,7 @@ module Ui.Mistakes exposing
     , dayStreakLine
     , earlyLine
     , earlyLineUndated
-    , everyOnePractised
+    , everyOnePracticed
     , dueLine
     , emptyTierLine
     , ladderLine
@@ -19,7 +19,7 @@ module Ui.Mistakes exposing
     , legendParts
     , legendTop
     , strangerTierLine
-    , practisedToday
+    , practicedToday
     , freshLine
     , guestPracticeLine
     , guestStateLine
@@ -46,6 +46,7 @@ module Ui.Mistakes exposing
     , leftToMaster
     , line
     , mark
+    , markClass
     , milestone
     , missedNote
     , moves
@@ -170,6 +171,16 @@ mark grade =
             ""
 
 
+{-| The classes a tier's mark is drawn with: the replay's own colour for
+that grade (`.g-mark-very_bad` its very-bad red, `bad` its orange,
+`doubtful` its amber), so `??` is the same red on the hub, a deck's page
+and a run's strip as beside a move in the replay.
+-}
+markClass : String -> String
+markClass grade =
+    "g-mark g-mark-" ++ grade
+
+
 {-| A tier's name under its mark: "Very bad moves".
 -}
 tierName : String -> String
@@ -247,24 +258,24 @@ nextTierLabel grade =
 
 
 {-| The day: a plain count of what has been answered, misses and all,
-and nothing to measure it against. **Practised, never "mastered"**: a
+and nothing to measure it against. **Practiced, never "mastered"**: a
 miss masters nothing, and a count that said "8 mastered" over six red
 misses is the number that lies. "Mastered" is kept for a mistake that has
 actually crossed the top rung.
 
-    "3 practised today"
-    "1 practised today"
-    "Nothing practised yet today"
+    "3 practiced today"
+    "1 practiced today"
+    "Nothing practiced yet today"
 
 -}
-practisedToday : Int -> String
-practisedToday done =
+practicedToday : Int -> String
+practicedToday done =
     case max 0 done of
         0 ->
-            "Nothing practised yet today"
+            "Nothing practiced yet today"
 
         n ->
-            String.fromInt n ++ " practised today"
+            String.fromInt n ++ " practiced today"
 
 
 {-| The end of a run, over the marks. A run has no fixed length, so the
@@ -421,8 +432,8 @@ practiceOnlyRun =
 {-| The end card's way on, once a press of it found nothing it had not
 already put in front of the player.
 -}
-everyOnePractised : String
-everyOnePractised =
+everyOnePracticed : String
+everyOnePracticed =
     "That's every one of these for now. The ones you get wrong come back on their day."
 
 
@@ -722,16 +733,16 @@ wonBack cost =
 has kept showing up, and what today has come to. The streak is left off
 at zero rather than said as a zero.
 
-    "5 days running · 3 practised today"
-    "1 day running · nothing practised yet today"
-    "Nothing practised yet today"
+    "5 days running · 3 practiced today"
+    "1 day running · nothing practiced yet today"
+    "Nothing practiced yet today"
 
 -}
 dayStreakLine : { streak : Int, done : Int } -> String
 dayStreakLine day =
     let
         today =
-            practisedToday day.done
+            practicedToday day.done
     in
     case max 0 day.streak of
         0 ->
@@ -859,7 +870,7 @@ due, so an answer now is practice and moves nothing.
 -}
 scheduledLine : String
 scheduledLine =
-    "Everything here is scheduled. Practising early moves nothing."
+    "Everything here is scheduled. Practicing early moves nothing."
 
 
 {-| Under a guest's TRAIN: the order it comes in. That nothing is
