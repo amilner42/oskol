@@ -18,6 +18,16 @@ defmodule OskolWeb.Api.OwnDecksController do
 
   alias Oskol.Gleam.CtxBuilder
 
+  # `?puzzle=<id>`: each set also says whether it holds that puzzle (the
+  # save sheet's checks).
+  def index(conn, %{"puzzle" => puzzle_id}) when is_binary(puzzle_id) and puzzle_id != "" do
+    json_resp(
+      conn,
+      200,
+      :oskol@handlers@own_decks.mine_holding_json(ctx(), session(conn), puzzle_id)
+    )
+  end
+
   def index(conn, _params) do
     json_resp(conn, 200, :oskol@handlers@own_decks.mine_json(ctx(), session(conn)))
   end

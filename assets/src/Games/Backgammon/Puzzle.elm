@@ -1,7 +1,7 @@
 module Games.Backgammon.Puzzle exposing
     ( Puzzle, Question, Cube, Score, Board, Side
     , Tree, Node, Child, Moved
-    , decoder, treeDecoder, nodeDecoder
+    , decoder, questionDecoder, treeDecoder, nodeDecoder
     , Table, Seat, Out(..), view
     , nodeAt, played, snapshot, pips, pipsAgainst
     , Reveal, Verdict(..), Candidate, CubeReveal, Schedule, Memory, Story, Why

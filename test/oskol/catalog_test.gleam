@@ -1031,7 +1031,7 @@ pub fn an_own_set_s_page_lists_what_is_in_it_for_its_owner_test() {
     practice.deck_page_json(with_own(), signed_in(), own_id, now)
   assert string.contains(
     body,
-    "\"members\":[{\"id\":\"p1\",\"kind\":\"move\",\"prompt\":\"What's your play?\",\"position\":1,\"level\":2}]",
+    "\"members\":[{\"id\":\"p1\",\"kind\":\"move\",\"prompt\":\"What's your play?\",\"position\":1,\"level\":2,\"question\":null}]",
   )
   // Its grid draws what is in it, not the position taken out.
   assert !string.contains(body, "\"id\":\"p0\"")

@@ -115,6 +115,7 @@ import Api.PracticeDecks as PracticeDecks
 import Ui.Deck
 import Ui.Decks as Decks
 import Ui.Mistakes as Mistakes
+import Ui.SaveToSet as SaveToSet
 import Ui.Shell
 import Ui.SignIn as SignIn
 
@@ -213,6 +214,7 @@ type alias Model =
     , celebration : Maybe Celebration -- this answer finished today's set: the card that comes next
     , leaving : Bool -- ANOTHER was pressed and the shell is finding the next
     , zone : Time.Zone -- the reader's own, for the day an early answer is due
+    , save : Maybe SaveToSet.Model -- SAVE's sheet, while it is open
     }
 
 
@@ -356,6 +358,8 @@ type Msg
     | CelebrationWaited
     | CelebrationInView Bool
     | CelebrationEnded String
+    | PressedSave
+    | SaveMsg SaveToSet.Msg
     | NoOp
 
 
@@ -445,6 +449,7 @@ init session config =
       , celebration = Nothing
       , leaving = False
       , zone = Time.utc
+      , save = Nothing
       }
     , Cmd.batch
         [ Api.get session (base config.id) Puzzle.decoder GotPuzzle
@@ -867,6 +872,43 @@ update msg model =
 
                 Nothing ->
                     leave WantsEnd model
+
+        -- SAVE: this position into a set of your own. A guest signs in on
+        -- the sheet and comes back to this page.
+        PressedSave ->
+            let
+                puzzleId =
+                    case model.puzzle of
+                        Loaded puzzle ->
+                            puzzle.id
+
+                        _ ->
+                            model.id
+
+                ( sheet, cmd ) =
+                    SaveToSet.init model.session { puzzleId = puzzleId, next = Route.href (Route.puzzle model.id) }
+            in
+            stay { model | save = Just sheet } (Cmd.map SaveMsg cmd)
+
+        SaveMsg sub ->
+            case model.save of
+                Just sheet ->
+                    let
+                        ( next, cmd, out ) =
+                            SaveToSet.update model.session sub sheet
+                    in
+                    case out of
+                        SaveToSet.NoOut ->
+                            stay { model | save = Just next } (Cmd.map SaveMsg cmd)
+
+                        SaveToSet.Close ->
+                            stay { model | save = Nothing } Cmd.none
+
+                        SaveToSet.SignedIn user ->
+                            ( { model | save = Just next }, Cmd.map SaveMsg cmd, SignedIn user )
+
+                Nothing ->
+                    stay model Cmd.none
 
         EndSignInMsg signInMsg ->
             case model.ended of
@@ -1428,7 +1470,7 @@ view model =
             ]
         , id "puzzle"
         ]
-        (case ( model.ended, model.puzzle ) of
+        ((case ( model.ended, model.puzzle ) of
             ( Just end, _ ) ->
                 [ viewHead, viewEnd model end ]
 
@@ -1440,6 +1482,14 @@ view model =
 
                 else
                     viewLoadable model
+         )
+            ++ [ case model.save of
+                    Just sheet ->
+                        Html.map SaveMsg (SaveToSet.view sheet)
+
+                    Nothing ->
+                        text ""
+               ]
         )
 
 
@@ -2323,6 +2373,12 @@ viewControls model puzzle =
                         , text (Maybe.withDefault "SHARE" model.shareLabel)
                         ]
                  )
+                    -- Into a set of your own (the sheet the analysis board
+                    -- opens too).
+                    :: button [ class "q-btn plain pz-action", id "pz-save", onClick PressedSave ]
+                        [ span [ class "hero-bookmark w-4 h-4", attribute "aria-hidden" "true" ] []
+                        , text "SAVE"
+                        ]
                     -- Every puzzle opens on the analysis board, as this
                     -- page shows it, in a new tab: this one stays put.
                     :: a
@@ -2722,6 +2778,10 @@ viewCelebration model =
                         Read page ->
                             case page.deck.kind of
                                 PracticeDecks.Set ->
+                                    page.deck.standing
+                                        |> Maybe.map (\st -> Decks.masteredOf { mastered = st.patched, total = st.total })
+
+                                PracticeDecks.Own ->
                                     page.deck.standing
                                         |> Maybe.map (\st -> Decks.masteredOf { mastered = st.patched, total = st.total })
 

@@ -383,7 +383,7 @@ GET  /papi/practice/decks              {ok, decks: [{id, slug, kind, name, mark,
 GET  /papi/practice/decks/:slug        {ok, deck, cells: [{id, level, due, status,
                                          position, band}], days: [30 bools],
                                          patched_level, members: [{id, kind, prompt,
-                                         position, level}] | null} -- one deck's
+                                         position, level, question}] | null} -- one deck's
                                        page; `members` only on an own set (its
                                        slug is its id). 404 for an unknown slug,
                                        an unbuilt set, or somebody else's set
@@ -412,9 +412,11 @@ POST /papi/decks/:id/join              {tz} -> the same session, once the set is
                                        anybody else). Idempotent: adding again
                                        adds only positions built since. A no-op
                                        for an own set (saving enrolls)
-GET  /papi/decks/mine                  {ok, decks: [{id, name, size, new_per_day,
-                                         standing}]} -- the caller's own sets,
-                                       oldest first; [] for a guest
+GET  /papi/decks/mine[?puzzle=<id>]    {ok, decks: [{id, name, size, new_per_day,
+                                         standing[, holds]}]} -- the caller's own
+                                       sets, oldest first; [] for a guest. With
+                                       `puzzle`, each says whether it holds that
+                                       puzzle (the save sheet's checks)
                                        ([puzzles.md](puzzles.md#own-sets))
 POST /papi/decks/mine                  {name} -> {ok, deck} (the same shape as one
                                        of the list): make a set. 409 `sign_in`
@@ -428,8 +430,10 @@ PATCH /papi/decks/:id                  {name} -> {ok, deck}: rename (the same
 DELETE /papi/decks/:id                 {ok}: delete (soft; the ladder is kept);
                                        404 unless it is the caller's
 GET  /papi/decks/:id/puzzles           {ok, deck, members: [{id, kind, prompt,
-                                         position, level}]} -- the set and what is
-                                       in it, for its owner; 404 for anybody else
+                                         position, level, question}]} -- the set
+                                       and what is in it, for its owner (`question`
+                                       as GET /papi/puzzles/:id has it, null where
+                                       a row does not read); 404 for anybody else
 POST /papi/decks/:id/puzzles           {puzzle_id} -> {ok, deck, added}: save a
                                        stored puzzle at the end of the set and
                                        enroll it at once (due today as new);

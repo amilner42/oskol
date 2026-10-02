@@ -112,6 +112,17 @@ defmodule Oskol.OwnDecksTest do
     assert %{"members" => [%{"id" => ^p1, "level" => 0}, %{"id" => ^p2, "position" => 2}]} =
              conn |> get(~p"/papi/decks/#{id}/puzzles") |> json_response(200)
 
+    # Each member carries its question, for MANAGE's small board.
+    assert %{"members" => [%{"question" => %{"board" => %{"white" => _}}} | _]} =
+             conn |> get(~p"/papi/decks/#{id}/puzzles") |> json_response(200)
+
+    # The save sheet's list says which sets hold a puzzle.
+    assert %{"decks" => [%{"id" => ^id, "holds" => true}]} =
+             conn |> get(~p"/papi/decks/mine?puzzle=#{p1}") |> json_response(200)
+
+    assert %{"decks" => [%{"id" => ^id, "holds" => false}]} =
+             conn |> get(~p"/papi/decks/mine?puzzle=nopuzzle") |> json_response(200)
+
     hub = conn |> get(~p"/papi/practice/decks") |> json_response(200)
 
     assert %{"kind" => "own", "joined" => true, "size" => 2} =

@@ -321,6 +321,17 @@ pub fn shown(question: Question) -> Question {
   }
 }
 
+/// A stored question (its JSON as the `puzzles` row keeps it) as the page
+/// draws it: `shown`, in the shape `GET /papi/puzzles/:id` sends. Null for
+/// a row that does not read as a question. A set's page lists its
+/// positions with it, each as a small board.
+pub fn stored_question_json(text: String) -> Json {
+  case puzzles.question_from_json(text) {
+    Ok(question) -> question_json(shown(question))
+    Error(_) -> json.null()
+  }
+}
+
 fn question_json(q: Question) -> Json {
   json.object([
     #("board", position_json(q.board)),

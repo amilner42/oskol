@@ -37,16 +37,36 @@
  * 9. At 390x844, 320x568, 844x390 and 1440x900 the panel fills and clears
  *    and nothing moves, the panel's own box included
  *
+ * Part 4, SAVE, with an account arranged by account.exs (a browser signed
+ * into it, none of its sets left from a run before):
+ *
+ * 10. A guest's SAVE is "Sign in to keep this position." over the sign-in
+ * 11. No sets yet, at every size: the sheet floats over the answer and
+ *     nothing under it moves
+ * 12. A new set "Openings I like" made from the sheet with the position in
+ *     it; a row unticked and ticked (the check moves at once, the line says
+ *     where); a name already taken refused in the server's words; nothing
+ *     in the sheet moves
+ * 13. On /puzzles under "Your sets" after the five; TRAIN it to one
+ *     reveal, whose SAVE has the set ticked
+ * 14. The sheet, the hub and the set's page at every size, the delete
+ *     confirm in its own slot
+ * 15. The set's page: noindex, the position with its 72px board and its
+ *     level, renamed, the position taken out, the set deleted (back to
+ *     /puzzles, and its page gone)
+ *
  * Screenshots at 390x844, 320x568, 844x390 and 1440x900 go to
- * playwright/screenshots/analysis-*.png.
+ * playwright/screenshots/analysis-*.png (and puzzles-your-sets-*,
+ * practice-own-*, puzzle-save-* for part 4).
  *
  * Run with the server up:  node playwright/test-analysis/test.js
  * Or on its own port:      playwright/test-analysis/run.sh
  */
 const playwright = require('playwright');
 const fs = require('fs');
-const { spawn } = require('child_process');
-const { BASE, resultLine } = require('../lib/flows');
+const { spawn, execSync } = require('child_process');
+const { BASE, resultLine, seatedContext } = require('../lib/flows');
+const { stageATurn } = require('../lib/puzzles');
 
 const SHOTS = 'playwright/screenshots';
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
@@ -881,12 +901,308 @@ async function playItOut(browser, errors, tag, viewport) {
   }
 }
 
+// ---------- Part 4: SAVE, and your sets ----------
+
+/** An account with no sets yet (account.exs), and its guest cookie. */
+function accountFixture() {
+  return JSON.parse(
+    resultLine(
+      execSync(`mix run -e 'Code.eval_file("playwright/test-analysis/account.exs")'`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'inherit'],
+      })
+    )
+  );
+}
+
+// The sheet's own boxes: nothing in it moves while the list loads, a row
+// is ticked, a set is made or a name refused.
+const SHEET = ['.save-sheet', '#save-sets', '#save-new-name', '#save-create', '#save-line'];
+
+async function sheetBoxes(page) {
+  return page.evaluate((sels) => {
+    const out = {};
+    for (const s of sels) {
+      const el = document.querySelector(s);
+      if (!el) { out[s] = null; continue; }
+      const r = el.getBoundingClientRect();
+      out[s] = [r.x, r.y, r.width, r.height].map((n) => Math.round(n * 2) / 2);
+    }
+    return out;
+  }, SHEET);
+}
+
+function sameSheet(tag, before, after) {
+  for (const s of SHEET) {
+    if (JSON.stringify(before[s]) !== JSON.stringify(after[s]))
+      throw new Error(`${tag}: ${s} moved from ${JSON.stringify(before[s])} to ${JSON.stringify(after[s])}`);
+  }
+}
+
+async function lineSays(page, want) {
+  await page.waitForFunction(
+    (w) => document.querySelector('#save-line')?.textContent.trim() === w,
+    want, { timeout: 10000 }
+  ).catch(async () => {
+    throw new Error(`the save line says "${await text(page, '#save-line')}", not "${want}"`);
+  });
+}
+
+const checkedOf = (page, id) => page.getAttribute(`#save-set-${id}`, 'aria-checked');
+
+const VIEWPORTS = [
+  ['390', { width: 390, height: 844 }, true],
+  ['320', { width: 320, height: 568 }, true],
+  ['844x390', { width: 844, height: 390 }, true],
+  ['desktop', { width: 1440, height: 900 }, false],
+];
+
+async function accountPage(browser, fixture, viewport, touch, errors, who) {
+  const context = await seatedContext(browser, fixture.guest_id, { viewport, hasTouch: touch, isMobile: touch });
+  const page = settled(await context.newPage());
+  watch(page, who, errors);
+  const press = touch ? (sel) => page.tap(sel) : (sel) => page.click(sel);
+  return { context, page, press };
+}
+
+/** The opening 3-1, answered (free: asked already). */
+async function answeredOpening(page, press) {
+  await open(page, `/analysis?xgid=${encodeURIComponent(OPENING_31)}`);
+  await analyze(page, press);
+  if (!(await page.$('#an-save'))) throw new Error('the answer has no SAVE');
+}
+
+// 10. A guest's SAVE is the sign-in, nothing else.
+async function guestSave(browser, errors) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  try {
+    const page = settled(await context.newPage());
+    watch(page, 'guest save', errors);
+    await answeredOpening(page, (sel) => page.tap(sel));
+    const held = await askedBoxes(page);
+    await page.tap('#an-save');
+    await page.waitForSelector('#save-modal #signin-email');
+    if ((await text(page, '#save-signin-line')) !== 'Sign in to keep this position.') throw new Error('the guest is not asked to sign in');
+    if (await page.$('#save-sets')) throw new Error('a guest is shown sets');
+    sameAsked('a guest opening the sheet', held, await askedBoxes(page));
+    await page.screenshot({ path: `${SHOTS}/analysis-save-guest-390.png` });
+    await page.tap('#save-close');
+    await page.waitForSelector('#save-modal', { state: 'detached' });
+    sameAsked('a guest closing the sheet', held, await askedBoxes(page));
+    log('a guest: SAVE is "Sign in to keep this position." over the sign-in; nothing under it moved');
+  } finally {
+    await context.close();
+  }
+}
+
+// 11. No sets yet, at every size: the sheet floats and nothing under it moves.
+async function emptySheets(browser, errors, fixture) {
+  for (const [tag, viewport, touch] of VIEWPORTS) {
+    const { context, page, press } = await accountPage(browser, fixture, viewport, touch, errors, `empty ${tag}`);
+    try {
+      await answeredOpening(page, press);
+      const held = await askedBoxes(page);
+      await press('#an-save');
+      await page.waitForSelector('#save-modal #save-empty');
+      sameAsked(`${tag}: the sheet opening`, held, await askedBoxes(page));
+      await noSideScroll(page, `${tag}: the sheet`);
+      await page.screenshot({ path: `${SHOTS}/analysis-save-empty-${tag}.png` });
+      await press('#save-close');
+      await page.waitForSelector('#save-modal', { state: 'detached' });
+      sameAsked(`${tag}: the sheet closing`, held, await askedBoxes(page));
+    } finally {
+      await context.close();
+    }
+  }
+  log('no sets yet: the sheet at 390, 320, 844x390 and desktop; nothing under it moved');
+}
+
+// 12. Make a set and save into it; untick, tick; a name already taken.
+async function makeASet(browser, errors, fixture) {
+  const { context, page } = await accountPage(browser, fixture, { width: 390, height: 844 }, true, errors, 'save');
+  try {
+    await answeredOpening(page, (sel) => page.tap(sel));
+    const puzzleId = (await page.getAttribute('#an-open-puzzle', 'href')).replace('/puzzles/', '');
+    await page.tap('#an-save');
+    await page.waitForSelector('#save-modal #save-empty');
+    const sheet = await sheetBoxes(page);
+    await page.fill('#save-new-name', 'Openings I like');
+    await page.screenshot({ path: `${SHOTS}/analysis-save-naming-390.png` });
+    await page.tap('#save-create');
+    await lineSays(page, 'Saved to Openings I like · 1 position');
+    const setId = (await page.getAttribute('#save-sets .save-set', 'id')).replace('save-set-', '');
+    if ((await checkedOf(page, setId)) !== 'true') throw new Error('the new set is not ticked');
+    if ((await page.inputValue('#save-new-name')) !== '') throw new Error('the name stayed in the field');
+    sameSheet('a set made', sheet, await sheetBoxes(page));
+    await page.screenshot({ path: `${SHOTS}/analysis-save-saved-390.png` });
+
+    // A tap inks (or clears) the check at once; the answer says where.
+    await page.tap(`#save-set-${setId}`);
+    if ((await checkedOf(page, setId)) !== 'false') throw new Error('unticking did not clear the check at once');
+    await lineSays(page, 'Taken out of Openings I like · 0 positions');
+    await page.tap(`#save-set-${setId}`);
+    if ((await checkedOf(page, setId)) !== 'true') throw new Error('ticking did not ink the check at once');
+    await lineSays(page, 'Saved to Openings I like · 1 position');
+    sameSheet('ticked and unticked', sheet, await sheetBoxes(page));
+
+    // The same name again, in another case: refused, in the server's words.
+    await page.fill('#save-new-name', 'openings i like');
+    await page.tap('#save-create');
+    await lineSays(page, 'You already have a set called that');
+    if (!(await page.$('#save-line.is-refused'))) throw new Error('the refusal is not drawn as one');
+    if ((await page.locator('#save-sets .save-set').count()) !== 1) throw new Error('a refused name made a set');
+    sameSheet('a name refused', sheet, await sheetBoxes(page));
+    await page.screenshot({ path: `${SHOTS}/analysis-save-refused-390.png` });
+    await page.tap('#save-close');
+    await page.waitForSelector('#save-modal', { state: 'detached' });
+
+    // Opened again: the set is there, ticked, read from the server.
+    await page.tap('#an-save');
+    await page.waitForSelector(`#save-set-${setId}`);
+    if ((await checkedOf(page, setId)) !== 'true') throw new Error('opened again, the set does not hold the position');
+    await page.tap('#save-close');
+    log(`made "Openings I like" (${setId}) from the sheet with ${puzzleId} in it; untick, tick and a taken name; the sheet held still`);
+    return { setId, puzzleId };
+  } finally {
+    await context.close();
+  }
+}
+
+// 13. On /puzzles after the five; TRAIN it to one reveal, whose SAVE knows.
+async function trainIt(browser, errors, fixture, setId) {
+  const { context, page } = await accountPage(browser, fixture, { width: 390, height: 844 }, true, errors, 'train');
+  try {
+    await page.goto(`${BASE}/puzzles`);
+    await page.waitForSelector('#hub-your-sets');
+    const order = await page.$$eval('#hub-rows > *', (els) => els.map((e) => e.id));
+    const at = order.indexOf('hub-your-sets');
+    // After every deck on offer (the five, or as many as this database has built).
+    if (at < 3 || at !== order.length - 2 || order[at + 1] !== `hub-slot-${setId}`) throw new Error(`"Your sets" is not after the five: ${order.join(', ')}`);
+    // Closed, a row (its name, how many are left); a press opens it in
+    // place. The server may lead with it (the account's only work), open.
+    if (!(await page.$(`#hub-card[data-deck="${setId}"]`))) {
+      const row = await text(page, `#hub-row-${setId}`);
+      if (!row.includes('Openings I like') || !row.includes('1 left')) throw new Error(`the row says "${row}"`);
+      await page.screenshot({ path: `${SHOTS}/puzzles-your-sets-row-390.png`, fullPage: true });
+      await page.tap(`#hub-row-${setId}`);
+    }
+    await page.waitForSelector(`#hub-card[data-kind="own"][data-deck="${setId}"]`);
+    if ((await text(page, '#hub-name')) !== 'Openings I like') throw new Error('the card does not name the set');
+    if ((await text(page, '#hub-go')) !== 'TRAIN') throw new Error(`the set's button says ${await text(page, '#hub-go')}`);
+    await page.waitForTimeout(700); // the drawer's slide
+    await page.screenshot({ path: `${SHOTS}/puzzles-your-sets-card-390.png`, fullPage: true });
+    await page.tap('#hub-go');
+    await page.waitForURL(/\/puzzles\/[A-Za-z0-9]+$/);
+    await page.waitForSelector('#pz-board .bg-stack');
+    await stageATurn(page);
+    await page.tap('#bg-action-play');
+    await page.waitForSelector('#pz-reveal', { timeout: 15000 });
+    await page.tap('#pz-save');
+    await page.waitForSelector(`#save-set-${setId}`);
+    if ((await checkedOf(page, setId)) !== 'true') throw new Error('the reveal\'s SAVE does not know the set holds it');
+    await page.screenshot({ path: `${SHOTS}/puzzle-save-390.png` });
+    await page.tap('#save-close');
+    log('the set on /puzzles after the five, TRAIN, one reveal, and its SAVE has the check');
+  } finally {
+    await context.close();
+  }
+}
+
+// 14. The sheet, the hub and the set's page at every size.
+async function everySize(browser, errors, fixture, setId) {
+  for (const [tag, viewport, touch] of VIEWPORTS) {
+    const { context, page, press } = await accountPage(browser, fixture, viewport, touch, errors, `sizes ${tag}`);
+    try {
+      await answeredOpening(page, press);
+      const held = await askedBoxes(page);
+      await press('#an-save');
+      await page.waitForSelector(`#save-set-${setId}`);
+      sameAsked(`${tag}: the sheet over the answer`, held, await askedBoxes(page));
+      await noSideScroll(page, `${tag}: the sheet`);
+      await page.screenshot({ path: `${SHOTS}/analysis-save-sets-${tag}.png` });
+
+      await page.goto(`${BASE}/puzzles`);
+      await page.waitForSelector(`#hub-row-${setId}, #hub-card[data-deck="${setId}"]`);
+      if (await page.$(`#hub-row-${setId}`)) await press(`#hub-row-${setId}`);
+      await page.waitForSelector('#hub-card[data-kind="own"]');
+      await noSideScroll(page, `${tag}: the hub`);
+      await page.waitForTimeout(700); // the drawer's slide
+      await page.screenshot({ path: `${SHOTS}/puzzles-your-sets-${tag}.png`, fullPage: true });
+
+      await page.goto(`${BASE}/practice/${setId}`);
+      await page.waitForSelector('#practice-manage .dp-member');
+      await noSideScroll(page, `${tag}: the set's page`);
+      const before = await page.$eval('#practice-delete-slot', (el) => el.getBoundingClientRect().height);
+      await press('#practice-delete');
+      await page.waitForSelector('#practice-delete-question');
+      const after = await page.$eval('#practice-delete-slot', (el) => el.getBoundingClientRect().height);
+      if (before !== after) throw new Error(`${tag}: the delete confirm changed its slot from ${before} to ${after}`);
+      await page.screenshot({ path: `${SHOTS}/practice-own-${tag}.png`, fullPage: true });
+      await press('#practice-delete-no');
+      await page.waitForSelector('#practice-delete');
+    } finally {
+      await context.close();
+    }
+  }
+  log('the sheet with the set, the hub with it open, and its page with MANAGE at every size');
+}
+
+// 15. MANAGE: rename, take the position out, delete the set.
+async function manageIt(browser, errors, fixture, setId, puzzleId) {
+  const { context, page } = await accountPage(browser, fixture, { width: 390, height: 844 }, true, errors, 'manage');
+  try {
+    await page.goto(`${BASE}/practice/${setId}`);
+    await page.waitForSelector(`#practice-member-${puzzleId}`);
+    if ((await page.getAttribute('meta[name="robots"]', 'content')) !== 'noindex') throw new Error('an own set\'s page is not noindex');
+    const word = await text(page, `#practice-member-${puzzleId} .dp-member-level`);
+    if (!['to learn', 'back at the start', 'level 1'].includes(word)) throw new Error(`the position stands at "${word}"`);
+    if (!(await page.$(`#practice-member-${puzzleId} .dp-member-board .bg-still`))) throw new Error('the position has no small board');
+    const boardBox = await page.$eval(`#practice-member-${puzzleId} .dp-member-board`, (el) => [el.offsetWidth, el.offsetHeight]);
+    if (boardBox[1] !== 72) throw new Error(`the small board is ${boardBox[1]}px tall`);
+
+    await page.fill('#practice-rename', 'Openings I love');
+    await page.tap('#practice-rename-save');
+    await page.waitForFunction(() => document.querySelector('#practice-manage-line')?.textContent.trim() === 'Renamed.');
+    if ((await text(page, '#practice-name')) !== 'Openings I love') throw new Error('the card did not take the new name');
+
+    await page.tap(`#practice-remove-${puzzleId}`);
+    await page.waitForSelector('#practice-members-empty');
+    await page.waitForSelector('#practice-open-analysis');
+    await page.screenshot({ path: `${SHOTS}/practice-own-emptied-390.png`, fullPage: true });
+
+    await page.tap('#practice-delete');
+    await page.waitForSelector('#practice-delete-question');
+    const q = await text(page, '#practice-delete-question');
+    if (q !== 'Delete Openings I love? Its positions stay where they are; your progress on them is kept aside.') throw new Error(`the confirm says "${q}"`);
+    await page.tap('#practice-delete-yes');
+    await page.waitForURL(`${BASE}/puzzles`);
+    await page.waitForSelector('#hub-rows');
+    if (await page.$('#hub-your-sets')) throw new Error('the deleted set is still on /puzzles');
+    const gone = await page.goto(`${BASE}/practice/${setId}`);
+    if (gone.status() !== 404) throw new Error(`a deleted set's page answers ${gone.status()}`);
+    log(`MANAGE: renamed, the position taken out, the set deleted and gone (its page now ${gone.status()})`);
+  } finally {
+    await context.close();
+  }
+}
+
+async function part4(browser, errors) {
+  const fixture = accountFixture();
+  await guestSave(browser, errors);
+  await emptySheets(browser, errors, fixture);
+  const { setId, puzzleId } = await makeASet(browser, errors, fixture);
+  await trainIt(browser, errors, fixture, setId);
+  await everySize(browser, errors, fixture, setId);
+  await manageIt(browser, errors, fixture, setId, puzzleId);
+}
+
 (async () => {
   fs.mkdirSync(SHOTS, { recursive: true });
   const browser = await playwright.chromium.launch({ headless: true, executablePath: process.env.PW_CHROMIUM, args: ['--no-sandbox'] });
   const errors = [];
   try {
-    // PART=2 runs parts 2 and 3, PART=3 part 3 alone (while working on them).
+    // PART=2 runs parts 2 to 4, PART=3 or PART=4 that part alone (while
+    // working on them).
     const part = process.env.PART || '1';
     if (part === '1') {
       await menu(browser, errors);
@@ -899,17 +1215,20 @@ async function playItOut(browser, errors, tag, viewport) {
 
     const stopEngine = await startEngine();
     try {
-      if (part !== '3') {
+      if (part !== '3' && part !== '4') {
         await verdict(browser, errors);
         await panelAt(browser, errors, '390', { width: 390, height: 844 });
         await panelAt(browser, errors, '320', { width: 320, height: 568 });
         await panelAt(browser, errors, '844x390', { width: 844, height: 390 });
         await panelAt(browser, errors, 'desktop', { width: 1440, height: 900 });
       }
-      await playItOut(browser, errors, 'desktop', { width: 1440, height: 900 });
-      await playItOut(browser, errors, '390', { width: 390, height: 844 });
-      await playItOut(browser, errors, '320', { width: 320, height: 568 });
-      await playItOut(browser, errors, '844x390', { width: 844, height: 390 });
+      if (part !== '4') {
+        await playItOut(browser, errors, 'desktop', { width: 1440, height: 900 });
+        await playItOut(browser, errors, '390', { width: 390, height: 844 });
+        await playItOut(browser, errors, '320', { width: 320, height: 568 });
+        await playItOut(browser, errors, '844x390', { width: 844, height: 390 });
+      }
+      if (part !== '3') await part4(browser, errors);
     } finally {
       stopEngine();
     }

@@ -68,6 +68,25 @@ pub fn mine_json(ctx: Ctx, session: Session) -> String {
   envelope.ok([#("decks", json.preprocessed_array(sets))])
 }
 
+/// `GET /papi/decks/mine?puzzle=<id>`: the same list, each set saying
+/// whether it holds that puzzle (`holds`) -- the save sheet's checks.
+pub fn mine_holding_json(
+  ctx: Ctx,
+  session: Session,
+  puzzle_id: String,
+) -> String {
+  let sets = case session.user_id {
+    Some(uid) ->
+      list.map(decks.own(ctx, uid), fn(set) {
+        let holds =
+          list.any(ctx.decks.members(set.id), fn(m) { m.puzzle_id == puzzle_id })
+        json.object([#("holds", json.bool(holds)), ..set_fields(ctx, set, uid)])
+      })
+    None -> []
+  }
+  envelope.ok([#("decks", json.preprocessed_array(sets))])
+}
+
 // ---------- POST /papi/decks/mine ----------
 
 pub fn create_json(
@@ -147,7 +166,15 @@ pub fn show_json(
   Ok(
     envelope.ok([
       #("deck", set_json(ctx, set, uid)),
-      #("members", decks.members_json(ctx, set, cells)),
+      #(
+        "members",
+        decks.members_json(
+          ctx,
+          set,
+          cells,
+          puzzles_handler.stored_question_json,
+        ),
+      ),
     ]),
   )
 }
@@ -264,11 +291,15 @@ pub fn checked_name(
 
 /// One set as the save sheet and the list read it.
 fn set_json(ctx: Ctx, set: Deck, uid: String) -> Json {
-  json.object([
+  json.object(set_fields(ctx, set, uid))
+}
+
+fn set_fields(ctx: Ctx, set: Deck, uid: String) -> List(#(String, Json)) {
+  [
     #("id", json.string(set.id)),
     #("name", json.string(set.name)),
     #("size", json.int(ctx.decks.size(set.id))),
     #("new_per_day", json.int(set.new_per_day)),
     #("standing", decks.standing_json(decks.standing(ctx, set, uid))),
-  ])
+  ]
 }

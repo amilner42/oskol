@@ -20,10 +20,11 @@ module Ui.Deck exposing
 the practice home draws, and the card a deck's own page draws too.
 
 A deck is one of five -- a tier of the player's own mistakes (`??`, `?`,
-`?!`) or a universal set (the openings, the replies to them) -- in the
-one shape the server gives all five (`Api.PracticeDecks`). Card and row
-both start with the deck's icon: a tier's mark in the replay's colour
-for its grade, a set's dice. The card is:
+`?!`) or a universal set (the openings, the replies to them) -- or a set
+an account made itself, in the one shape the server gives them all
+(`Api.PracticeDecks`). Card and row both start with the deck's icon: a
+tier's mark in the replay's colour for its grade, a set's dice, an own
+set's bookmark. The card is:
 
   - **the head**: the icon, the tier's name (or the set's name big with
     its size in the eyebrow style under it), and to the right today's
@@ -38,8 +39,9 @@ for its grade, a set's dice. The card is:
   - **one button**, never absent where there is anything to practice:
     TRAIN while today has work, KEEP GOING once today's set is done
     and something is still unstarted, PRACTICE ANYWAY once everything
-    is, START / TRAIN / TRY on a set; and under it one quiet line for
-    the state it is in.
+    is, START / TRAIN / TRY on a set, OPEN ANALYSIS on an own set with nothing in
+    it yet (a link to the board positions are saved from); and under it
+    one quiet line for the state it is in.
 
 **Nothing moves.** The button's label changes inside a slot of fixed
 height; the quiet line under it holds two lines whatever it says; the
@@ -114,6 +116,7 @@ type Action
     | PracticeAnyway
     | Start
     | Try
+    | OpenAnalysis
     | NoAction
 
 
@@ -126,7 +129,10 @@ standing and nothing else:
   - an account's set: START until it is added, then the same three, with
     TRAIN (`Practice`) where a tier has `FixOne`;
   - a guest's tier with mistakes in it: TRAIN (`Practice`; nothing is kept);
-  - a set for a guest or a stranger: TRY.
+  - a set for a guest or a stranger: TRY;
+  - an account's own set: the same three as a set it added, and OPEN
+    ANALYSIS while there is nothing in it (an own set is only ever its
+    owner's, so nobody else is offered anything).
 
 -}
 action : Who -> Deck -> Action
@@ -169,6 +175,21 @@ action who deck =
         ( Stranger, Tier ) ->
             NoAction
 
+        ( Account, Own ) ->
+            case deck.standing of
+                Just standing ->
+                    if standing.total > 0 then
+                        onwards Practice standing
+
+                    else
+                        OpenAnalysis
+
+                Nothing ->
+                    OpenAnalysis
+
+        ( _, Own ) ->
+            NoAction
+
 
 {-| Today's work first, then more of the pace, then practice that moves
 nothing. Never nothing: there is always a way to keep practicing.
@@ -206,6 +227,9 @@ actionLabel which =
         Try ->
             "TRY"
 
+        OpenAnalysis ->
+            "OPEN ANALYSIS"
+
         NoAction ->
             ""
 
@@ -230,6 +254,9 @@ actionName which =
 
         Try ->
             "try"
+
+        OpenAnalysis ->
+            "open-analysis"
 
         NoAction ->
             "none"
@@ -309,22 +336,34 @@ card config =
             OnPage ->
                 Html.text ""
         , Html.div [ class "dk-action" ]
-            [ Html.button
-                [ Attr.type_ "button"
-                , id (config.prefix ++ "-go")
-                , class ("q-btn dk-go is-" ++ actionName which)
-                , Attr.attribute "data-action" (actionName which)
-                , Attr.disabled (config.busy || which == NoAction)
-                , onClick (config.onPress which)
-                ]
-                [ Html.text
-                    (if config.pressed then
-                        "STARTING…"
+            [ if which == OpenAnalysis then
+                -- Nothing in it yet: the button's slot is the way to the
+                -- board a position is saved from.
+                Html.a
+                    [ Attr.href "/analysis"
+                    , id (config.prefix ++ "-open-analysis")
+                    , class ("q-btn dk-go is-" ++ actionName which)
+                    , Attr.attribute "data-action" (actionName which)
+                    ]
+                    [ Html.text (actionLabel which) ]
 
-                     else
-                        actionLabel which
-                    )
-                ]
+              else
+                Html.button
+                    [ Attr.type_ "button"
+                    , id (config.prefix ++ "-go")
+                    , class ("q-btn dk-go is-" ++ actionName which)
+                    , Attr.attribute "data-action" (actionName which)
+                    , Attr.disabled (config.busy || which == NoAction)
+                    , onClick (config.onPress which)
+                    ]
+                    [ Html.text
+                        (if config.pressed then
+                            "STARTING…"
+
+                         else
+                            actionLabel which
+                        )
+                    ]
             ]
         , Html.p [ id (config.prefix ++ "-quiet"), class "dk-quiet" ]
             [ Html.text (Maybe.withDefault (quietLine config.who which deck) config.note) ]
@@ -339,6 +378,9 @@ kindName deck =
 
         Set ->
             "set"
+
+        Own ->
+            "own"
 
 
 head : CardConfig msg -> Html msg
@@ -357,7 +399,7 @@ head config =
                         , nameRow config []
                         ]
 
-                    Set ->
+                    _ ->
                         [ Html.h2 [ class "dk-setname", id (config.prefix ++ "-name") ] [ Html.text deck.name ]
                         , nameRow config [ Html.p [ class "dk-name" ] [ Html.text (Decks.sizeEyebrow deck.size) ] ]
                         ]
@@ -365,7 +407,7 @@ head config =
             ]
         , case deck.standing of
             Just standing ->
-                if config.who == Account && (deck.kind == Tier || deck.joined) then
+                if config.who == Account && (deck.kind == Tier || deck.joined) && not (deck.kind == Own && standing.total <= 0) then
                     Html.div [ class "dk-today", id (config.prefix ++ "-today") ]
                         [ Charts.ring
                             { done = standing.doneToday
@@ -420,6 +462,30 @@ icon size deck =
                 , Attr.attribute "aria-hidden" "true"
                 ]
                 [ dice deck ]
+
+        Own ->
+            Html.span
+                [ class ("dk-icon " ++ sizeClass ++ " is-own")
+                , Attr.attribute "aria-hidden" "true"
+                ]
+                [ bookmark ]
+
+
+{-| An own set's icon: a bookmark, the thing a position saved for later
+is kept with.
+-}
+bookmark : Html msg
+bookmark =
+    Svg.svg [ SvgAttr.viewBox "0 0 28 28", SvgAttr.class "dk-dice" ]
+        [ Svg.path
+            [ SvgAttr.d "M8.5 4.5 h11 a1.5 1.5 0 0 1 1.5 1.5 v17.5 l-7 -4.6 l-7 4.6 v-17.5 a1.5 1.5 0 0 1 1.5 -1.5 z"
+            , SvgAttr.fill "#fff"
+            , SvgAttr.stroke "currentColor"
+            , SvgAttr.strokeWidth "1.8"
+            , SvgAttr.strokeLinejoin "round"
+            ]
+            []
+        ]
 
 
 {-| One die for the openings (a roll, and that is the whole position),
@@ -505,7 +571,7 @@ legend config =
                 Tier ->
                     Mistakes.legendTop
 
-                Set ->
+                _ ->
                     Decks.legendTop
 
         swatch ( state, words ) =
@@ -582,6 +648,10 @@ columns deck =
             else
                 Just (max 1 deck.size)
 
+        -- Whatever the player saved into it, in no shape of its own.
+        Own ->
+            Nothing
+
 
 counts : Deck -> Maybe { total : Int, untouched : Int, inProgress : Int, patched : Int }
 counts deck =
@@ -607,7 +677,7 @@ stateSentence who deck =
         ( Just c, Tier ) ->
             Mistakes.stateLine c
 
-        ( Just c, Set ) ->
+        ( Just c, _ ) ->
             Decks.stateLine c
 
         ( Nothing, Tier ) ->
@@ -619,6 +689,13 @@ stateSentence who deck =
 
         ( Nothing, Set ) ->
             Decks.sizeLine deck.size
+
+        ( Nothing, Own ) ->
+            if deck.size <= 0 then
+                "No positions yet"
+
+            else
+                Decks.sizeLine deck.size
 
 
 {-| The state line, with the grid's own colour beside each part, so the
@@ -632,7 +709,7 @@ stateLine config deck =
                 ( Just c, Tier ) ->
                     Mistakes.stateParts c
 
-                ( Just c, Set ) ->
+                ( Just c, _ ) ->
                     Decks.stateParts c
 
                 _ ->
@@ -728,6 +805,9 @@ quietLine who which deck =
 
         Try ->
             Decks.tryLine
+
+        OpenAnalysis ->
+            Decks.emptyOwnLine
 
         NoAction ->
             ""
@@ -852,3 +932,17 @@ left who deck =
 
         ( Set, Nothing ) ->
             Decks.rowLeft deck.size
+
+        ( Own, Just standing ) ->
+            if standing.total > 0 then
+                Decks.rowLeft (standing.total - standing.patched)
+
+            else
+                "Empty"
+
+        ( Own, Nothing ) ->
+            if deck.size > 0 then
+                Decks.rowLeft deck.size
+
+            else
+                "Empty"

@@ -20,6 +20,7 @@ import Html.Attributes
 import Page.Practice as PracticePage exposing (Msg(..), Out(..))
 import Session
 import Test exposing (Test, describe, test)
+import Test.Html.Event as Event
 import Test.Html.Query as Query
 import Test.Html.Selector exposing (attribute, class, id, tag, text)
 import Time
@@ -39,6 +40,7 @@ suite =
         , aGuest
         , aStranger
         , words
+        , manage
         ]
 
 
@@ -661,4 +663,218 @@ words =
 
 emptyPage : PracticeDecks.Page
 emptyPage =
-    { deck = theDeck strangerSetJson, cells = [], days = [], patchedLevel = 4 }
+    { deck = theDeck strangerSetJson, cells = [], days = [], patchedLevel = 4, members = Nothing }
+
+
+
+-- AN OWN SET'S PAGE: MANAGE
+
+
+aQuestion : String
+aQuestion =
+    """{"board":{"white":{"points":[0,0,0,4,4,5,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0],"bar":0,"off":0},"black":{"points":[2,2,0,0,0,0,1,0,0,0,0,0,0,0,0,0,3,3,0,2,2,0,0,0],"bar":0,"off":0}},"dice":[6,4],"cube":{"value":1,"owner":"center"},"score":null,"crawford":false,"jacoby":false}"""
+
+
+{-| "Openings I like": three positions saved -- one at level 2, one
+mastered, one never answered (its question unreadable, so no board).
+-}
+ownJson : List String -> String
+ownJson members =
+    "{\"ok\":true,\"deck\":"
+        ++ deck
+            { id = "K7M2Q9XA"
+            , slug = "K7M2Q9XA"
+            , kind = "own"
+            , name = "Openings I like"
+            , mark = ""
+            , size = List.length members
+            , pace = 5
+            , joined = True
+            , standing = standing { total = 3, untouched = 1, inProgress = 1, patched = 1, due = 0, newLeft = 1, done = 0, levels = [ 1, 0, 1, 0, 1, 0, 0, 0 ] }
+            , cost = "null"
+            }
+        ++ ",\"cells\":["
+        ++ String.join "," (List.indexedMap cell [ ( 2, "active", now + day ), ( 4, "active", now + 9 * day ), ( 0, "new", now ) ])
+        ++ "],\"days\":[],\"patched_level\":4,\"members\":["
+        ++ String.join "," members
+        ++ "]}"
+
+
+member : Int -> String -> Int -> String -> String
+member index prompt level question =
+    "{\"id\":\"k"
+        ++ String.fromInt index
+        ++ "\",\"kind\":\"move\",\"prompt\":\""
+        ++ prompt
+        ++ "\",\"position\":"
+        ++ String.fromInt (index + 1)
+        ++ ",\"level\":"
+        ++ String.fromInt level
+        ++ ",\"question\":"
+        ++ question
+        ++ "}"
+
+
+threeJson : String
+threeJson =
+    ownJson
+        [ member 0 "White to play 6-4. What's your play?" 2 aQuestion
+        , member 1 "White to play 3-1. What's your play?" 4 aQuestion
+        , member 2 "White to play. Double?" 0 "null"
+        ]
+
+
+emptyJson : String
+emptyJson =
+    "{\"ok\":true,\"deck\":"
+        ++ deck
+            { id = "Z3W8R1PB"
+            , slug = "Z3W8R1PB"
+            , kind = "own"
+            , name = "Back games"
+            , mark = ""
+            , size = 0
+            , pace = 5
+            , joined = True
+            , standing = standing { total = 0, untouched = 0, inProgress = 0, patched = 0, due = 0, newLeft = 0, done = 0, levels = [ 0, 0, 0, 0, 0, 0, 0, 0 ] }
+            , cost = "null"
+            }
+        ++ ",\"cells\":[],\"days\":[],\"patched_level\":4,\"members\":[]}"
+
+
+ownedSet : String -> String -> Int -> Result Api.Error Decks.OwnSet
+ownedSet setId name size =
+    Ok { id = setId, name = name, size = size, holds = False }
+
+
+manage : Test
+manage =
+    describe "an own set's page: MANAGE"
+        [ test "its members read off the wire, in the set's order, with their questions" <|
+            \_ ->
+                case parse threeJson of
+                    Ok p ->
+                        p.members
+                            |> Maybe.map (List.map (\m -> ( m.id, m.level, m.question /= Nothing )))
+                            |> Expect.equal (Just [ ( "k0", 2, True ), ( "k1", 4, True ), ( "k2", 0, False ) ])
+
+                    Err _ ->
+                        Expect.fail "the page parses"
+        , test "the card is a set's, and MANAGE is under it" <|
+            \_ ->
+                rendered threeJson
+                    |> Expect.all
+                        [ Query.find [ id "practice-card" ] >> Query.has [ dataAttr "data-kind" "own" ]
+                        , Query.find [ id "practice-manage" ] >> Query.has [ text "Manage" ]
+                        ]
+        , test "the positions as a list: a small board, the prompt, where it stands, an x" <|
+            \_ ->
+                rendered threeJson
+                    |> Query.find [ id "practice-members" ]
+                    |> Query.children []
+                    |> Expect.all
+                        [ Query.count (Expect.equal 3)
+                        , Query.index 0 >> Query.has [ id "practice-member-k0", text "White to play 6-4. What's your play?", text "level 2" ]
+                        , Query.index 0 >> Query.findAll [ class "bg-still" ] >> Query.count (Expect.equal 1)
+                        , Query.index 1 >> Query.has [ text "mastered" ]
+                        , Query.index 2 >> Query.has [ text "to learn" ]
+                        , Query.index 2 >> Query.findAll [ class "bg-still" ] >> Query.count (Expect.equal 0)
+                        , Query.index 0 >> Query.find [ id "practice-remove-k0" ] >> Event.simulate Event.click >> Event.expect (PressedRemove "k0")
+                        , Query.index 0 >> Query.find [ tag "a" ] >> Query.has [ attribute (Html.Attributes.href "/puzzles/k0") ]
+                        ]
+        , test "the name is in its field; RENAME waits for a change" <|
+            \_ ->
+                rendered threeJson
+                    |> Expect.all
+                        [ Query.find [ id "practice-rename" ] >> Query.has [ attribute (Html.Attributes.value "Openings I like") ]
+                        , Query.find [ id "practice-rename" ] >> Event.simulate (Event.input "Openings I love") >> Event.expect (RenameInput "Openings I love")
+                        , Query.find [ id "practice-rename-save" ] >> Query.has [ attribute (Html.Attributes.disabled True) ]
+                        ]
+        , test "renamed: the card's name follows, and the line says so" <|
+            \_ ->
+                loaded threeJson
+                    |> send (RenameInput "Openings I love")
+                    |> send SubmittedRename
+                    |> send (GotRenamed (ownedSet "K7M2Q9XA" "Openings I love" 3))
+                    |> PracticePage.view
+                    |> Query.fromHtml
+                    |> Expect.all
+                        [ Query.find [ id "practice-name" ] >> Query.has [ text "Openings I love" ]
+                        , Query.find [ id "practice-manage-line" ] >> Query.has [ text "Renamed." ]
+                        ]
+        , test "a refused name is said in the line, in the server's words" <|
+            \_ ->
+                loaded threeJson
+                    |> send (RenameInput "Back games")
+                    |> send SubmittedRename
+                    |> send (GotRenamed (Err (Api.ApiError { code = "name_taken", message = "You already have a set called that" })))
+                    |> PracticePage.view
+                    |> Query.fromHtml
+                    |> Query.find [ id "practice-manage-line" ]
+                    |> Query.has [ text "You already have a set called that" ]
+        , test "removed: the row goes, the x was held while it was on its way" <|
+            \_ ->
+                let
+                    removing =
+                        loaded threeJson |> send (PressedRemove "k0")
+                in
+                Expect.all
+                    [ PracticePage.view >> Query.fromHtml >> Query.find [ id "practice-remove-k0" ] >> Query.has [ attribute (Html.Attributes.disabled True) ]
+                    , send (GotRemoved "k0" (ownedSet "K7M2Q9XA" "Openings I like" 2))
+                        >> PracticePage.view
+                        >> Query.fromHtml
+                        >> Query.find [ id "practice-members" ]
+                        >> Query.children []
+                        >> Query.count (Expect.equal 2)
+                    ]
+                    removing
+        , test "DELETE SET asks once, in place, in the set's name" <|
+            \_ ->
+                loaded threeJson
+                    |> send PressedDelete
+                    |> PracticePage.view
+                    |> Query.fromHtml
+                    |> Query.find [ id "practice-delete-slot" ]
+                    |> Expect.all
+                        [ Query.has [ text "Delete Openings I like? Its positions stay where they are; your progress on them is kept aside." ]
+                        , Query.find [ id "practice-delete-yes" ] >> Event.simulate Event.click >> Event.expect ConfirmedDelete
+                        , Query.find [ id "practice-delete-no" ] >> Event.simulate Event.click >> Event.expect CancelledDelete
+                        , Query.findAll [ id "practice-delete" ] >> Query.count (Expect.equal 0)
+                        ]
+        , test "KEEP IT puts the button back" <|
+            \_ ->
+                loaded threeJson
+                    |> send PressedDelete
+                    |> send CancelledDelete
+                    |> PracticePage.view
+                    |> Query.fromHtml
+                    |> Query.find [ id "practice-delete" ]
+                    |> Query.has [ text "DELETE SET" ]
+        , test "deleted, the way back is the practice home" <|
+            \_ ->
+                loaded threeJson
+                    |> send PressedDelete
+                    |> send ConfirmedDelete
+                    |> out (GotDeleted (Ok ()))
+                    |> Expect.equal (Go "/puzzles")
+        , test "an empty set: OPEN ANALYSIS in the button's place, and the list says how to fill it" <|
+            \_ ->
+                rendered emptyJson
+                    |> Expect.all
+                        [ Query.find [ id "practice-open-analysis" ] >> Query.has [ tag "a", attribute (Html.Attributes.href "/analysis") ]
+                        , Query.find [ id "practice-members-empty" ] >> Query.has [ text "Nothing here yet. Save a position from the analysis board or from any puzzle." ]
+                        ]
+        , test "the level words" <|
+            \_ ->
+                [ DeckWords.levelWord { level = 0, started = False, patchedLevel = 4 }
+                , DeckWords.levelWord { level = 2, started = True, patchedLevel = 4 }
+                , DeckWords.levelWord { level = 4, started = True, patchedLevel = 4 }
+                , DeckWords.levelWord { level = 0, started = True, patchedLevel = 4 }
+                ]
+                    |> Expect.equal [ "to learn", "level 2", "mastered", "back at the start" ]
+        , test "a universal set's page has no MANAGE" <|
+            \_ ->
+                rendered (setJson "openings" "Openings" 15 True)
+                    |> Query.findAll [ id "practice-manage" ]
+                    |> Query.count (Expect.equal 0)
+        ]
