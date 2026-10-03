@@ -131,17 +131,18 @@ config :tailwind,
 #   gap_ms -- between one bot action and the next: checker by checker.
 #   beat_ms -- a double, a take or a drop is never sooner than this after
 #     what prompted it, so it is seen coming.
-# A doubles turn is settle + 5 gaps = 3.6 s of pacing, a cube action adds a
-# beat, and the 12 s free delay a turn gets is charged for all of it: the
-# bot room test keeps the sum under half of that.
+# A doubles turn is settle + 5 gaps = 4.4 s of pacing, a cube action adds a
+# beat (5.4 s in all), and the 12 s free delay a turn gets is charged for all
+# of it: the bot room test keeps the sum under half of that. Slowed a touch
+# on 2026-10-03 after the human played it (was 1600 / 400 / 800).
 config :oskol, :bot,
   move_level: "3ply",
   cube_level: "3ply",
   retry_ms: [5_000, 20_000, 60_000],
   ask_timeout_ms: :timer.seconds(30),
-  settle_ms: 1_600,
-  gap_ms: 400,
-  beat_ms: 800
+  settle_ms: 1_900,
+  gap_ms: 500,
+  beat_ms: 1_000
 
 # Configures Elixir's Logger
 config :logger, :default_formatter,
