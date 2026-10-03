@@ -114,6 +114,39 @@ pub type Timeout(action) {
 pub type Ask =
   fn(String, String) -> Result(String, String)
 
+/// What kind of moment a bot's action is, for somebody watching it played.
+/// The game names the moment; the platform owns the milliseconds (in Oskol,
+/// `config :oskol, :bot`), so an operator can slow every bot down without a
+/// game knowing, and a game never has to know how long its animations run.
+pub type Pace {
+  /// One step of a sequence -- a piece moved, a turn committed -- that
+  /// follows the bot's previous action after the platform's usual gap.
+  Step
+  /// A decision the watcher should see coming rather than find already
+  /// made (a double, a take): held a beat after the change that prompted
+  /// it.
+  Beat
+  /// Sets something in motion the watcher has to see finish before anything
+  /// else happens (dice in the air): the bot's next action waits for it to
+  /// settle.
+  Settle
+}
+
+/// One action a bot decided on: the same `{"name", "params"}` object a
+/// browser sends, and the moment it is.
+pub type BotAction {
+  BotAction(action: Json, pace: Pace)
+}
+
+/// The pace's name on the wire to the platform.
+pub fn pace_name(pace: Pace) -> String {
+  case pace {
+    Step -> "step"
+    Beat -> "beat"
+    Settle -> "settle"
+  }
+}
+
 pub type Game(state, action) {
   Game(
     info: Info,
@@ -159,14 +192,15 @@ pub type Game(state, action) {
     /// could not see may leave with it.
     committed: fn(state, action, state) -> Option(Json),
     /// What a bot seat does now: the actions to take, in order, as the same
-    /// `{"name", "params"}` objects a browser sends. Called only for a seat
-    /// whose turn it is, off the room, with the engine as a closure.
+    /// `{"name", "params"}` objects a browser sends, each with the moment it
+    /// is for a watcher (`Pace`). Called only for a seat whose turn it is,
+    /// off the room, with the engine as a closure.
     ///
     /// `attempts` is how many asks have already come back empty for this
     /// decision, so a game can give up in its own words rather than leave a
     /// board that never moves -- the platform never learns what giving up
     /// is called here. An empty list means there is nothing to do.
-    bot: fn(state, PlayerId, Ask, Int) -> Result(List(Json), String),
+    bot: fn(state, PlayerId, Ask, Int) -> Result(List(BotAction), String),
   )
 }
 
@@ -176,7 +210,7 @@ pub fn no_bot(
   _player_id: PlayerId,
   _ask: Ask,
   _attempts: Int,
-) -> Result(List(Json), String) {
+) -> Result(List(BotAction), String) {
   Ok([])
 }
 

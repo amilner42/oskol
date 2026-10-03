@@ -17,8 +17,9 @@ needs per-seat controls gamekit has no idea about.
 Who drives it: the room, after every state change and after a rehydrate,
 starts one supervised task per bot seat whose turn it is with no think in
 flight (`Oskol.Game.Bot`, under `Oskol.Game.BotSupervisor`). The task asks
-the game (`GameKit.think/4`) and applies each action through the ordinary
-`player_action`; the room never waits on the engine, which takes seconds. A
+the game (`GameKit.think/4`) and applies each action, paced (below), as an
+ordinary player action; the room never waits on the engine, which takes
+seconds. A
 think that comes back empty is tried again at 5 s, 20 s and then every 60 s
 (`config :oskol, :bot`), up to `stop_trying_after` asks -- about half an hour,
 and the room goes idle before that anyway. **Sage never resigns for want of an
@@ -50,6 +51,33 @@ At the table the player bar shows Sage with a chip badge (`Ui.Identity`) and
 its presence dot pulses while a think is in flight -- the wire's
 `players[].bot` and `players[].thinking`. Reviews, ratings and puzzles need
 nothing: the bot's moves are ordinary logged actions.
+
+**Pacing.** At 3-ply Sage answered before its own dice had landed on the
+screen, so the task plays its turn at a pace a watcher can follow, on the
+server, where every browser and spectator sees the same rhythm. The game's
+`bot` answer carries a pace per action (`gamekit/game.Pace`): `Settle` for
+something set in motion the next action waits on (the roll), `Beat` for a
+decision to be seen coming (double, take, drop, an answer to a
+resignation), `Step` for everything else (`move`, `undo`, `play`, `ready`).
+Elixir never matches an action's name; it turns paces into milliseconds
+with three knobs in `config :oskol, :bot` -- `settle_ms` 1600 (the tumble is
+0.95 s, a double's earned dice land at 1.2 s, then a moment to read them),
+`gap_ms` 400 between consecutive bot actions, `beat_ms` 800 from the change
+that prompted a `Beat` -- all 0 in test. A turn is one task from the roll to
+the play (decide, play, and while the turn is still the bot's and nobody else
+has moved, decide again), so the move decision is thought about while the
+dice are in the air and the dot stays lit throughout. Staging is the mover's
+alone (`backgammon/projection`), so the person sees the dice land, the dot
+pulse, then the play land whole when Sage commits: about 2.4 s after the
+throw for two checkers, 3.2 s for a double's four, or later if the think is
+slower. All of it stays well inside the 12 s free delay (asserted in
+`bot_room_test.exs`). Pacing never outlives its position: each action goes
+to the room process that started the think, by pid, and only if the room's
+step count is still the bot's own last one (`GameServer.bot_action/4`); a
+resignation, a timeout, the other player or a rehydrate moves it on and the
+rest is dropped, not refused. The waits are a `receive` on a monitor of the
+room in the task, never a sleep in the room, so a room that stops wakes the
+task at once.
 
 ## Persistence
 

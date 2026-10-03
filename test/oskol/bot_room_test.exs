@@ -240,4 +240,193 @@ defmodule Oskol.Game.BotRoomTest do
       refute GameKit.finished?(state.instance)
     end
   end
+
+  describe "pacing" do
+    # The suite runs with every pace at 0; these tests set their own, small
+    # enough to stay quick and large enough to measure.
+    defp paced(paces) do
+      before = Application.get_env(:oskol, :bot)
+      Application.put_env(:oskol, :bot, Keyword.merge(before, paces))
+      on_exit(fn -> Application.put_env(:oskol, :bot, before) end)
+    end
+
+    # Every step the room broadcasts, as it is received: when, the room's step
+    # count after it, and the kinds of the events it carried.
+    defp record(game_id) do
+      parent = self()
+
+      pid =
+        spawn_link(fn ->
+          Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
+          send(parent, :listening)
+          listen([])
+        end)
+
+      receive do
+        :listening -> pid
+      end
+    end
+
+    defp listen(seen) do
+      receive do
+        {:game_state_updated, state, events} when events != [] ->
+          at = GameKit.now()
+
+          kinds =
+            Enum.map(GameKit.spectator_update(state.instance, events)["events"], & &1["kind"])
+
+          listen([{at, state.action_count, kinds} | seen])
+
+        {:seen, from} ->
+          send(from, {:seen, Enum.reverse(seen)})
+          listen(seen)
+
+        _ ->
+          listen(seen)
+      end
+    end
+
+    defp seen(recorder) do
+      send(recorder, {:seen, self()})
+
+      receive do
+        {:seen, steps} -> steps
+      end
+    end
+
+    # Play the person's side at random until `enough` is true of what the
+    # recorder has seen; returns the step counts the person's own actions
+    # made, so everything else on the record is Sage's.
+    defp play_until_seen(game_id, human, recorder, enough, mine \\ MapSet.new(), tries \\ 0) do
+      state = Game.get_server_state(game_id)
+
+      cond do
+        enough.(seen(recorder), mine) ->
+          mine
+
+        tries > 3_000 or GameKit.finished?(state.instance) ->
+          flunk("never saw what the test was waiting for")
+
+        human in GameKit.to_act(state.instance) ->
+          choices = Enum.reject(GameKit.legal(state.instance, human), &(&1["name"] == "resign"))
+          action = Oskol.Bots.action(Enum.random(choices))
+          {:ok, after_it, _} = Game.player_action(game_id, human, action)
+
+          play_until_seen(
+            game_id,
+            human,
+            recorder,
+            enough,
+            MapSet.put(mine, after_it.action_count),
+            tries + 1
+          )
+
+        true ->
+          Process.sleep(5)
+          play_until_seen(game_id, human, recorder, enough, mine, tries + 1)
+      end
+    end
+
+    # Sage's runs of consecutive steps: each a list of {at, kinds}.
+    defp sages_runs(steps, mine) do
+      steps
+      |> Enum.chunk_by(fn {_at, count, _kinds} -> MapSet.member?(mine, count) end)
+      |> Enum.reject(fn [{_at, count, _} | _] -> MapSet.member?(mine, count) end)
+      |> Enum.map(fn run -> Enum.map(run, fn {at, _count, kinds} -> {at, kinds} end) end)
+    end
+
+    defp rolled_and_moved?(run) do
+      length(run) >= 2 and "dice_rolled" in elem(hd(run), 1) and
+        Enum.any?(run, fn {_, kinds} -> "checker_moved" in kinds end)
+    end
+
+    test "Sage's dice settle before its checkers move, and its moves come one gap apart" do
+      paced(settle_ms: 200, gap_ms: 60, beat_ms: 0)
+      %{game_id: game_id, human: human} = table(seed: 5)
+      recorder = record(game_id)
+
+      mine =
+        play_until_seen(game_id, human, recorder, fn steps, mine ->
+          Enum.any?(sages_runs(steps, mine), &rolled_and_moved?/1)
+        end)
+
+      run = Enum.find(sages_runs(seen(recorder), mine), &rolled_and_moved?/1)
+      [{rolled_at, _}, {first_at, _} | _] = run
+
+      # The dice are on the table a settle before anything else Sage does.
+      # The times are when the recorder received each broadcast, and a loaded
+      # runner can deliver one a few ms late: 20 ms of slack, far below what
+      # unpaced play (about 0 ms) would show.
+      assert first_at - rolled_at >= 200 - 20
+
+      # And every step after that is at least a gap behind the one before.
+      run
+      |> Enum.drop(1)
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.each(fn [{a, _}, {b, _}] -> assert b - a >= 60 - 20 end)
+    end
+
+    test "a resignation while Sage is waiting to move drops the rest of its turn" do
+      paced(settle_ms: 600, gap_ms: 600, beat_ms: 0)
+      %{game_id: game_id, human: human} = table(seed: 5)
+      recorder = record(game_id)
+
+      # Up to the moment Sage's dice land on its own turn.
+      mine =
+        play_until_seen(game_id, human, recorder, fn steps, mine ->
+          case sages_runs(steps, mine) |> List.last() do
+            [{_, kinds}] -> "dice_rolled" in kinds
+            _ -> false
+          end
+        end)
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          state = Game.get_server_state(game_id)
+          resign = Enum.find(GameKit.legal(state.instance, human), &(&1["name"] == "resign"))
+          {:ok, offered, _} = Game.player_action(game_id, human, Oskol.Bots.action(resign))
+          resigned_at = offered.action_count
+
+          after_resign = fn ->
+            seen(recorder)
+            |> Enum.filter(fn {_at, count, _kinds} -> count > resigned_at end)
+            |> Enum.flat_map(fn {_at, _count, kinds} -> kinds end)
+          end
+
+          # Sage answers the offer in a think of its own, which the room only
+          # starts once the paced turn it interrupted has ended -- so by the
+          # time the answer is on the record, nothing of that turn is left
+          # to land. Up to 10 s on a slow runner.
+          answered = &(&1 in ["resign_accepted", "resign_declined"])
+          eventually(fn -> Enum.any?(after_resign.(), answered) end, 1_000)
+          after_resign = after_resign.()
+
+          # Sage answered the offer (that is a new think, about the board as
+          # it stands) and played no checker it had decided on before it.
+          assert Enum.any?(after_resign, &(&1 in ["resign_accepted", "resign_declined"]))
+
+          refute "checker_moved" in Enum.take_while(
+                   after_resign,
+                   &(&1 not in ["resign_declined"])
+                 )
+        end)
+
+      # Dropped, not refused: nothing was sent to the room to be turned down.
+      refute log =~ "could not play"
+      _ = mine
+    end
+
+    test "a turn's pacing stays well inside the free delay a turn gets" do
+      # The numbers production plays with, not the suite's zeros.
+      paces = Config.Reader.read!("config/config.exs", env: :prod)[:oskol][:bot]
+      {:ok, info} = GameKit.game_info("backgammon")
+
+      # The longest stretch the bot's clock is charged for pacing alone: a
+      # beat, the dice settling, and four checkers plus the commit.
+      longest = paces[:beat_ms] + paces[:settle_ms] + 5 * paces[:gap_ms]
+
+      assert longest > 0
+      assert longest <= div(info["turn_delay_ms"], 2)
+    end
+  end
 end

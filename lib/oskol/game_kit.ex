@@ -182,24 +182,39 @@ defmodule Oskol.GameKit do
 
   @doc """
   What a bot seat does now: the actions to apply, in order, as the same maps
-  a browser sends. `ask` is the analysis engine as a closure -- a route and a
-  JSON body in, the answer's body out -- and it is called from wherever this
-  runs, never from a room. `attempts` is how many asks have already come back
-  empty for this decision; what to do once that is too many is the game's
-  call, not ours.
+  a browser sends, each with its pace (`gamekit/game.Pace`): `:step`, one
+  step of a sequence; `:beat`, a decision to be seen coming; `:settle`,
+  something set in motion that the next action waits on. The game names the
+  moment and `Oskol.Game.Bot` owns the milliseconds.
+
+  `ask` is the analysis engine as a closure -- a route and a JSON body in,
+  the answer's body out -- and it is called from wherever this runs, never
+  from a room. `attempts` is how many asks have already come back empty for
+  this decision; what to do once that is too many is the game's call, not
+  ours.
   """
   @spec think(
           instance,
           player_id,
           (String.t(), String.t() -> {:ok, String.t()} | {:error, String.t()}),
           non_neg_integer()
-        ) :: {:ok, [map()]} | {:error, String.t()}
+        ) :: {:ok, [{map(), :step | :beat | :settle}]} | {:error, String.t()}
   def think(instance, player_id, ask, attempts) do
     case :gamekit@host.think(instance, player_id, ask, attempts) do
-      {:ok, json} -> {:ok, Jason.decode!(json)}
-      {:error, reason} -> {:error, reason}
+      {:ok, json} ->
+        {:ok, Enum.map(Jason.decode!(json), &{&1["action"], pace(&1["pace"])})}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
+
+  defp pace("step"), do: :step
+  defp pace("beat"), do: :beat
+  defp pace("settle"), do: :settle
+  # A pace this platform does not know yet is played as a plain step rather
+  # than crashing the bot's turn.
+  defp pace(_unknown), do: :step
 
   @spec slug(instance) :: String.t()
   def slug(instance), do: :gamekit@host.slug(instance)

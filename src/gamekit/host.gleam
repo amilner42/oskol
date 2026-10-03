@@ -256,8 +256,10 @@ pub fn to_act(instance: Instance) -> List(String) {
   instance.to_act(instance)
 }
 
-/// What a bot seat does now: a JSON array of actions, in the order they are
-/// to be applied, each the same `{"name", "params"}` object a browser sends.
+/// What a bot seat does now: a JSON array in the order the actions are to be
+/// applied, each `{"action": {"name", "params"}, "pace": "step" | "beat" |
+/// "settle"}` -- the object a browser sends, and the moment it is for a
+/// watcher (`game.Pace`), which the platform turns into milliseconds.
 ///
 /// `ask` is the analysis engine, and it is called from wherever this runs --
 /// never inside a room, because an answer can take seconds. `attempts` is
@@ -270,7 +272,16 @@ pub fn think(
   attempts: Int,
 ) -> Result(String, String) {
   instance.bot(instance, player_id, ask, attempts)
-  |> result.map(fn(actions) { json.to_string(json.preprocessed_array(actions)) })
+  |> result.map(fn(actions) {
+    json.to_string(
+      json.array(actions, fn(decided: game.BotAction) {
+        json.object([
+          #("action", decided.action),
+          #("pace", json.string(game.pace_name(decided.pace))),
+        ])
+      }),
+    )
+  })
 }
 
 /// A small public snapshot of where the game stands, for the platform to

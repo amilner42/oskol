@@ -180,6 +180,10 @@ if [[ "$mode" == "--browser" ]]; then
   # A finished match played again, with its analysis stubbed in the browser;
   # it arranges its own room (setup.exs) the same way.
   node playwright/test-backgammon-replay/test.js
+  # A game against Sage with a stand-in engine that answers at once
+  # (engine.exs, on ANALYSIS_STUB_PORT): its dice land and its think dot
+  # stays lit before any checker of its moves.
+  node playwright/test-sage-pacing/test.js
   node playwright/test-guest-prefill/test.js
   # The clock tiers in the sentence and PLAY's dialog at four sizes, every
   # box held while the format changes; the lobby and the invite name them.

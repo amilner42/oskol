@@ -75,12 +75,14 @@ Game(
   period:        fn(state) -> Int,                          // which period of play: a PerPeriod bank refills when it moves on
   record:        fn(state) -> Option(Json),                 // the whole public record, or game.no_record
   committed:     fn(state, action, state) -> Option(Json),  // what this step committed, or game.no_committed
-  bot:           fn(state, PlayerId, Ask, Int) -> Result(List(Json), String),  // what a bot seat does now
+  bot:           fn(state, PlayerId, Ask, Int) -> Result(List(BotAction), String),  // what a bot seat does now, paced
 )
 ```
 
 `bot` is what a seat nobody is sitting at does: the actions to take, in
-order, as the same `{"name", "params"}` objects a browser sends. `Ask` is the
+order, as the same `{"name", "params"}` objects a browser sends, each in a
+`BotAction` with its `Pace` (`Step`, `Beat` or `Settle`: what kind of moment
+it is for a watcher; the platform owns the milliseconds). `Ask` is the
 analysis engine as a closure (`fn(route, body) -> Result(body, String)`), so
 the brain stays pure and the platform owns the socket, the timeout and the
 retries. The `Int` is how many asks have already come back empty for this
