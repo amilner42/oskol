@@ -224,7 +224,7 @@ defmodule Oskol.RehydrationTest do
   end
 
   test "rehydration restores the clock and resumes it paused-until-now" do
-    %{game_id: game_id, p1: p1, mover: mover} = started(42, "single", clock: "bg3")
+    %{game_id: game_id, p1: p1, mover: mover} = started(42, "single", clock: "bg_blitz")
     action = legal_move(game_id |> Game.get_server_state() |> Map.get(:instance), mover)
     {:ok, _, _} = Game.player_action(game_id, mover, action)
 
@@ -246,9 +246,10 @@ defmodule Oskol.RehydrationTest do
   end
 
   test "a room made under a clock that is no longer offered still rehydrates with it" do
-    # Blitz was one of backgammon's clocks before the home page offered 3, 5
-    # and 10 minutes. It is still defined, so rooms that picked it replay.
-    %{game_id: game_id, p1: p1, mover: mover} = started(42, "single", clock: "bg3")
+    # Blitz was one of backgammon's clocks before the flat banks, and those
+    # before the tiers. Both are still defined, so rooms that picked them
+    # replay.
+    %{game_id: game_id, p1: p1, mover: mover} = started(42, "single", clock: "bg_blitz")
     action = legal_move(game_id |> Game.get_server_state() |> Map.get(:instance), mover)
     {:ok, _, _} = Game.player_action(game_id, mover, action)
 
@@ -268,6 +269,56 @@ defmodule Oskol.RehydrationTest do
 
     assert GameKit.player_update(state.instance, p1)["clock"]["label"] ==
              "3 min + 2 s, 12 s delay every turn"
+  end
+
+  # Unlimited play under a tier refills both banks when each new game
+  # begins; a room made under the flat banks before the tiers kept one bank
+  # for the whole session, and rehydrates on exactly that. The fixture room:
+  # one game resigned after the mover spent 100 s (88 past the delay), then
+  # both READY, the log stamped at those offsets and the room's clock set.
+  for {clock, mover_left} <- [{"bg5", 212_000}, {"bg_standard", 300_000}] do
+    test "an unlimited room under #{clock} rehydrates on the banks it had" do
+      clock = unquote(clock)
+
+      %{game_id: game_id, mover: mover, waiting: waiting} =
+        started(11, "unlimited", clock: "bg_standard")
+
+      {:ok, _, _} = Game.player_action(game_id, waiting, simple("resign"))
+      {:ok, _, _} = Game.player_action(game_id, mover, simple("accept_resign"))
+      {:ok, _, _} = Game.player_action(game_id, mover, simple("ready"))
+      {:ok, _, _} = Game.player_action(game_id, waiting, simple("ready"))
+      Persister.flush()
+      kill_room(game_id)
+
+      [100_000, 100_000, 150_000, 200_000]
+      |> Enum.with_index()
+      |> Enum.each(fn {at_ms, index} ->
+        Persistence.GameAction
+        |> Repo.get_by!(game_id: game_id, index: index)
+        |> Ecto.Changeset.change(at_ms: at_ms)
+        |> Repo.update!()
+      end)
+
+      game = Repo.get!(Persistence.Game, game_id)
+
+      game
+      |> Ecto.Changeset.change(config: Map.put(game.config, "clock", clock))
+      |> Repo.update!()
+
+      assert {:ok, _pid} = Game.lookup_game(game_id)
+      state = Game.get_server_state(game_id)
+      assert state.setup.clock == clock
+      assert state.action_count == 4
+
+      left =
+        GameKit.player_update(state.instance, mover)["clock"]["players"]
+        |> Map.new(&{&1["id"], &1["remaining_ms"]})
+
+      # Game two has begun and whoever opens it is inside the 12 s delay,
+      # so neither bank has moved since the last step.
+      assert left[mover] == unquote(mover_left)
+      assert left[waiting] == 300_000
+    end
   end
 
   test "a creator cannot pick a retired clock; a room that has one keeps it" do

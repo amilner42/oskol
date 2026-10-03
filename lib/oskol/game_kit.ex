@@ -38,16 +38,30 @@ defmodule Oskol.GameKit do
 
   # ---------- Clocks ----------
 
-  @doc "Time-control presets offered in the lobby; the first is the default."
+  @doc "The fixed time-control presets, offered or not; the first is the default."
   @spec clock_presets() :: [map()]
   def clock_presets, do: :gamekit@host.clock_presets_json() |> Jason.decode!()
 
+  @doc "Every clock id a room may carry: the fixed presets and every game's tiers."
   @spec clock_ids() :: [String.t()]
   def clock_ids, do: :gamekit@host.clock_ids()
 
-  @doc "Resolve a preset id to an opaque control term (unknown ids mean no clock)."
-  @spec clock_control(String.t()) :: control
-  def clock_control(preset_id), do: :gamekit@host.clock_control(preset_id)
+  @doc """
+  Resolve a clock id to an opaque control term for one format of a game: a
+  tier is sized to the format, a preset is what it always was. Unknown ids
+  mean no clock.
+  """
+  @spec clock_control(String.t(), String.t(), String.t()) :: control
+  def clock_control(slug, format_id, clock_id),
+    do: :gamekit@host.clock_control(slug, format_id, clock_id)
+
+  @doc """
+  A clock in words for one format, as a setup line names it ("Standard
+  clock · 14 min each", "5 min clock"), or "" for no clock.
+  """
+  @spec clock_line(String.t(), String.t(), String.t()) :: String.t()
+  def clock_line(slug, format_id, clock_id),
+    do: :gamekit@host.clock_line(slug, format_id, clock_id)
 
   @doc "Milliseconds until a running clock could expire, or :none."
   @spec next_deadline(instance, integer()) :: {:ok, non_neg_integer()} | :none

@@ -33,7 +33,7 @@ async function lobby(browser, vp, slug, mode, clock) {
 }
 
 async function backgammon(browser, vp, tag) {
-  const { p1, p2, contexts } = await lobby(browser, vp, 'backgammon', 'match5', 'bg5');
+  const { p1, p2, contexts } = await lobby(browser, vp, 'backgammon', 'match5', 'bg_bullet');
   const source = '.bg-point.source';
   await Promise.race([p1.waitForSelector(source, { timeout: 20000 }), p2.waitForSelector(source, { timeout: 20000 })]);
   const mover = (await p1.locator(source).count()) > 0 ? p1 : p2;

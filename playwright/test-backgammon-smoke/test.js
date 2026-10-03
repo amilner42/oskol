@@ -1,7 +1,8 @@
 /**
- * Smoke test for backgammon, with a 3 minute clock and the game's 12 s delay.
+ * Smoke test for backgammon, on a bullet clock (3 minutes for a match to 3)
+ * and the game's 12 s delay.
  *
- * 1. / -> the sentence: a match to 3 against a friend, 3 min; the second player
+ * 1. / -> the sentence: a match to 3 against a friend, bullet; the second player
  *    joins by the invite link (playwright/lib/flows.js does both)
  * 2. The player to move sees selectable points; a tap plays a die
  * 3. Clocks render; the first 12 s of a turn are free
@@ -43,7 +44,7 @@ async function main() {
     const p1 = await context.newPage();
     watch(p1, 'p1');
     // The creator picks everything on the home page, then shares the link.
-    const game = await createGame(p1, { name: 'Alice', mode: 'match3', clock: 'bg3' });
+    const game = await createGame(p1, { name: 'Alice', mode: 'match3', clock: 'bg_bullet' });
     const gameId = game.gameId;
     log(`Game ${gameId} created`);
     await p1.screenshot({ path: `${SHOTS}/01-lobby.png` });

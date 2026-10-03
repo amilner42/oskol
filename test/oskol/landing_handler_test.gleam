@@ -98,6 +98,13 @@ pub fn the_invite_names_the_format_as_a_phrase_and_the_clock_only_when_there_is_
     == Some("Arie wants to play a match to 5 on a blitz clock")
   assert head("unlimited", "bg10")
     == Some("Arie wants to play unlimited backgammon on a 10 min clock")
+  // a tier says what it is worth for the format
+  assert head("match7", "bg_standard")
+    == Some("Arie wants to play a match to 7 on a standard clock, 14 min each")
+  assert head("unlimited", "bg_blitz")
+    == Some(
+      "Arie wants to play unlimited backgammon on a blitz clock, 3 min each per game",
+    )
   // a format the game no longer lists is still a sentence, not a crash
   assert head("match9", "none") == Some("Arie wants to play backgammon")
   // a clock preset the site retired (rooms keep theirs) is still a clock
@@ -183,6 +190,16 @@ pub fn my_games_lists_the_rooms_this_guest_holds_a_seat_in_test() {
     "\"time\":{\"mine_ms\":171000,\"theirs_ms\":300000,\"running\":\"mine\",\"free_ms\":0,\"age_s\":4}",
   )
   assert string.contains(body, "\"idle_s\":90")
+}
+
+pub fn my_games_names_a_tier_with_its_bank_for_the_format_test() {
+  let ctx =
+    reading()
+    |> fakes.with_active_rooms([
+      ActiveRoom(..open_room(), format: "match21", clock: "bg_classic"),
+    ])
+  let body = landing.my_games_json(ctx, fakes.guest("g1"))
+  assert string.contains(body, "\"clock\":\"Classic · 63 min each\"")
 }
 
 pub fn my_games_says_whose_move_from_the_guests_own_seat_test() {
@@ -285,16 +302,31 @@ pub fn a_game_page_carries_its_copy_its_formats_and_the_clocks_test() {
   assert string.contains(body, "\"min_players\":2")
   assert string.contains(body, "\"max_players\":2")
   assert string.contains(body, "\"default_clock\":")
-  // The game's own clocks are preset ids; the presets themselves come with
-  // the page, so the picker can name them.
-  // Backgammon offers no clock, or a bank of 3 to 60 minutes (each with its
-  // 12 s delay); the older presets stay defined for old rooms but are not
-  // offered.
+  // The game's own clocks are ids; the presets and tiers themselves come
+  // with the page, so the picker can name them. Backgammon offers no clock
+  // or one of four tiers (each with its 12 s delay); the flat banks and the
+  // older presets stay defined for old rooms but are not offered.
   assert string.contains(
     body,
-    "\"clocks\":[\"none\",\"bg3\",\"bg5\",\"bg10\",\"bg15\",\"bg30\",\"bg60\"]",
+    "\"clocks\":[\"none\",\"bg_bullet\",\"bg_blitz\",\"bg_standard\",\"bg_classic\"]",
   )
   assert string.contains(body, "\"clock_presets\":[{\"id\":\"none\"")
+  assert string.contains(body, "{\"id\":\"bg5\",\"name\":\"5 min\"")
+  // A tier carries what it is worth for every format, so the picker never
+  // does the arithmetic.
+  assert string.contains(
+    body,
+    "{\"id\":\"bg_standard\",\"name\":\"Standard\",\"description\":\"2 min per point of a match, 5 min a game otherwise\",\"lines\":{\"single\":\"5 min each for this game\",\"match3\":\"6 min each for this 3-point match\"",
+  )
+  assert string.contains(
+    body,
+    "\"match7\":\"14 min each for this 7-point match\"",
+  )
+  assert string.contains(body, "\"unlimited\":\"5 min each per game\"")
+  assert string.contains(
+    body,
+    "\"match7\":\"10.5 min each for this 7-point match\"",
+  )
   // Formats: a mode is all the creator tunes besides the clock.
   assert string.contains(body, "\"formats\":[{\"id\":\"single\"")
   // Copy, in one object of its own.

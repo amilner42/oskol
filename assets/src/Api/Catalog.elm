@@ -15,6 +15,8 @@ module Api.Catalog exposing
     , RoomSeat
     , RoomState(..)
     , claimSeat
+    , clockLine
+    , clockWorth
     , closeRoom
     , clockPresetDecoder
     , clocksInGameOrder
@@ -88,10 +90,17 @@ type alias Game =
     }
 
 
+{-| A clock a game offers. A tier (one the game sizes to the format) carries
+`lines`: for every format id, what it is worth there ("14 min each for this
+7-point match"), as the server worked it out, and `each`, the same in a few
+words ("14 min each"). A fixed preset has neither.
+-}
 type alias ClockPreset =
     { id : String
     , name : String
     , description : String
+    , lines : Dict String String
+    , each : Dict String String
     }
 
 
@@ -460,10 +469,40 @@ formatDecoder =
 
 clockPresetDecoder : Decoder ClockPreset
 clockPresetDecoder =
-    D.map3 ClockPreset
+    D.map5 ClockPreset
         (D.field "id" D.string)
         (optionalString "name" "")
         (optionalString "description" "")
+        (D.oneOf [ D.field "lines" (D.dict D.string), D.succeed Dict.empty ])
+        (D.oneOf [ D.field "each" (D.dict D.string), D.succeed Dict.empty ])
+
+
+{-| What a clock is worth for one format, in the server's words: a tier's
+line for it ("14 min each for this 7-point match"), else a preset's
+description. Nothing for no clock.
+-}
+clockWorth : ClockPreset -> String -> Maybe String
+clockWorth preset formatId =
+    if preset.id == "none" then
+        Nothing
+
+    else
+        case Dict.get formatId preset.lines of
+            Just line ->
+                Just line
+
+            Nothing ->
+                Just preset.description
+
+
+{-| A clock named with what it is worth for one format: "Standard · 14 min
+each for this 7-point match", "Standard · 5 min each per game". Nothing for
+no clock.
+-}
+clockLine : ClockPreset -> String -> Maybe String
+clockLine preset formatId =
+    clockWorth preset formatId
+        |> Maybe.map (\worth -> preset.name ++ " · " ++ worth)
 
 
 {-| The time-control presets the response carries, in the order it sent
@@ -711,7 +750,15 @@ summarise format presets clockId =
                 presets
                     |> List.filter (\p -> p.id == clockId)
                     |> List.head
-                    |> Maybe.map (\p -> [ p.name ++ " clock" ])
+                    |> Maybe.map
+                        (\p ->
+                            case Dict.get format.id p.each of
+                                Just each ->
+                                    [ p.name ++ " clock · " ++ each ]
+
+                                Nothing ->
+                                    [ p.name ++ " clock" ]
+                        )
                     |> Maybe.withDefault []
     in
     String.join " · " (format.name :: clock)

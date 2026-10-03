@@ -187,10 +187,9 @@ defmodule Oskol.Game.GameServerState do
     format = format(state) || %{"name" => setup.format}
 
     clock =
-      case Enum.find(GameKit.clock_presets(), &(&1["id"] == setup.clock)) do
-        %{"id" => "none"} -> []
-        %{"name" => name} -> ["#{name} clock"]
-        nil -> []
+      case GameKit.clock_line(state.slug, setup.format, setup.clock) do
+        "" -> []
+        line -> [line]
       end
 
     Enum.join([format["name"]] ++ clock, " · ")

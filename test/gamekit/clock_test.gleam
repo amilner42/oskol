@@ -204,3 +204,30 @@ pub fn backgammons_presets_are_a_bank_each_and_the_games_delay_test() {
       #("60 min", "60 min, 12 s delay every turn"),
     ]
 }
+
+/// A per-period bank is a plain bank until the game says a new period
+/// began; then every bank is full again and every clock is stopped, for
+/// the caller to start whoever is charged next.
+pub fn a_per_period_bank_refills_and_nothing_else_does_test() {
+  let c =
+    clock.new(clock.PerPeriod(60_000), [a, b])
+    |> clock.with_turn_delay(delay)
+    |> clock.set_running([a], 0, None)
+  assert clock.remaining(c, a, 42_000) == 30_000
+  let refilled = clock.refill(c, 42_000)
+  assert clock.remaining(refilled, a, 50_000) == 60_000
+  assert clock.running(refilled, a) == False
+  assert clock.label(c) == "1 min a game, 12 s delay every turn"
+  // A bank for the whole session is left alone.
+  let fixed =
+    clock.new(clock.Fischer(60_000, 0), [a, b])
+    |> clock.with_turn_delay(delay)
+    |> clock.set_running([a], 0, None)
+  assert clock.refill(fixed, 42_000) == fixed
+}
+
+pub fn minutes_read_to_the_tenth_test() {
+  assert clock.minutes(840_000) == "14 min"
+  assert clock.minutes(630_000) == "10.5 min"
+  assert clock.minutes(270_000) == "4.5 min"
+}

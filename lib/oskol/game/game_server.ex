@@ -742,7 +742,9 @@ defmodule Oskol.Game.GameServer do
     with false <- GameServerState.started?(state),
          true <- map_size(state.connections) >= GameServerState.min_players(state),
          seed <- seed || setup.seed || :rand.uniform(2_147_483_647),
-         control <- control || setup.control || GameKit.clock_control(setup.clock),
+         control <-
+           control || setup.control ||
+             GameKit.clock_control(state.slug, setup.format, setup.clock),
          {:ok, instance} <-
            GameKit.start(
              state.slug,
@@ -1122,7 +1124,7 @@ defmodule Oskol.Game.GameServer do
   # nobody, and whoever is on the clock starts being charged again now.
   defp replay(%GameServerState{} = state, game, actions) do
     setup = state.setup
-    control = setup.control || GameKit.clock_control(setup.clock)
+    control = setup.control || GameKit.clock_control(state.slug, setup.format, setup.clock)
     last_at = if actions == [], do: 0, else: List.last(actions).at_ms
     base = GameKit.now() - last_at
 

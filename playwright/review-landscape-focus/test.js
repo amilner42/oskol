@@ -53,7 +53,7 @@ async function playing(browser, vp, seats) {
   const ca = await context(browser, vp, seats[0]);
   const cb = await context(browser, vp, seats[1]);
   const a = await ca.newPage();
-  const game = await createGame(a, { name: 'Ada', mode: 'match5', clock: 'bg5' });
+  const game = await createGame(a, { name: 'Ada', mode: 'match5', clock: 'bg_bullet' });
   const b = await cb.newPage();
   await joinByLink(b, game.inviteUrl, 'Borisov');
   await a.waitForURL(`**/backgammon/${game.gameId}**`);

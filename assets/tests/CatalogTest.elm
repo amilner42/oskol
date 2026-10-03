@@ -28,6 +28,7 @@ suite =
         , room
         , clockOrders
         , summaries
+        , tierLines
         , myGames
         , ratings
         ]
@@ -397,7 +398,64 @@ summaries =
             \_ ->
                 Catalog.summarise single presets "none"
                     |> Expect.equal "Single game"
+        , test "a tier says what it is worth for the mode, as the server's line does" <|
+            \_ ->
+                Catalog.summarise match7 presets "bg_standard"
+                    |> Expect.equal "Match to 7 · Standard clock · 14 min each"
         ]
+
+
+tierLines : Test
+tierLines =
+    describe "the picker's words for a clock and a format"
+        [ test "a tier, for the format chosen" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Catalog.clockLine standard "match7" |> Expect.equal (Just "Standard · 14 min each for this 7-point match")
+                    , \_ -> Catalog.clockLine standard "unlimited" |> Expect.equal (Just "Standard · 5 min each per game")
+                    , \_ -> Catalog.clockWorth standard "match7" |> Expect.equal (Just "14 min each for this 7-point match")
+                    ]
+                    ()
+        , test "a preset is its description whatever the format, and no clock is nothing" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Catalog.clockWorth fiveMinutes "match7" |> Expect.equal (Just "5 min each, 12 s delay every move")
+                    , \_ -> Catalog.clockLine noClock "match7" |> Expect.equal Nothing
+                    ]
+                    ()
+        , test "a tier's lines decode from the page" <|
+            \_ ->
+                D.decodeString Catalog.clockPresetDecoder
+                    """{"id":"bg_standard","name":"Standard","description":"2 min per point of a match, 5 min a game otherwise",
+                        "lines":{"match7":"14 min each for this 7-point match","unlimited":"5 min each per game"},
+                        "each":{"match7":"14 min each","unlimited":"5 min each per game"}}"""
+                    |> Expect.equal (Ok standard)
+        ]
+
+
+match7 : Catalog.Format
+match7 =
+    { id = "match7", name = "Match to 7", description = "Cube and Crawford rule" }
+
+
+noClock : Catalog.ClockPreset
+noClock =
+    { id = "none", name = "No clock", description = "Take your time", lines = Dict.empty, each = Dict.empty }
+
+
+fiveMinutes : Catalog.ClockPreset
+fiveMinutes =
+    { id = "bg5", name = "5 min", description = "5 min each, 12 s delay every move", lines = Dict.empty, each = Dict.empty }
+
+
+standard : Catalog.ClockPreset
+standard =
+    { id = "bg_standard"
+    , name = "Standard"
+    , description = "2 min per point of a match, 5 min a game otherwise"
+    , lines = Dict.fromList [ ( "match7", "14 min each for this 7-point match" ), ( "unlimited", "5 min each per game" ) ]
+    , each = Dict.fromList [ ( "match7", "14 min each" ), ( "unlimited", "5 min each per game" ) ]
+    }
 
 
 cash : Catalog.Format
@@ -412,8 +470,9 @@ single =
 
 presets : List Catalog.ClockPreset
 presets =
-    [ { id = "none", name = "No clock", description = "Take your time" }
-    , { id = "poker", name = "Standard", description = "20 s per action" }
+    [ noClock
+    , { id = "poker", name = "Standard", description = "20 s per action", lines = Dict.empty, each = Dict.empty }
+    , standard
     ]
 
 

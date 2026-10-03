@@ -22,17 +22,22 @@ defmodule Oskol.Game.GameServerTest do
       assert {:error, :unknown_format} = Game.configure(game_id, %{format: "marathon"})
       assert {:error, :unknown_clock} = Game.configure(game_id, %{clock: "hourglass"})
 
-      assert {:ok, state} = Game.configure(game_id, %{"format" => "match3", "clock" => "bg5"})
+      assert {:ok, state} =
+               Game.configure(game_id, %{"format" => "match3", "clock" => "bg_standard"})
+
       assert state.setup.format == "match3"
-      assert state.setup.clock == "bg5"
-      assert Oskol.Game.GameServerState.summary(state) == "Match to 3 · 5 min clock"
+      assert state.setup.clock == "bg_standard"
+
+      assert Oskol.Game.GameServerState.summary(state) ==
+               "Match to 3 · Standard clock · 6 min each"
 
       # Every stored config row still carries a `selections` key; the setup
       # has no slot for it any more and must not trip over it.
       assert {:ok, state} =
                Game.configure(game_id, %{"selections" => %{"twist" => "pick_dice"}})
 
-      assert Oskol.Game.GameServerState.summary(state) == "Match to 3 · 5 min clock"
+      assert Oskol.Game.GameServerState.summary(state) ==
+               "Match to 3 · Standard clock · 6 min each"
     end
 
     test "the game starts the moment the table is full" do
@@ -134,7 +139,7 @@ defmodule Oskol.Game.GameServerTest do
     end
 
     test "creates a new room with the same players and setup once everyone is ready" do
-      %{game_id: game_id, p1: p1, p2: p2} = started(3, "single", clock: "bg10")
+      %{game_id: game_id, p1: p1, p2: p2} = started(3, "single", clock: "bg_classic")
       Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
       assert {:finished, _} = Oskol.Bots.play(game_id, 3, 6000)
       assert GameKit.finished?(GameServer.get_state(game_id).instance)
@@ -148,7 +153,7 @@ defmodule Oskol.Game.GameServerTest do
       assert rematch.instance != nil
       assert rematch.slug == "backgammon"
       assert rematch.setup.format == "single"
-      assert rematch.setup.clock == "bg10"
+      assert rematch.setup.clock == "bg_classic"
       # A fresh seed, not the old game's
       assert rematch.seed != 3
 

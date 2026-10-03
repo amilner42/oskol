@@ -54,21 +54,63 @@ pub fn player_limits(slug: String) -> Result(#(Int, Int), String) {
 
 // ---------- Clocks ----------
 
-/// JSON array of the time-control presets offered in the lobby.
+/// JSON array of the fixed time-control presets (every one still defined,
+/// offered or not). A game's own tiers are on its page (`game.tier_to_json`).
 pub fn clock_presets_json() -> String {
   clock.presets() |> json.array(clock.preset_to_json) |> json.to_string
 }
 
+/// Every clock id a room may carry: the fixed presets and every registered
+/// game's tiers.
 pub fn clock_ids() -> List(String) {
-  clock.preset_ids()
+  list.append(
+    clock.preset_ids(),
+    list.flat_map(registry.infos(), fn(info) {
+      list.map(info.tiers, fn(t) { t.id })
+    }),
+  )
 }
 
-/// Resolve a preset id to a control (unknown ids mean no clock).
-pub fn clock_control(preset_id: String) -> Control {
-  case clock.preset(preset_id) {
-    Ok(p) -> p.control
+/// Resolve a clock id to a control for one format of a game: a tier is
+/// sized to the format, a preset is what it always was. Unknown ids (and a
+/// tier asked about a format the game does not have) mean no clock.
+pub fn clock_control(
+  slug: String,
+  format_id: String,
+  clock_id: String,
+) -> Control {
+  case clock_for(slug, format_id, clock_id) {
+    Ok(c) -> c.control
     Error(_) -> clock.NoClock
   }
+}
+
+/// A clock in words for one format, as a room's setup line names it: a
+/// tier and what it is worth ("Standard clock · 14 min each", "Standard
+/// clock · 5 min each per game"), a preset by name ("5 min clock"), or ""
+/// for no clock and for an id nobody knows.
+pub fn clock_line(slug: String, format_id: String, clock_id: String) -> String {
+  case clock_for(slug, format_id, clock_id) {
+    Ok(c) ->
+      case c.control, c.tier {
+        clock.NoClock, _ -> ""
+        _, True -> c.name <> " clock · " <> c.each
+        _, False -> c.name <> " clock"
+      }
+    Error(_) -> ""
+  }
+}
+
+/// A clock id resolved for one format of a game (`game.clock_for`). Error
+/// for a game nobody registered, an id nobody knows, and a tier asked about
+/// a format the game does not have.
+pub fn clock_for(
+  slug: String,
+  format_id: String,
+  clock_id: String,
+) -> Result(game.Clock, Nil) {
+  use entry <- result.try(registry.find(slug))
+  game.clock_for(entry.info, format_id, clock_id)
 }
 
 // ---------- Lifecycle ----------

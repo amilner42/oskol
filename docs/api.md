@@ -33,7 +33,8 @@ arrive at any of them cold, and moving between them afterwards is a
   422 validation_failed, 500 server_error).
 - `/backgammon` create a game; `/backgammon?game=<id>` is the invite link.
   Its head is the invitation while the room waits for its second player:
-  "Arie wants to play a match to 7 on a 5 min clock", what to do about it,
+  "Arie wants to play a match to 7 on a standard clock, 14 min each", what
+  to do about it,
   and the opening position as the card's picture (`landing.invite_head`,
   in Gleam, from the room's row through the cap `persistence.room`: a
   crawler wakes no room, and the inviter is the seat's name, not a live
@@ -532,8 +533,15 @@ straight to the table), `full` (both players are there) or `missing`
 actually take, so an owned seat is never listed and nothing on the page can
 be typed at it.
 
-A game's own `clocks` are preset ids; `clock_presets` carries every preset,
-so the picker can name the ones the game offers. Statuses: 404 `not_found`
+A game's own `clocks` are clock ids; `clock_presets` carries every fixed
+preset and then the game's tiers, so the picker can name the ones the game
+offers. A tier also carries, for every format id, what it is worth there:
+`lines` (`{"match7": "14 min each for this 7-point match", "unlimited": "5
+min each per game"}`) and `each`, the same in a few words (`{"match7": "14
+min each"}`), so the client never does the arithmetic. A room's `summary`
+(the lobby and the invite) names a tier the same way: "Match to 7 ·
+Standard clock · 14 min each". An update's `clock.control` may now be
+`{"type": "per_period", "base_ms"}`, a bank refilled at every new game. Statuses: 404 `not_found`
 (no such game, no such code, a room that is over), 422 `validation_failed`
 (a name, a mode, a clock or a seat the room refused), 409 `not_in_rotation`
 (a puzzle the session has moved past), 500 `server_error`.
@@ -554,7 +562,8 @@ out is offered none of them — read from `games` with no room woken
 (`Persistence.seated_rooms`, the cap `persistence.seated_rooms`, the
 handler `landing.my_games_json`, which asks `seat.held_by` of each room
 and drops the rooms where the answer is nobody). Each
-entry names the opponent (null in a lobby), the format and clock by name,
+entry names the opponent (null in a lobby), the format and clock by name
+(a tier with its bank: "Standard · 14 min each"),
 whether it is the caller's turn (`your_move`, from the row's `state`), the
 two clocks as the snapshot last read them with how long ago that was
 (`time`, so the client can charge the running one and count it down), and

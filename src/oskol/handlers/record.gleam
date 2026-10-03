@@ -246,7 +246,7 @@ fn head_of(setup: Setup) -> Result(Head, Nil) {
       setup.format,
       list.map(setup.seats, fn(s) { #(s.0, s.1) }),
       setup.seed,
-      host.clock_control(setup.clock),
+      host.clock_control(setup.slug, setup.format, setup.clock),
       0,
     )
     |> result.replace_error(Nil),

@@ -55,11 +55,11 @@ defmodule OskolWeb.InviteHeadTest do
     test "a room waiting for its second player unfurls as the invitation, with the board", %{
       conn: conn
     } do
-      %{game_id: id} = GameFixtures.lobby("match7", clock: "bg5")
+      %{game_id: id} = GameFixtures.lobby("match7", clock: "bg_standard")
       Persister.flush()
 
       html = conn |> get(~p"/backgammon?game=#{id}") |> html_response(200)
-      title = "Alice wants to play a match to 7 on a 5 min clock"
+      title = "Alice wants to play a match to 7 on a standard clock, 14 min each"
 
       assert html =~ ~s(<meta property="og:title" content="#{title}">)
       assert html =~ ~s(<meta name="twitter:title" content="#{title}">)
