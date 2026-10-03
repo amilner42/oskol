@@ -60,16 +60,16 @@ something set in motion the next action waits on (the roll), `Beat` for a
 decision to be seen coming (double, take, drop, an answer to a
 resignation), `Step` for everything else (`move`, `undo`, `play`, `ready`).
 Elixir never matches an action's name; it turns paces into milliseconds
-with three knobs in `config :oskol, :bot` -- `settle_ms` 1600 (the tumble is
+with three knobs in `config :oskol, :bot` -- `settle_ms` 1900 (the tumble is
 0.95 s, a double's earned dice land at 1.2 s, then a moment to read them),
-`gap_ms` 400 between consecutive bot actions, `beat_ms` 800 from the change
+`gap_ms` 500 between consecutive bot actions, `beat_ms` 1000 from the change
 that prompted a `Beat` -- all 0 in test. A turn is one task from the roll to
 the play (decide, play, and while the turn is still the bot's and nobody else
 has moved, decide again), so the move decision is thought about while the
 dice are in the air and the dot stays lit throughout. Staging is the mover's
 alone (`backgammon/projection`), so the person sees the dice land, the dot
-pulse, then the play land whole when Sage commits: about 2.4 s after the
-throw for two checkers, 3.2 s for a double's four, or later if the think is
+pulse, then the play land whole when Sage commits: about 2.9 s after the
+throw for two checkers, 3.9 s for a double's four, or later if the think is
 slower. All of it stays well inside the 12 s free delay (asserted in
 `bot_room_test.exs`). Pacing never outlives its position: each action goes
 to the room process that started the think, by pid, and only if the room's

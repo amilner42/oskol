@@ -67,9 +67,9 @@ defmodule Oskol.Game.Bot do
     stop_trying_after: 40,
     ask_timeout_ms: 30_000,
     # Pacing (see the moduledoc). Zero is "as fast as the engine answers".
-    settle_ms: 1_600,
-    gap_ms: 400,
-    beat_ms: 800
+    settle_ms: 1_900,
+    gap_ms: 500,
+    beat_ms: 1_000
   ]
 
   @doc """
