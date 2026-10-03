@@ -129,8 +129,8 @@ Dev/test use local databases
 (`oskol_dev`/`oskol_test`, created by `mix ecto.setup` / the `mix test`
 alias); prod reads `DATABASE_URL` (Fly Managed Postgres via pgbouncer, so
 postgrex runs with `prepare: :unnamed`) and migrates on boot. A room's raw
-`control:` (tests only) does not persist; real rooms use clock preset ids,
-which do.
+`control:` (tests only) does not persist; real rooms use clock ids (a preset, or a
+tier the room's format sizes when it starts), which do.
 
 Seats carry the guest id, not a secret token (the data migration
 `DropSeatTokens` stripped the old key; a row that still has one rebuilds

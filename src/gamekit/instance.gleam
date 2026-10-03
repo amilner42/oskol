@@ -143,13 +143,7 @@ pub fn step_taken(
         player_id,
         decoded,
       ))
-      let next_clocks =
-        clock.set_running(
-          running.clocks,
-          running_for(definition, next_state),
-          now,
-          Some(player_id),
-        )
+      let next_clocks = advance_clocks(running, next_state, now, player_id)
       Ok(#(
         Running(
           ..running,
@@ -222,13 +216,7 @@ fn on_timeout(
       // settled (bank spent) and restarted if it is still their turn.
       case definition.apply(running.state, loser, auto_action) {
         Ok(#(next_state, events)) -> {
-          let next_clocks =
-            clock.set_running(
-              running.clocks,
-              running_for(definition, next_state),
-              now,
-              Some(loser),
-            )
+          let next_clocks = advance_clocks(running, next_state, now, loser)
           #(
             Running(
               ..running,
@@ -348,6 +336,32 @@ fn waiting_on(running: Running(state, action)) -> List(PlayerId) {
       })
       |> list.map(fn(seat) { seat.id })
   }
+}
+
+/// The clocks after `actor`'s step took the game to `next_state`: refilled
+/// first when the step began a new period of play (`Game.period`, which
+/// only `clock.PerPeriod` acts on), then running for whoever the game
+/// charges now. Read from the states alone, so a replayed log refills
+/// exactly where the live room did.
+fn advance_clocks(
+  running: Running(state, action),
+  next_state: state,
+  now: Int,
+  actor: PlayerId,
+) -> Clocks {
+  let definition = running.definition
+  let clocks = case
+    definition.period(next_state) != definition.period(running.state)
+  {
+    True -> clock.refill(running.clocks, now)
+    False -> running.clocks
+  }
+  clock.set_running(
+    clocks,
+    running_for(definition, next_state),
+    now,
+    Some(actor),
+  )
 }
 
 fn running_for(definition: Game(state, action), state: state) -> List(PlayerId) {

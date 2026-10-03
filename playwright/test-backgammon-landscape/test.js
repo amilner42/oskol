@@ -457,7 +457,7 @@ async function clockLines(browser, watch) {
     }
     const a = await contexts[0].newPage();
     watch(a, `clock ${screen.name}`);
-    const { gameId, inviteUrl } = await createGame(a, { name: 'Ada', mode: 'match3', clock: 'bg5' });
+    const { gameId, inviteUrl } = await createGame(a, { name: 'Ada', mode: 'match3', clock: 'bg_bullet' });
     const b = await contexts[1].newPage();
     await joinByLink(b, inviteUrl, 'Bo');
     await a.waitForURL(`**/backgammon/${gameId}**`);
@@ -521,7 +521,7 @@ async function main() {
     const p1 = await contexts[0].newPage();
     watch(p1, 'landscape-1');
     // A format with the cube on the rail, and a clock so the delay pip shows.
-    const { gameId, inviteUrl } = await createGame(p1, { name: 'Ada', mode: 'match3', clock: 'bg3' });
+    const { gameId, inviteUrl } = await createGame(p1, { name: 'Ada', mode: 'match3', clock: 'bg_bullet' });
 
     const p2 = await contexts[1].newPage();
     watch(p2, 'landscape-2');

@@ -108,7 +108,7 @@ async function shots(browser, viewport, tag, errors) {
     const label = (await page.textContent('#roll-dice')).replace(/\s+/g, ' ').trim();
     if (!label.startsWith('Get a link')) throw new Error(`against a friend the button reads "${label}"`);
     await pickWord(page, 'game', 'pick-game-match3');
-    await pickWord(page, 'clock', 'pick-clock-bg3');
+    await pickWord(page, 'clock', 'pick-clock-bg_bullet');
     await page.click('#roll-dice');
     await page.waitForSelector('#friend-modal #friend-name');
     if (new URL(page.url()).pathname !== '/') throw new Error(`the friend dialog navigated to ${page.url()}`);
@@ -162,7 +162,7 @@ async function clickThrough(browser, errors) {
     log('empty name rejected inline');
     await alice.click('#close-friend');
 
-    const game = await createGame(alice, { name: 'Alice', mode: 'match3', clock: 'bg3' });
+    const game = await createGame(alice, { name: 'Alice', mode: 'match3', clock: 'bg_bullet' });
 
     // The waiting room: her seat, the invite link and the code.
     await alice.waitForSelector('#game-code');

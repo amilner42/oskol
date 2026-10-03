@@ -3674,6 +3674,17 @@ oskol-demo-board {
 /* the sentence: "Play [a single game] against [Sage] with no clock" */
 .lh-sentence { margin: 0; font-size: 22px; font-weight: 500; line-height: 1.5; letter-spacing: -0.01em; text-align: center; min-height: 1.5em; color: var(--ink); }
 .lh-br { display: none; }
+/* What the clock is worth for the format, under the sentence: it hangs in
+   the gap above the button, so it takes no room and nothing moves when it
+   changes or empties. */
+.lh-sentence-wrap { position: relative; }
+.lh-clock-note {
+  position: absolute; top: calc(100% + (var(--lh-mid, 20px) - 16px) / 2); left: 50%; transform: translateX(-50%); margin: 0;
+  font-size: 13px; line-height: 16px; height: 16px; white-space: nowrap; color: var(--pencil);
+  font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.lh-option-stack { display: flex; flex-direction: column; gap: 2px; }
+.lh-option-sub { font-size: 12.5px; font-weight: 400; color: var(--pencil); }
 .lh-pick-wrap { position: relative; white-space: nowrap; }
 .lh-pick {
   display: inline; padding: 0; margin: 0; border: 0; background: none; cursor: pointer; white-space: nowrap;

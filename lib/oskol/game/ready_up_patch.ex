@@ -220,7 +220,7 @@ defmodule Oskol.Game.ReadyUpPatch do
       config["format"],
       seats,
       game.seed,
-      GameKit.clock_control(config["clock"] || "none"),
+      GameKit.clock_control(@slug, config["format"], config["clock"] || "none"),
       0
     )
   end

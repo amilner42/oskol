@@ -188,7 +188,7 @@ async function main() {
     // browsers: one context is one seat.
     const p1 = await context.newPage();
     watch(p1, 'clock-p1');
-    const timed = await createGame(p1, { name: 'Ada', clock: 'bg3' });
+    const timed = await createGame(p1, { name: 'Ada', clock: 'bg_blitz' });
 
     const clockContext = await browser.newContext({ viewport: { width: 1280, height: 860 } });
     await clockContext.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());

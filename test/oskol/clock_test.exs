@@ -9,14 +9,14 @@ defmodule Oskol.Game.ClockTest do
   test "clock presets are offered, a game says which, and none is the default" do
     assert [%{"id" => "none"} | _] = GameKit.clock_presets()
     {:ok, info} = GameKit.game_info("backgammon")
-    assert info["clocks"] == ["none", "bg3", "bg5", "bg10", "bg15", "bg30", "bg60"]
+    assert info["clocks"] == ["none", "bg_bullet", "bg_blitz", "bg_standard", "bg_classic"]
     assert info["default_clock"] == "none"
     %{game_id: game_id} = lobby()
     assert Game.get_server_state(game_id).setup.clock == "none"
   end
 
   test "the creator picks the time control and it applies when the game starts" do
-    %{game_id: game_id, p1: p1} = lobby("single", clock: "bg3")
+    %{game_id: game_id, p1: p1} = lobby("single", clock: "bg_blitz")
     assert {:error, :unknown_clock} = Game.configure(game_id, %{clock: "hourglass"})
     {:ok, _p2, started} = Game.join_game(game_id, "Bob", nil)
 

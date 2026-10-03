@@ -5,7 +5,7 @@
  * invite touches this file and nothing else.
  *
  *   const { createGame, joinByLink } = require('../lib/flows');
- *   const game = await createGame(p1, { name: 'Alice', mode: 'match3', clock: 'bg3' });
+ *   const game = await createGame(p1, { name: 'Alice', mode: 'match3', clock: 'bg_bullet' });
  *   (a guest says it in the home page's sentence; an account uses PLAY's dialog)
  *   await joinByLink(p2, game.inviteUrl, 'Bob');
  *
@@ -67,9 +67,9 @@ async function pickWord(page, word, optionId) {
 
 /**
  * A new game from `/`. `mode` and `clock` are the game's ids (`match3`,
- * `bg3`); anything left out stays on the default (a single game, no clock).
+ * `bg_bullet`); anything left out stays on the default (a single game, no clock).
  * A guest says it in the sentence -- "Play [a match to 3] against [a friend]
- * with [a 3 min clock]" -- and presses GET A LINK, which asks the friend's
+ * with [a bullet clock]" -- and presses GET A LINK, which asks the friend's
  * name for them; an account uses PLAY's dialog, as before. Resolves once the
  * creator is in the lobby with the link to share.
  *
@@ -176,7 +176,7 @@ async function openSeat(page, url) {
 }
 
 // Resolves with the seat and what the invite said the game was (`summary`,
-// e.g. "Match to 3 · 3 min clock").
+// e.g. "Match to 3 · Bullet clock · 3 min each").
 async function takeSeat(page, name) {
   await page.waitForSelector('#join-name');
   await page.waitForSelector('#setup-summary');

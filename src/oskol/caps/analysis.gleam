@@ -24,7 +24,7 @@ pub type GameLog {
   GameLog(
     slug: String,
     format: String,
-    /// The clock preset id.
+    /// The clock id (a preset, or a tier the format sizes).
     clock: String,
     seed: Int,
     /// #(player_id, display name), in seat order.

@@ -24,18 +24,30 @@ pub type Control {
   Bronstein(base_ms: Int, delay_ms: Int)
   /// A fresh allowance for every move; nothing carries over.
   PerMove(ms: Int)
+  /// A bank of time each that is refilled whenever a new period of play
+  /// begins: the game says which period a state is in (`Game.period`), and
+  /// when a step moves it on, every player's bank goes back to `base_ms`.
+  /// Backgammon's unlimited play is a string of separate games, so each
+  /// game gets its own bank. Under a game that is one period throughout it
+  /// is a plain bank.
+  PerPeriod(base_ms: Int)
 }
 
 pub type Preset {
   Preset(id: String, name: String, description: String, control: Control)
 }
 
-/// Controls offered in the lobby. The first is the default.
+/// Fixed controls, by id. The first is the default. A game offers some of
+/// these (`Info.clocks`) beside its own tiers (`Info.tiers`), which it sizes
+/// to the format being played; the rest stay here because rooms made under
+/// them still carry, rehydrate and replay them.
 pub fn presets() -> List(Preset) {
   [
     Preset("none", "No clock", "Take your time", NoClock),
-    // Backgammon's: a plain time bank each, with the game's own 12 s delay
-    // on every move (`Info.turn_delay_ms`) doing the rest, as live play does.
+    // Backgammon offered these until its tiers replaced them (a flat bank
+    // means nothing without the match length): a plain time bank each, with
+    // the game's own 12 s delay on every move (`Info.turn_delay_ms`) doing
+    // the rest, as live play does. No longer offered; still defined.
     Preset(
       "bg3",
       "3 min",
@@ -107,6 +119,7 @@ pub fn control_label(control: Control) -> String {
     Bronstein(base, delay) ->
       minutes(base) <> ", " <> seconds(delay) <> " delay"
     PerMove(ms) -> seconds(ms) <> " per move"
+    PerPeriod(base) -> minutes(base)
   }
 }
 
@@ -120,8 +133,14 @@ pub fn label(clocks: Clocks) -> String {
   }
 }
 
-fn minutes(ms: Int) -> String {
-  int.to_string(ms / 60_000) <> " min"
+/// Minutes as a player reads them: "14 min", or to the tenth when a bank
+/// is not whole minutes ("10.5 min").
+pub fn minutes(ms: Int) -> String {
+  let tenths = ms / 6000
+  case tenths % 10 {
+    0 -> int.to_string(tenths / 10) <> " min"
+    tenth -> int.to_string(tenths / 10) <> "." <> int.to_string(tenth) <> " min"
+  }
 }
 
 fn seconds(ms: Int) -> String {
@@ -160,6 +179,7 @@ pub fn new(control: Control, player_ids: List(PlayerId)) -> Clocks {
     Fischer(base, _) -> base
     Bronstein(base, _) -> base
     PerMove(ms) -> ms
+    PerPeriod(base) -> base
   }
   Clocks(
     control: control,
@@ -296,6 +316,25 @@ fn start(
   }
 }
 
+/// A new period of play began (`Game.period` moved on): under `PerPeriod`
+/// every clock is stopped and its bank goes back to full, so the caller's
+/// `set_running` starts whoever is charged next on a fresh bank. Every
+/// other control carries its banks across, so this leaves it alone.
+pub fn refill(clocks: Clocks, now: Int) -> Clocks {
+  case clocks.control, clocks.timed_out {
+    PerPeriod(base), None -> {
+      let stopped = stop_all(clocks, now)
+      Clocks(
+        ..stopped,
+        players: dict.map_values(stopped.players, fn(_, clock) {
+          PlayerClock(..clock, remaining_ms: base, delay_left_ms: 0)
+        }),
+      )
+    }
+    _, _ -> clocks
+  }
+}
+
 /// Stop every clock (the game ended).
 pub fn stop_all(clocks: Clocks, now: Int) -> Clocks {
   set_running(clocks, [], now, None)
@@ -389,6 +428,11 @@ pub fn control_to_json(control: Control) -> Json {
       ])
     PerMove(ms) ->
       json.object([#("type", json.string("per_move")), #("ms", json.int(ms))])
+    PerPeriod(base) ->
+      json.object([
+        #("type", json.string("per_period")),
+        #("base_ms", json.int(base)),
+      ])
   }
 }
 

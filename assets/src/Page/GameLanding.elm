@@ -1048,6 +1048,14 @@ sentence model =
         friend =
             model.opponent == AFriend
     in
+    Html.div [ class "lh-sentence-wrap" ]
+        [ sentenceWords model friend
+        , Html.p [ id "clock-note", class "lh-clock-note", Html.Attributes.attribute "aria-live" "polite" ] [ Html.text (clockNote model) ]
+        ]
+
+
+sentenceWords : Model -> Bool -> Html Msg
+sentenceWords model friend =
     Html.p [ id "sentence", class "lh-sentence" ]
         [ Html.text "Play "
         , pick model GameMenu "pick-game" [ Html.text (formatWords model model.format) ] (gameOptions model)
@@ -1219,10 +1227,45 @@ clockOptions model =
     case model.page of
         Just page ->
             Catalog.offeredClocks page.game page.clocks
-                |> List.map (\c -> menuOption ("pick-clock-" ++ c.id) (clockWords model c.id) (c.id == model.clock) (PickedClock c.id))
+                |> List.map
+                    (\c ->
+                        menuOptionWith ("pick-clock-" ++ c.id)
+                            [ Html.span [ class "lh-option-stack" ]
+                                (Html.span [] [ Html.text (clockWords model c.id) ]
+                                    :: (case Catalog.clockWorth c model.format of
+                                            Just worth ->
+                                                [ Html.span [ class "lh-option-sub" ] [ Html.text worth ] ]
+
+                                            Nothing ->
+                                                []
+                                       )
+                                )
+                            ]
+                            (c.id == model.clock)
+                            (PickedClock c.id)
+                    )
 
         Nothing ->
             []
+
+
+{-| What the chosen clock is worth for the chosen format, under the
+sentence: "14 min each for this 7-point match". The sentence already names
+the tier. Empty for no clock and against Sage, and the line keeps its
+height either way, so nothing moves when the format or the clock changes.
+-}
+clockNote : Model -> String
+clockNote model =
+    case ( model.opponent, model.page ) of
+        ( AFriend, Just page ) ->
+            Catalog.offeredClocks page.game page.clocks
+                |> List.filter (\c -> c.id == model.clock)
+                |> List.head
+                |> Maybe.andThen (\c -> Catalog.clockWorth c model.format)
+                |> Maybe.withDefault ""
+
+        _ ->
+            ""
 
 
 {-| A format in the sentence's words: "a single game", "a match to 5",
@@ -1244,7 +1287,9 @@ formatWords model formatId =
                 |> Maybe.withDefault ("a " ++ String.replace "match" "match to " formatId)
 
 
-{-| A clock in the sentence's words: "no clock", "a 5 min clock". -}
+{-| A clock in the sentence's words: "no clock", "a standard clock" (a
+room's old flat bank: "a 5 min clock").
+-}
 clockWords : Model -> String -> String
 clockWords model clockId =
     if clockId == "none" then
@@ -1253,7 +1298,7 @@ clockWords model clockId =
     else
         model.page
             |> Maybe.andThen (\page -> List.head (List.filter (\c -> c.id == clockId) page.clocks))
-            |> Maybe.map (\c -> "a " ++ c.name ++ " clock")
+            |> Maybe.map (\c -> "a " ++ String.toLower c.name ++ " clock")
             |> Maybe.withDefault "a clock"
 
 
@@ -1315,7 +1360,7 @@ friendModal model =
                 [ Html.button [ Html.Attributes.type_ "button", id "close-friend", class "lh-dlg-x", onClick ClosedFriendAsk, Html.Attributes.attribute "aria-label" "Close" ] [ Html.text "✕" ]
                 , Html.h2 [ id "friend-title", class "lh-dlg-title" ] [ Html.text "Invite a friend" ]
                 , Html.p [ class "lh-dlg-sub" ]
-                    [ Html.text (capitalise (formatWords model model.format) ++ " with " ++ clockWords model model.clock ++ ". You get a link to send; the game starts when they open it.") ]
+                    [ Html.text (capitalise (formatWords model model.format) ++ " with " ++ clockWords model model.clock ++ withWorth (clockNote model) ++ ". You get a link to send; the game starts when they open it.") ]
                 , Html.label [ class "lh-field" ]
                     [ Html.span [] [ Html.text "Your name" ]
                     , Html.input
@@ -1573,7 +1618,11 @@ createModal model =
                                             [ select "MODE" "create-mode" PickedFormat model.format (List.map (\f -> ( f.id, f.name )) page.formats)
                                             , select "CLOCK" "create-clock" PickedClock model.clock (Catalog.offeredClocks page.game page.clocks |> List.map (\c -> ( c.id, clockLabel c )))
                                             ]
-                               , Html.p [ id "create-summary", class "q-note text-[13px] leading-snug -mt-1" ]
+                               , -- Three lines held (four on the narrowest
+                                 -- phones), the longest mode and clock
+                                 -- together: START GAME stays put whatever
+                                 -- is picked.
+                                 Html.p [ id "create-summary", class "q-note text-[13px] leading-snug -mt-1 min-h-[4.125em] max-[379px]:min-h-[5.5em]" ]
                                     [ Html.text (createSummary model page) ]
                                , Html.button
                                     [ Html.Attributes.type_ "submit"
@@ -1818,11 +1867,19 @@ it means in time ("Blitz · 3 min + 2 s per move").
 -}
 clockLabel : ClockPreset -> String
 clockLabel preset =
-    if preset.id == "none" then
-        preset.name
+    preset.name
+
+
+{-| ", 14 min each for this 7-point match", or nothing when there is no
+clock to put a number on.
+-}
+withWorth : String -> String
+withWorth worth =
+    if worth == "" then
+        ""
 
     else
-        preset.name ++ " + 12 s delay"
+        ", " ++ worth
 
 
 {-| What the dropdowns add up to, in one line under them.
@@ -1859,11 +1916,12 @@ friendSummary model page =
                 |> List.head
                 |> Maybe.map
                     (\c ->
-                        if c.id == "none" then
-                            "No clock."
+                        case Catalog.clockLine c model.format of
+                            Just line ->
+                                line ++ ", 12 s delay every turn."
 
-                        else
-                            c.description ++ "."
+                            Nothing ->
+                                "No clock."
                     )
                 |> Maybe.withDefault ""
     in

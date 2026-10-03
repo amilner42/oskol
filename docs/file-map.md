@@ -23,7 +23,7 @@ src/oskol/          the platform's own decisions, in Gleam (see
                     reviews, record, ratings, auth, home)
 test/gamekit/       protocol, rng, clock, action, event, golden replays
 test/oskol/         handler and rule tests on stub capabilities (fakes.gleam)
-test/backgammon/    board rules, engine, cube, oracle, properties, turns
+test/backgammon/    board rules, engine, cube, oracle, properties, turns, clock tiers
 lib/oskol/game_kit.ex           the only Elixir -> Gleam bridge
 lib/oskol/game/game_server.ex   generic room: setup, auto-start, actions, clocks, rematch
 lib/oskol/game/bot.ex           a bot seat's turn: a supervised task asks the game

@@ -244,18 +244,60 @@ homeBoard =
                         , Query.hasNot [ id "sage-clock" ]
                         , Query.find [ id "roll-dice" ] >> Query.has [ text "Get a link" ]
                         ]
-        , test "the clock's menu is the seven the game offers, in words" <|
+        , test "the clock's menu is the five the game offers, each tier with its minutes for the format" <|
             \_ ->
                 loadedModel
                     |> send (GameLanding.PickedOpponent GameLanding.AFriend)
+                    |> send (GameLanding.PickedFormat "match7")
                     |> send (GameLanding.ToggledMenu GameLanding.ClockMenu)
                     |> home
                     |> Query.find [ id "pick-clock-menu" ]
                     |> Expect.all
-                        [ Query.findAll [ attribute (Html.Attributes.attribute "role" "option") ] >> Query.count (Expect.equal 7)
-                        , Query.find [ id "pick-clock-bg5" ] >> Query.has [ text "a 5 min clock" ]
-                        , Query.hasNot [ text "Blitz" ]
+                        [ Query.findAll [ attribute (Html.Attributes.attribute "role" "option") ] >> Query.count (Expect.equal 5)
+                        , Query.find [ id "pick-clock-none" ] >> Query.has [ text "no clock" ]
+                        , Query.find [ id "pick-clock-bg_bullet" ] >> Query.has [ text "a bullet clock", text "7 min each for this 7-point match" ]
+                        , Query.find [ id "pick-clock-bg_blitz" ] >> Query.has [ text "a blitz clock", text "10.5 min each for this 7-point match" ]
+                        , Query.find [ id "pick-clock-bg_standard" ] >> Query.has [ text "a standard clock", text "14 min each for this 7-point match" ]
+                        , Query.find [ id "pick-clock-bg_classic" ] >> Query.has [ text "a classic clock", text "21 min each for this 7-point match" ]
+                        , Query.hasNot [ id "pick-clock-bg5" ]
+                        , Query.hasNot [ id "pick-clock-blitz" ]
                         ]
+        , test "under the sentence, what the clock is worth for the format, which follows the format" <|
+            \_ ->
+                let
+                    note format =
+                        loadedModel
+                            |> send (GameLanding.PickedOpponent GameLanding.AFriend)
+                            |> send (GameLanding.PickedClock "bg_standard")
+                            |> send (GameLanding.PickedFormat format)
+                            |> home
+                            |> Query.find [ id "clock-note" ]
+                in
+                Expect.all
+                    [ \_ -> note "match7" |> Query.has [ text "14 min each for this 7-point match" ]
+                    , \_ -> note "match21" |> Query.has [ text "42 min each for this 21-point match" ]
+                    , \_ -> note "unlimited" |> Query.has [ text "5 min each per game" ]
+                    , \_ -> note "single" |> Query.has [ text "5 min each for this game" ]
+                    , \_ -> loadedModel |> send (GameLanding.PickedOpponent GameLanding.AFriend) |> send (GameLanding.PickedClock "bg_standard") |> home |> Query.find [ id "pick-clock" ] |> Query.has [ text "a standard clock" ]
+                    ]
+                    ()
+        , test "the line is there and empty with no clock, and against Sage" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> loadedModel |> send (GameLanding.PickedOpponent GameLanding.AFriend) |> home |> Query.find [ id "clock-note" ] |> Query.hasNot [ text "min" ]
+                    , \_ -> loadedModel |> send (GameLanding.PickedClock "bg_standard") |> home |> Query.find [ id "clock-note" ] |> Query.hasNot [ text "min" ]
+                    ]
+                    ()
+        , test "the friend dialog says the tier and what it is worth" <|
+            \_ ->
+                loadedModel
+                    |> send (GameLanding.PickedOpponent GameLanding.AFriend)
+                    |> send (GameLanding.PickedFormat "match7")
+                    |> send (GameLanding.PickedClock "bg_classic")
+                    |> send GameLanding.RolledDice
+                    |> home
+                    |> Query.find [ id "friend-modal" ]
+                    |> Query.has [ text "A match to 7 with a classic clock, 21 min each for this 7-point match. You get a link to send" ]
         , test "Escape closes an open menu" <|
             \_ -> Expect.notEqual Sub.none (GameLanding.subscriptions (send (GameLanding.ToggledMenu GameLanding.WhoMenu) loadedModel))
         , test "against Sage, PLAY NOW makes the game at once, under the remembered name" <|
@@ -483,26 +525,24 @@ createDialog =
                         , Query.index 6 >> Query.has [ text "Match to 21", value "match21", selected False ]
                         , Query.index 7 >> Query.has [ text "Unlimited", value "unlimited" ]
                         ]
-        , test "the clock dropdown is the seven the game offers, each with its delay" <|
+        , test "the clock dropdown is the five the game offers, by name" <|
             \_ ->
                 dialog opened
                     |> Query.find [ id "create-clock" ]
                     |> Query.findAll [ tag "option" ]
                     |> Expect.all
-                        [ Query.count (Expect.equal 7)
+                        [ Query.count (Expect.equal 5)
                         , Query.index 0 >> Query.has [ text "No clock", value "none", selected True ]
-                        , Query.index 1 >> Query.has [ text "3 min + 12 s delay", value "bg3" ]
-                        , Query.index 2 >> Query.has [ text "5 min + 12 s delay", value "bg5" ]
-                        , Query.index 3 >> Query.has [ text "10 min + 12 s delay", value "bg10" ]
-                        , Query.index 4 >> Query.has [ text "15 min + 12 s delay", value "bg15" ]
-                        , Query.index 5 >> Query.has [ text "30 min + 12 s delay", value "bg30" ]
-                        , Query.index 6 >> Query.has [ text "60 min + 12 s delay", value "bg60" ]
+                        , Query.index 1 >> Query.has [ text "Bullet", value "bg_bullet" ]
+                        , Query.index 2 >> Query.has [ text "Blitz", value "bg_blitz" ]
+                        , Query.index 3 >> Query.has [ text "Standard", value "bg_standard" ]
+                        , Query.index 4 >> Query.has [ text "Classic", value "bg_classic" ]
                         ]
         , test "a clock the game does not offer is not in it" <|
             \_ ->
                 dialog opened
                     |> Query.find [ id "create-clock" ]
-                    |> Query.hasNot [ text "Blitz" ]
+                    |> Query.hasNot [ value "bg5" ]
         , test "the summary says what the dropdowns add up to" <|
             \_ ->
                 dialog opened
@@ -604,7 +644,7 @@ opponents =
         , test "a clock picked before the bot was does not ride along" <|
             \_ ->
                 opened
-                    |> send (GameLanding.PickedClock "bg10")
+                    |> send (GameLanding.PickedClock "bg_classic")
                     |> send (GameLanding.PickedOpponent GameLanding.TheBot)
                     |> dialog
                     |> Query.find [ id "create-summary" ]
@@ -647,18 +687,23 @@ picking =
             \_ ->
                 dialog opened
                     |> Query.find [ id "create-clock" ]
-                    |> Event.simulate (Event.input "bg10")
-                    |> Event.expect (GameLanding.PickedClock "bg10")
+                    |> Event.simulate (Event.input "bg_classic")
+                    |> Event.expect (GameLanding.PickedClock "bg_classic")
         , test "a clock picked is selected, and the summary spells it out" <|
             \_ ->
-                dialog (send (GameLanding.PickedClock "bg3") opened)
+                dialog (send (GameLanding.PickedClock "bg_blitz") opened)
                     |> Expect.all
                         [ Query.find [ id "create-clock" ]
-                            >> Query.find [ value "bg3" ]
+                            >> Query.find [ value "bg_blitz" ]
                             >> Query.has [ selected True ]
                         , Query.find [ id "create-summary" ]
-                            >> Query.has [ text "Single game: one game, no cube. 3 min each, 12 s delay every move." ]
+                            >> Query.has [ text "Single game: one game, no cube. Blitz · 3 min each for this game, 12 s delay every turn." ]
                         ]
+        , test "the summary follows the mode: a match's bank is per point" <|
+            \_ ->
+                dialog (opened |> send (GameLanding.PickedClock "bg_standard") |> send (GameLanding.PickedFormat "match7"))
+                    |> Query.find [ id "create-summary" ]
+                    |> Query.has [ text "Match to 7: cube and Crawford rule. Standard · 14 min each for this 7-point match, 12 s delay every turn." ]
         , test "the dialog offers a mode and a clock, and nothing else" <|
             \_ ->
                 dialog opened
@@ -1161,7 +1206,7 @@ gameJson =
     """
     {"ok":true,
      "game":{"slug":"backgammon","name":"Backgammon","description":"The classic race game.",
-             "default_clock":"none","clocks":["none","bg3","bg5","bg10","bg15","bg30","bg60"],"formats":[]},
+             "default_clock":"none","clocks":["none","bg_bullet","bg_blitz","bg_standard","bg_classic"],"formats":[]},
      "formats":[
        {"id":"single","name":"Single game","description":"One game, no cube"},
        {"id":"match3","name":"Match to 3","description":"Cube and Crawford rule"},
@@ -1173,13 +1218,12 @@ gameJson =
        {"id":"unlimited","name":"Unlimited","description":"Keep playing, cube and Jacoby rule"}],
      "clock_presets":[
        {"id":"none","name":"No clock","description":"Take your time"},
-       {"id":"bg3","name":"3 min","description":"3 min each, 12 s delay every move"},
        {"id":"bg5","name":"5 min","description":"5 min each, 12 s delay every move"},
-       {"id":"bg10","name":"10 min","description":"10 min each, 12 s delay every move"},
-       {"id":"bg15","name":"15 min","description":"15 min each, 12 s delay every move"},
-       {"id":"bg30","name":"30 min","description":"30 min each, 12 s delay every move"},
-       {"id":"bg60","name":"60 min","description":"60 min each, 12 s delay every move"},
-       {"id":"blitz","name":"Blitz","description":"3 min + 2 s per move"}],
+       {"id":"blitz","name":"Blitz","description":"3 min + 2 s per move"},
+       {"id":"bg_bullet","name":"Bullet","description":"1 min per point of a match, 2 min a game otherwise","lines":{"single":"2 min each for this game","match3":"3 min each for this 3-point match","match5":"5 min each for this 5-point match","match7":"7 min each for this 7-point match","match11":"11 min each for this 11-point match","match15":"15 min each for this 15-point match","match21":"21 min each for this 21-point match","unlimited":"2 min each per game"},"each":{"single":"2 min each","match3":"3 min each","match5":"5 min each","match7":"7 min each","match11":"11 min each","match15":"15 min each","match21":"21 min each","unlimited":"2 min each per game"}},
+       {"id":"bg_blitz","name":"Blitz","description":"1.5 min per point of a match, 3 min a game otherwise","lines":{"single":"3 min each for this game","match3":"4.5 min each for this 3-point match","match5":"7.5 min each for this 5-point match","match7":"10.5 min each for this 7-point match","match11":"16.5 min each for this 11-point match","match15":"22.5 min each for this 15-point match","match21":"31.5 min each for this 21-point match","unlimited":"3 min each per game"},"each":{"single":"3 min each","match3":"4.5 min each","match5":"7.5 min each","match7":"10.5 min each","match11":"16.5 min each","match15":"22.5 min each","match21":"31.5 min each","unlimited":"3 min each per game"}},
+       {"id":"bg_standard","name":"Standard","description":"2 min per point of a match, 5 min a game otherwise","lines":{"single":"5 min each for this game","match3":"6 min each for this 3-point match","match5":"10 min each for this 5-point match","match7":"14 min each for this 7-point match","match11":"22 min each for this 11-point match","match15":"30 min each for this 15-point match","match21":"42 min each for this 21-point match","unlimited":"5 min each per game"},"each":{"single":"5 min each","match3":"6 min each","match5":"10 min each","match7":"14 min each","match11":"22 min each","match15":"30 min each","match21":"42 min each","unlimited":"5 min each per game"}},
+       {"id":"bg_classic","name":"Classic","description":"3 min per point of a match, 8 min a game otherwise","lines":{"single":"8 min each for this game","match3":"9 min each for this 3-point match","match5":"15 min each for this 5-point match","match7":"21 min each for this 7-point match","match11":"33 min each for this 11-point match","match15":"45 min each for this 15-point match","match21":"63 min each for this 21-point match","unlimited":"8 min each per game"},"each":{"single":"8 min each","match3":"9 min each","match5":"15 min each","match7":"21 min each","match11":"33 min each","match15":"45 min each","match21":"63 min each","unlimited":"8 min each per game"}}],
      "copy":{"title":"Play backgammon online with a friend",
              "description":"Backgammon from a link.","intro":"From a link.",
              "rules":["Race your fifteen checkers home."],

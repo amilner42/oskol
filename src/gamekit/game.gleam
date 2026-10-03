@@ -5,6 +5,7 @@
 //// talk to a game through this record, so adding a game never touches them.
 
 import gamekit/action.{type Schema}
+import gamekit/clock.{type Control}
 import gamekit/event.{type Event}
 import gamekit/rng.{type Rng}
 import gamekit/scene.{type PlayerId, type Scene, type Viewer}
@@ -12,6 +13,7 @@ import gleam/dict.{type Dict}
 import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None}
+import gleam/result
 
 /// A format's configuration. Kept to integers so it is trivially JSON and
 /// every game can read what it needs with a default.
@@ -32,14 +34,58 @@ pub type Info {
     min_players: Int,
     max_players: Int,
     formats: List(Format),
-    /// Ids of the time-control presets (see `gamekit/clock`) this game
-    /// offers, in display order. The default is always offered.
+    /// Ids of the time controls this game offers, in display order: fixed
+    /// presets (`gamekit/clock.presets`) and this game's own `tiers`. The
+    /// default is always offered.
     clocks: List(String),
     default_clock: String,
+    /// Time controls this game sizes to the format being played: a player
+    /// picks a feel and the game does the arithmetic (`clock_for`). Their
+    /// ids share one namespace with the fixed presets and never reuse one.
+    tiers: List(Tier),
     /// A simple delay this game grants on every turn under every control it
     /// offers: the first `turn_delay_ms` of a turn are free, and unused
     /// delay is never banked. Zero leaves the controls exactly as they are.
     turn_delay_ms: Int,
+  )
+}
+
+/// A time control a game sizes to the format being played: what a player
+/// picks is a feel ("Standard"), and `size` turns a format's config into
+/// the control and the words for it. Called when an instance starts, never
+/// after, so a game's banks are fixed by its format and its clock id.
+pub type Tier {
+  Tier(
+    id: String,
+    name: String,
+    description: String,
+    size: fn(Config) -> Sizing,
+  )
+}
+
+/// A tier sized for one format.
+pub type Sizing {
+  Sizing(
+    control: Control,
+    /// The bank in a few words: "14 min each", "5 min each per game".
+    each: String,
+    /// The bank and what it covers: "14 min each for this 7-point match".
+    line: String,
+  )
+}
+
+/// A clock id resolved for one format: a tier sized to it, or a fixed
+/// preset, which is the same whatever the format.
+pub type Clock {
+  Clock(
+    id: String,
+    name: String,
+    control: Control,
+    each: String,
+    line: String,
+    /// One of the game's tiers, which a sentence names with what it is
+    /// worth ("Standard · 14 min each"); a preset's name already says it.
+    tier: Bool,
   )
 }
 
@@ -89,6 +135,13 @@ pub type Game(state, action) {
     clocks: fn(state) -> List(PlayerId),
     /// What to do when this player's clock runs out on their turn.
     timeout: fn(state, PlayerId) -> Timeout(action),
+    /// Which period of play this state is in, as a number that only goes
+    /// up. A control that refills per period (`clock.PerPeriod`) gives every
+    /// player a full bank on the step that moves it on, and no other control
+    /// looks at it. Backgammon's is the game number, so unlimited play
+    /// refills when each new game begins. `one_period` for a game that is
+    /// one period throughout.
+    period: fn(state) -> Int,
     /// The game's whole record as public JSON, for replay and analysis
     /// (served on request, never in every update): `None` for a game that
     /// keeps none (`no_record`). It must hold only what every seat may see.
@@ -125,6 +178,11 @@ pub fn no_bot(
   _attempts: Int,
 ) -> Result(List(Json), String) {
   Ok([])
+}
+
+/// For a game that is one period of play throughout.
+pub fn one_period(_state: state) -> Int {
+  0
 }
 
 /// For a game that keeps no record beyond its scene.
@@ -164,6 +222,73 @@ pub fn find_format(info: Info, format_id: String) -> Result(Format, Nil) {
 /// The config a format starts with.
 pub fn default_config(format: Format) -> Config {
   format.config
+}
+
+/// What a clock id means for one format of this game: one of its tiers
+/// sized to the format, else a fixed preset. Error for an id that is
+/// neither, and for a tier asked about a format the game does not have.
+pub fn clock_for(
+  info: Info,
+  format_id: String,
+  clock_id: String,
+) -> Result(Clock, Nil) {
+  case list.find(info.tiers, fn(t) { t.id == clock_id }) {
+    Ok(tier) -> {
+      use format <- result.try(find_format(info, format_id))
+      let sized = tier.size(format.config)
+      Ok(Clock(
+        id: tier.id,
+        name: tier.name,
+        control: sized.control,
+        each: sized.each,
+        line: sized.line,
+        tier: True,
+      ))
+    }
+    Error(_) -> {
+      use preset <- result.try(clock.preset(clock_id))
+      Ok(Clock(
+        id: preset.id,
+        name: preset.name,
+        control: preset.control,
+        each: case preset.control {
+          clock.NoClock -> ""
+          _ -> preset.name <> " each"
+        },
+        line: preset.description,
+        tier: False,
+      ))
+    }
+  }
+}
+
+/// A tier as the clock picker reads it: its name, and for every format of
+/// the game the line it sizes to (`"lines": {"match7": "14 min each for
+/// this 7-point match"}`) and the same in a few words (`"each": {"match7":
+/// "14 min each"}`), so the client can say what a choice means for the
+/// format chosen without doing the arithmetic itself.
+pub fn tier_to_json(info: Info, tier: Tier) -> Json {
+  json.object([
+    #("id", json.string(tier.id)),
+    #("name", json.string(tier.name)),
+    #("description", json.string(tier.description)),
+    #(
+      "lines",
+      json.object(
+        list.map(info.formats, fn(format) {
+          #(format.id, json.string(tier.size(format.config).line))
+        }),
+      ),
+    ),
+    #(
+      "each",
+      json.object(
+        list.map(info.formats, fn(format) {
+          #(format.id, json.string(tier.size(format.config).each))
+        }),
+      ),
+    ),
+  ])
 }
 
 pub fn info_to_json(info: Info) -> Json {

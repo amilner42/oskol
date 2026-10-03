@@ -242,6 +242,7 @@ jobs:
               playwright/test-backgammon-board/test.js
               playwright/test-backgammon-dance/test.js
               playwright/test-guest-prefill/test.js
+              playwright/test-clock-tiers/test.js
           # The analysis board, all four parts (about 50 s, a shard's worth
           # alone): it starts its own stand-in engine (setup.exs, in a VM of
           # its own, on PORT + 10000 = 14400), which the server's ANALYSIS_URL

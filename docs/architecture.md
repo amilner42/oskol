@@ -63,7 +63,7 @@ Three layers, two fixed boundaries:
 
 ```gleam
 Game(
-  info:          Info,                                      // slug, name, formats, clocks, default clock
+  info:          Info,                                      // slug, name, formats, clocks, default clock, tiers
   init:          fn(Config, List(Seat), Rng) -> Result(state, String),
   decode_action: fn(action.Incoming) -> Result(action, String),
   apply:         fn(state, PlayerId, action) -> Result(#(state, List(Event)), String),
@@ -72,6 +72,7 @@ Game(
   outcome:       fn(state) -> Outcome,
   clocks:        fn(state) -> List(PlayerId),               // who is on the clock right now
   timeout:       fn(state, PlayerId) -> Timeout(action),    // Forfeit, or Act(action) taken for them
+  period:        fn(state) -> Int,                          // which period of play: a PerPeriod bank refills when it moves on
   record:        fn(state) -> Option(Json),                 // the whole public record, or game.no_record
   committed:     fn(state, action, state) -> Option(Json),  // what this step committed, or game.no_committed
   bot:           fn(state, PlayerId, Ask, Int) -> Result(List(Json), String),  // what a bot seat does now
@@ -105,8 +106,8 @@ such unit.
 
 A format is a name and a config the game reads (`game.config_get`): all
 the creator tunes is the format and the clock. `Info.clocks` lists the
-time-control presets a game offers and `default_clock` the one
-preselected.
+time controls a game offers (presets and its own tiers, `Info.tiers`) and
+`default_clock` the one preselected.
 
 Rules that keep this honest:
 - **All randomness goes through `gamekit/rng`** stored in the state. Never
@@ -159,19 +160,43 @@ projection per viewer: in backgammon the mover stages moves (`move`, `undo`)
 that only their own scene shows, and commits them with `play`.
 
 ### Time controls
-Presets live in `gamekit/clock.presets()`: Fischer, Bronstein and per-move.
-A game lists which presets it offers. Backgammon offers `none` (the default)
-and `bg3`, `bg5`, `bg10`, `bg15`, `bg30`, `bg60`: a plain bank each, with
-the turn delay below doing the rest. The older presets (`blitz`, `rapid`,
-`delay`, `per_move`) stay in the list because rooms made under them still
-carry and replay them; they are no longer offered. A game may also declare a **turn delay** (`Info.turn_delay_ms`,
+Fixed presets live in `gamekit/clock.presets()`: Fischer, Bronstein,
+per-move and plain banks. A game may also define **tiers** (`Info.tiers`):
+a feel a player picks, which the game sizes to the format being played
+(`game.Tier.size(config)` gives the control and the words for it). A game
+lists the ids it offers in `Info.clocks`; presets and tiers share one id
+namespace. `host.clock_control(slug, format, clock_id)` resolves an id for a
+format once, when the instance starts (`game.clock_for`), so a room's banks
+follow from its format and its clock id and nothing else.
+
+Backgammon offers `none` (the default) and four tiers, `bg_bullet`,
+`bg_blitz`, `bg_standard`, `bg_classic`. A match keeps one bank for the whole
+match at 1, 1.5, 2 and 3 minutes per point of its length (`Fischer(bank,
+0)`: a 7-point Standard match is 14 minutes each). Unlimited play and a
+single game give every game a fresh bank of 2, 3, 5 and 8 minutes
+(`PerPeriod(bank)`). The flat banks before the tiers (`bg3` .. `bg60`) and
+the older presets (`blitz`, `rapid`, `delay`, `per_move`) stay in the list
+because rooms made under them still carry, rehydrate and replay them; they
+are no longer offered, and an unlimited room on `bg5` keeps its one bank for
+the session as it always did.
+
+**Refilling per game.** `Game.period(state) -> Int` says which period of
+play a state is in (`game.one_period` for a game that is one throughout;
+backgammon's is the game number). After every step the instance compares
+the period before and after: when it moved on and the control is
+`PerPeriod`, every bank is stopped and refilled (`clock.refill`) before the
+clocks start for whoever is charged next. No other control looks at it. It
+is read from the states alone, so a replayed log refills exactly where the
+live room did, and neither gamekit nor Elixir knows what a "game" is.
+
+A game may also declare a **turn delay** (`Info.turn_delay_ms`,
 applied by `instance.start` through `clock.with_turn_delay`): the first N
 milliseconds of every turn are free under every control, and unused delay is
 never banked. It overlaps rather than stacks with a control's own free time
-(the longer of the two wins). Backgammon takes 12 seconds, which is what
-live play does and what the dice animation runs inside; the default is
-zero. The Elixir room schedules a tick for the next possible expiry and
-calls `GameKit.expire/2`, which applies the game's `timeout`.
+(the longer of the two wins). Backgammon takes 12 seconds under every tier,
+which is what live play does and what the dice animation runs inside; the
+default is zero. The Elixir room schedules a tick for the next possible
+expiry and calls `GameKit.expire/2`, which applies the game's `timeout`.
 
 ## Platform decisions live in Gleam (`src/oskol/`)
 
@@ -211,7 +236,9 @@ Phoenix (router, plugs, controllers, GenServers)       [Elixir, thin]
 Backgammon is the product and the only game registered, but the framework
 still takes another one:
 1. Create `src/<slug>/game.gleam` implementing `gamekit/game.Game`. Give
-   `Info` its formats, the clock presets it offers, and a `timeout` policy.
+   `Info` its formats, the clocks it offers (presets, or tiers it sizes to
+   the format), a `timeout` policy, and a `period` (`game.one_period` if a
+   bank never refills).
 2. Register it in `src/gamekit/registry.gleam` (`all()`).
 3. Add `test/<slug>/conformance_test.gleam` using `gamekit/conformance`
    (random playouts to termination, replay determinism, your invariants),

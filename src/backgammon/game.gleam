@@ -7,6 +7,7 @@ import backgammon/engine.{type Action}
 import backgammon/projection
 import backgammon/state.{type GameState}
 import gamekit/action
+import gamekit/clock
 import gamekit/game.{type Game}
 import gamekit/rng.{type Rng}
 import gleam/dict
@@ -26,6 +27,9 @@ pub fn game() -> Game(GameState, Action) {
     outcome: outcome,
     clocks: engine.on_the_clock,
     timeout: fn(_, _) { game.Forfeit },
+    // A new game is a new period: unlimited play's per-game banks refill
+    // when the next game's opening roll is made (`state.next_game`).
+    period: fn(s) { s.game_number },
     record: fn(s) { Some(projection.record_json(s)) },
     // A played turn is backgammon's unit of analysis, so it is also what
     // the platform may grade before the game is over.
@@ -86,17 +90,84 @@ pub fn info() -> game.Info {
         True,
       ),
     ],
-    // Minutes plus the 12 s delay below: backgammon's clocks. Rooms made
-    // under the older presets (blitz, rapid, delay, per_move) still carry and
-    // replay them; they are just no longer offered.
-    clocks: ["none", "bg3", "bg5", "bg10", "bg15", "bg30", "bg60"],
+    // Tiers sized to the format, each with the 12 s delay below. Rooms
+    // made under the flat banks before them (bg3 .. bg60) and the older
+    // presets (blitz, rapid, delay, per_move) still carry and replay those;
+    // they are just no longer offered.
+    clocks: ["none", ..list.map(tiers(), fn(t) { t.id })],
     default_clock: "none",
+    tiers: tiers(),
     // Live backgammon runs on a delay, not a bare clock: the first twelve
     // seconds of every turn are free under every control offered here, so
     // rolling, reading the dice and a turn that plays nothing all cost
     // nothing. Unused delay is not banked.
     turn_delay_ms: 12_000,
   )
+}
+
+/// Backgammon's clocks: a feel a player picks, sized to what is played.
+/// A match keeps one bank for the whole match, at minutes per point of its
+/// length, as tournaments do (two a point is the tournament norm). Unlimited
+/// play is a string of separate games and a single game is one, so each game
+/// gets a fresh bank of its own (`clock.PerPeriod`, refilled at every new
+/// game). The ids are `bg_` and the tier's name, because `blitz` is already
+/// a preset that old rooms carry.
+pub fn tiers() -> List(game.Tier) {
+  [
+    tier("bg_bullet", "Bullet", 60_000, 120_000),
+    tier("bg_blitz", "Blitz", 90_000, 180_000),
+    tier("bg_standard", "Standard", 120_000, 300_000),
+    tier("bg_classic", "Classic", 180_000, 480_000),
+  ]
+}
+
+fn tier(
+  id: String,
+  name: String,
+  per_point_ms: Int,
+  per_game_ms: Int,
+) -> game.Tier {
+  game.Tier(
+    id: id,
+    name: name,
+    description: clock.minutes(per_point_ms)
+      <> " per point of a match, "
+      <> clock.minutes(per_game_ms)
+      <> " a game otherwise",
+    size: fn(config) { size(config, per_point_ms, per_game_ms) },
+  )
+}
+
+/// A tier's bank for one format. The match length is `target`: 0 is
+/// unlimited and 1 is the single game, which is one game and so gets a
+/// game's bank.
+fn size(config: game.Config, per_point_ms: Int, per_game_ms: Int) -> game.Sizing {
+  let target = game.config_get(config, "target", 1)
+  case target {
+    // Unlimited says "per game" even in a few words: the bank is not the
+    // session's.
+    0 -> {
+      let each = clock.minutes(per_game_ms) <> " each per game"
+      game.Sizing(control: clock.PerPeriod(per_game_ms), each: each, line: each)
+    }
+    1 -> {
+      let each = clock.minutes(per_game_ms) <> " each"
+      game.Sizing(
+        control: clock.PerPeriod(per_game_ms),
+        each: each,
+        line: each <> " for this game",
+      )
+    }
+    points -> {
+      let bank = points * per_point_ms
+      let each = clock.minutes(bank) <> " each"
+      game.Sizing(
+        control: clock.Fischer(bank, 0),
+        each: each,
+        line: each <> " for this " <> int.to_string(points) <> "-point match",
+      )
+    }
+  }
 }
 
 fn format(

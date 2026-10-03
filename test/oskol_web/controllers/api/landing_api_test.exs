@@ -190,14 +190,14 @@ defmodule OskolWeb.Api.LandingApiTest do
         |> post(~p"/papi/games/backgammon", %{
           "format" => "match5",
           "name" => "Alice",
-          "clock" => "bg10"
+          "clock" => "bg_classic"
         })
         |> json_response(200)
 
       state = Game.get_server_state(body["id"])
       assert state.setup.format == "match5"
-      assert state.setup.clock == "bg10"
-      assert GameServerState.summary(state) =~ "10 min clock"
+      assert state.setup.clock == "bg_classic"
+      assert GameServerState.summary(state) =~ "Classic clock · "
     end
 
     test "a clock the game does not offer is refused", %{conn: conn} do
@@ -294,12 +294,12 @@ defmodule OskolWeb.Api.LandingApiTest do
 
   describe "GET /papi/games/:slug/rooms/:id" do
     test "a free seat is an open invite, with who is waiting and what for", %{conn: conn} do
-      %{game_id: game_id} = GameFixtures.lobby("match3", clock: "bg3", pid1: self())
+      %{game_id: game_id} = GameFixtures.lobby("match3", clock: "bg_bullet", pid1: self())
 
       body = conn |> get(~p"/papi/games/backgammon/rooms/#{game_id}") |> json_response(200)
 
       assert %{"ok" => true, "state" => "open", "inviter_name" => "Alice"} = body
-      assert body["summary"] == "Match to 3 · 3 min clock"
+      assert body["summary"] == "Match to 3 · Bullet clock · 3 min each"
       assert body["disconnected"] == []
     end
 
@@ -529,7 +529,7 @@ defmodule OskolWeb.Api.LandingApiTest do
 
     test "lists the games this browser's guest can pick back up, from the rows", %{conn: conn} do
       %{game_id: game_id, p1: alice_seat, p2: bob_seat, g1: alice, mover: mover} =
-        GameFixtures.started(42, "match5", clock: "bg5")
+        GameFixtures.started(42, "match5", clock: "bg_bullet")
 
       Persister.flush()
       # Nothing here needs the room: a cold row answers the same.
@@ -546,10 +546,10 @@ defmodule OskolWeb.Api.LandingApiTest do
       assert game["status"] == "playing"
       assert game["opponent"] == "Bob"
       assert game["format"] == "Match to 5"
-      assert game["clock"] == "5 min"
+      assert game["clock"] == "Bullet · 5 min each"
       # Whose move it is comes from the snapshot the room wrote.
       assert game["your_move"] == (mover == alice_seat)
-      # The clocks as the row last saw them: 5 min each, the mover's running
+      # The clocks as the row last saw them: 5 min each (a minute a point), the mover's running
       # with the 12 s delay still ahead of it.
       assert %{"mine_ms" => 300_000, "theirs_ms" => 300_000, "free_ms" => 12_000} = game["time"]
       assert game["time"]["running"] == if(mover == alice_seat, do: "mine", else: "theirs")

@@ -919,7 +919,7 @@ fn replayed(
       format_id: log.format,
       seats: list.map(log.seats, fn(s) { Seat(id: s.0, name: s.1) }),
       seed: log.seed,
-      control: host.clock_control(log.clock),
+      control: host.clock_control(log.slug, log.format, log.clock),
       entries: entries,
     ),
   )

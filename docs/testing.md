@@ -26,6 +26,10 @@ Every game is its seed plus its action log, and the suite leans on that.
   `test/fixtures/replays` replays to its recorded fingerprint, and every
   registered format has one. A rules change fails here; when intended, run
   `mix oskol.fixtures replays` and read the diff.
+- Clock tiers (`test/backgammon/clock_tiers_test.gleam`): the bank for every
+  tier and format, unlimited refilling at each new game and a match not, a
+  single game run out, a timeout late in a match, a replayed log landing on
+  the same banks; old presets resolving unchanged.
 - Framework units: rng, clocks (including the turn delay), action decoding
   and validation, `event.for_viewer`, host/protocol shapes.
 - `test/backgammon/analysis_test.gleam`: the engine board in controlled
@@ -223,6 +227,10 @@ node playwright/test-backgammon-board/test.js   # the classic board: cube fixtur
                                                # full-height bar, auto-roll
 node playwright/test-guest-prefill/test.js      # the site remembers a guest's name (friend dialog,
                                                # PLAY NOW against Sage)
+node playwright/test-clock-tiers/test.js        # the clock tiers at four sizes: the sentence's
+                                               # menu and the line under it per format with every
+                                               # box held, the friend dialog, PLAY's dialog (it
+                                               # makes its own account), the lobby and the invite
 node playwright/test-puzzles-cards/test.js      # PRACTICE THIS GAME'S N MISTAKES from both result
                                                # cards (setup.exs arranges and grades the games)
 node playwright/test-landing-screenshot/test.js # Playwright itself works: one landing screenshot

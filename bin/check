@@ -177,6 +177,9 @@ if [[ "$mode" == "--browser" ]]; then
   # it arranges its own room (setup.exs) the same way.
   node playwright/test-backgammon-replay/test.js
   node playwright/test-guest-prefill/test.js
+  # The clock tiers in the sentence and PLAY's dialog at four sizes, every
+  # box held while the format changes; the lobby and the invite name them.
+  node playwright/test-clock-tiers/test.js
   # The signed-in home at `/`: the bar, live games, the form, the practice
   # line and the recent list with its MORE. It arranges its own account
   # (setup.exs) and creates the live game in the browser.

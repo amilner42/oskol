@@ -18,6 +18,7 @@
 
 import gamekit/clock
 import gamekit/game.{type Info}
+import gamekit/host
 import gamekit/registry
 import gleam/int
 import gleam/json.{type Json}
@@ -70,10 +71,18 @@ pub fn game_json(
     envelope.ok([
       #("game", game.info_to_json(info)),
       #("formats", json.array(info.formats, game.format_to_json)),
-      // Every preset, in preset order: the client filters them by the ones
-      // this game offers (`game.clocks`) for the picker, and walks
-      // `game.clocks` for the panel that lists them.
-      #("clock_presets", json.array(clock.presets(), clock.preset_to_json)),
+      // Every fixed preset, in preset order, then this game's tiers, each
+      // with the line it sizes to for every format (`game.tier_to_json`):
+      // the client filters them by the ones this game offers
+      // (`game.clocks`) for the picker, and walks `game.clocks` for the
+      // panel that lists them.
+      #(
+        "clock_presets",
+        json.preprocessed_array(list.append(
+          list.map(clock.presets(), clock.preset_to_json),
+          list.map(info.tiers, game.tier_to_json(info, _)),
+        )),
+      ),
       #("copy", copy_json(ctx.copy.for_game(slug))),
       #("guest_name", guest_name(ctx, session)),
     ]),
@@ -273,9 +282,14 @@ fn invite_title(name: String, r: ActiveRoom) -> String {
       }
     Error(_) -> "backgammon"
   }
-  let on = case clock.preset(r.clock) {
-    Ok(p) if p.control != clock.NoClock ->
-      " on a " <> string.lowercase(p.name) <> " clock"
+  let on = case host.clock_for(r.slug, r.format, r.clock) {
+    Ok(c) if c.control != clock.NoClock ->
+      case c.tier {
+        // A tier says what it is worth for this format: "on a standard
+        // clock, 14 min each".
+        True -> " on a " <> string.lowercase(c.name) <> " clock, " <> c.each
+        False -> " on a " <> string.lowercase(c.name) <> " clock"
+      }
     Ok(_) -> ""
     Error(_) ->
       case r.clock {
@@ -543,8 +557,12 @@ fn active_room_json(room: ActiveRoom, session: Session) -> Json {
       |> result.unwrap(room.format)
     Error(_) -> room.format
   }
-  let clock = case clock.preset(room.clock) {
-    Ok(p) if p.control != clock.NoClock -> Some(p.name)
+  let clock = case host.clock_for(room.slug, room.format, room.clock) {
+    Ok(c) if c.control != clock.NoClock ->
+      case c.tier {
+        True -> Some(c.name <> " · " <> c.each)
+        False -> Some(c.name)
+      }
     _ -> None
   }
   json.object([
