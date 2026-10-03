@@ -163,17 +163,21 @@ server's cube call on equities at, above and below each line,
 - `RollsTest`: a position's thirty-six rolls (`Games.Backgammon.Rolls`,
   `Ui.Rolls`) on the opening grid, four of whose rows are the engine's own
   and pinned (6-6 at +0.489, 4-4 at +0.4163, 1-4 at -0.007, 1-2 at -0.004
-  under a grid equity of 0.096737): the decoder and its three refusals (not
-  21 rolls, dice the wrong way round, a weight that is not the roll's); the
-  invariant that the rows' weighted mean is the grid's own equity exactly;
-  the seven bands at each boundary and either side of it, including one
-  that arrives from arithmetic rather than as a literal; 21 rolls mirrored
-  into 36 cells, each non-double twice and in the right two places; the
-  sort, best first; the map's band classes, the outlined roll in both its
-  cells, NUMBERS hiding and showing the values; the bars' widths (a double
-  8.41, a non-double 18.02 -- exactly twice, gap included), zero the line;
-  and the spoken cell, with MOVES adding the play. If a change puts 2-1
-  above 6-6, these fail: the scale is inverted.
+  under a grid equity of 0.096737): the decoder and its four refusals (not
+  21 rolls, dice the wrong way round, a weight that is not the roll's, and
+  a headline that is not its own rows' weighted mean); that invariant, and
+  that a cell is the roll's own equity rather than the roll against it; the
+  fixed scale -- `ramp` clamping at +-1, the dead zone sitting exactly where
+  `short` stops printing a number, and the property the whole thing turns
+  on, that the same equity draws the same bar in a grid that spans a
+  twentieth and one that spans a point; 21 rolls mirrored into 36 cells,
+  each non-double twice and in the right two places; the sort, best first;
+  the map's sign classes and `--rl-t`, the outlined roll in both its cells
+  (handed in either way round, as a record writes it), NUMBERS hiding and
+  showing the values; the bars' widths (a double 8.41, a non-double 18.02
+  -- exactly twice, gap included), zero the line and the ends of the scale
+  drawn with it; and the spoken cell, with MOVES adding the play. If a
+  change puts 2-1 above 6-6, these fail: the scale is inverted.
 - `XgidTest`: the position id pinned by vectors (the opening, Black to
   play, a cube owned by each side, a match with Crawford, a take, the bar
   and borne off, ids published by gnubg's bug list and backgammonforums),

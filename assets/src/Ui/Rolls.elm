@@ -1,4 +1,4 @@
-module Ui.Rolls exposing (Config, Drawing(..), Words, difference, luck, view)
+module Ui.Rolls exposing (Config, Drawing(..), Words, difference, equity, view)
 
 {-| A position's thirty-six rolls, drawn two ways: the six-by-six
 temperature map, and the same rolls as bars from best to worst.
@@ -12,19 +12,32 @@ them the same way.
 **The precedent is GNU Backgammon's Temperature Map** (Sho Sengoku): one
 cell per roll, coloured by what the roll is worth, with exactly two
 switches, for the numbers and for the best play. A player arriving from GNU
-should recognise it. Two deliberate departures, both forced:
+should recognise it.
 
-1.  **The scale diverges.** GNU colours absolute equity on one ramp, white
-    through dark red. Our cell is luck -- the roll's equity less the
-    position's own -- so it is signed and has a real zero, and a one-sided
-    ramp cannot show a sign. Green helps the player on roll, red hurts,
-    paper is indifferent, which is also what green and red already mean
-    everywhere else in this product (`.g-best`, `.g-very_bad`).
-2.  **The down arm is hatched.** A red-green pair cannot be told apart by
+**One fixed, absolute ramp.** A cell is the roll's own equity: 0 is an even
+game, +1 the far green end, -1 the far red end, clamped past either. The
+scale is the same in every grid and in both halves of a comparison, which
+is what lets a reader carry a colour from one picture to another. Nothing
+is re-centred on the position's average and nothing is normalised to the
+spread in front of it. Two consequences, both wanted: a winning position
+reads green and a losing one red, so the map answers "how good is this"
+before "which roll do I want"; and two plays that are nearly the same come
+out almost entirely neutral, with the one roll that separates them the only
+thing with any colour in it.
+
+Two deliberate departures from GNU, both forced:
+
+1.  **The ramp diverges where GNU's is one-sided** (white through dark
+    red). Equity is signed and has a real zero; a one-sided ramp cannot
+    show a sign. Green is ahead, red is behind, paper is level -- which is
+    what green and red already mean everywhere else here (`.g-best`,
+    `.g-very_bad`).
+2.  **The red arm is hatched.** A red-green pair cannot be told apart by
     anyone with deuteranopia, and the sign is the one thing in this picture
-    that must never depend on hue. The three bands below zero carry a faint
-    45-degree weave, so "this roll hurts" is legible without colour. The
-    bars need no hatch: a bar's side of the zero line already says it.
+    that must never depend on hue. Every negative cell carries a faint
+    45-degree weave -- keyed on `Rolls.signOf`, so it agrees exactly with
+    the cell's own number and with the counts in the spoken line. The bars
+    need no hatch: a bar's side of the zero line already says it.
 
 **MOVES writes the play under the drawing, not in the cell.** GNU's map is a
 window of its own and can afford the notation in the square; ours lives in a
@@ -40,10 +53,16 @@ bars would make 6-6 look as important as 6-5, and the picture would lie.
 
 Everything here is pure: a `Config` and a `Grid` in, `Html msg` out. No
 model, no subscription, no page. The arithmetic is
-`Games.Backgammon.Rolls`; the colours are seven `--rl-*-fill` / `--rl-*-ink`
-token pairs in `assets/css/app.css`, which are the notebook's own and not
-the board's, so the drawing is the same under all twelve board themes --
-the panel it sits in is outside every `.bg-theme-*` scope.
+`Games.Backgammon.Rolls`.
+
+**How the colour is drawn.** Elm emits one number per cell -- `--rl-t`, the
+ramp position as a percentage -- and `assets/css/app.css` mixes it between
+three tokens in oklab. So the ends and the middle stay nameable colours in
+the stylesheet rather than literals in a view, the interpolation is
+perceptually even, and a cell's fill is a pure function of its own equity.
+Those tokens are the notebook's own and not the board's, so the drawing is
+the same under all twelve board themes -- the panel it sits in is outside
+every `.bg-theme-*` scope.
 
 -}
 
@@ -64,10 +83,10 @@ type Drawing
     | Bars
 
 
-{-| What this grid's numbers are called. A position's cells are luck
-(`luck`); a comparison's are how much better or worse the second play does
-(`difference`). The words appear in the sentence under the drawing and in
-the aria-label, so the same picture reads correctly in both places.
+{-| What this grid's numbers are called. A position's cells are its equity
+(`equity`); a comparison's are how much better or worse the second play
+does (`difference`). The words appear in the sentence under the drawing and
+in the aria-label, so the same picture reads correctly in both places.
 -}
 type alias Words =
     { value : String
@@ -76,12 +95,12 @@ type alias Words =
     }
 
 
-{-| A position's own rolls: the value is luck, and a cell that is up is a
-roll that helps.
+{-| A position's own rolls: the value is the equity the roll leaves, and a
+cell that is up is a roll that leaves the player on roll ahead.
 -}
-luck : Words
-luck =
-    { value = "luck", up = "help", down = "hurt" }
+equity : Words
+equity =
+    { value = "equity", up = "ahead", down = "behind" }
 
 
 {-| Two plays against each other: the value is the difference, and a cell
@@ -229,11 +248,13 @@ viewCell : Config msg -> Cell -> Html msg
 viewCell config cell =
     button
         [ classList
-            [ ( "rl-cell b-" ++ Rolls.bandName cell.band, True )
+            [ ( "rl-cell is-" ++ Rolls.signName cell.sign, True )
+            , ( "is-lit", lightInk cell )
             , ( "is-out", config.outlined == Just cell.dice )
             , ( "is-tapped", config.tapped == Just cell.dice )
             ]
-        , attribute "data-band" (Rolls.bandName cell.band)
+        , attribute "style" (tStyle cell)
+        , attribute "data-sign" (Rolls.signName cell.sign)
         , attribute "data-dice" (Rolls.label cell.dice)
         , attribute "aria-label" (Rolls.inWords { withMove = config.moves } cell)
         , onClick (config.onTap cell.dice)
@@ -249,6 +270,28 @@ viewCell config cell =
 
 
 
+{-| A cell's place on the ramp, as the one number the stylesheet needs:
+`--rl-t` is how far between the neutral and this cell's own end, and
+`app.css` mixes the two in oklab from there.
+-}
+tStyle : Cell -> String
+tStyle cell =
+    "--rl-t:" ++ num (toFloat (round (Rolls.ramp cell.value * 1000)) / 10) ++ "%"
+
+
+{-| Where the text turns from black to white, measured rather than chosen:
+past 0.72 of the ramp the fill is dark enough that white reads better, and
+that crossing is where the worse of the two inks bottoms out at 4.54:1 --
+the lowest contrast anywhere on the scale, and still over the 4.5 a number
+this size wants. Both ends are the same luminance so one crossing serves
+them both; see the measurements in `app.css`.
+-}
+lightInk : Cell -> Bool
+lightInk cell =
+    Rolls.ramp cell.value >= 0.72
+
+
+
 -- THE BARS
 
 
@@ -258,9 +301,14 @@ viewCell config cell =
 Zero is the line through the middle. **A bar is as wide as its roll is
 likely** -- a double half a non-double -- so the thirty-six cells of the map
 become thirty-six units of width here and the two drawings say the same
-thing. The height is the value against the largest in the grid, floored at
-0.2 so a quiet position is not blown up into drama. The best and worst
-rolls are labelled where they occur, which is the only scale a reader needs.
+thing.
+
+**The height is on the map's scale, not on the grid's own.** A bar reaching
+the top is an equity of 1 and nowhere else, so a position where every roll
+is worth about the same draws twenty-one flat bars -- which is the truth
+about that position, and the thing a per-grid scale would hide by blowing
+it up to fill the box. The best and worst rolls are still labelled where
+they occur, for the reader who wants the number.
 
 The box is square, the same square the map fills, so the toggle swaps the
 drawing without moving the panel.
@@ -272,11 +320,8 @@ viewBars config grid =
         cells =
             Rolls.sorted grid.cells
 
-        span_ =
-            max 0.2 (List.foldl (\c acc -> max acc (abs c.value)) 0 cells)
-
         bars =
-            List.foldl (\cell ( x, acc ) -> ( x + toFloat cell.weight, bar config span_ x cell :: acc ))
+            List.foldl (\cell ( x, acc ) -> ( x + toFloat cell.weight, bar config x cell :: acc ))
                 ( 0, [] )
                 cells
                 |> Tuple.second
@@ -299,11 +344,50 @@ viewBars config grid =
                 , SvgAttr.x2 (num (360 - barPadX))
                 , SvgAttr.y2 (num barZeroY)
                 , SvgAttr.class "rl-bars-zero"
+                , attribute "data-zero" "true"
                 ]
                 []
-            :: bars
+            :: reach
+            ++ bars
             ++ endLabels cells
         )
+
+
+{-| The ends of the fixed scale, drawn faintly.
+
+Without them the empty half of this box is just empty, and short bars are
+ambiguous: a reader cannot tell a flat position from a big scale. With them
+the whitespace is the rest of the scale, which is what it is, and the one
+property the picture turns on -- that the height means an equity and not a
+share of whatever this grid happened to span -- is visible rather than
+implied.
+
+-}
+reach : List (Svg msg)
+reach =
+    let
+        at y labelY label =
+            [ Svg.line
+                [ SvgAttr.x1 (num barPadX)
+                , SvgAttr.y1 (num y)
+                , SvgAttr.x2 (num (360 - barPadX))
+                , SvgAttr.y2 (num y)
+                , SvgAttr.class "rl-bars-reach"
+                ]
+                []
+            , Svg.text_
+                [ SvgAttr.x (num (360 - barPadX - 1))
+                , SvgAttr.y (num labelY)
+                , SvgAttr.textAnchor "end"
+                , SvgAttr.class "rl-bars-reach-label"
+                ]
+                [ Svg.text label ]
+            ]
+    in
+    -- the labels sit inside the plot, clear of the best and worst roll's own
+    -- labels above and below it
+    at (barZeroY - barReach) (barZeroY - barReach + 13) "+1"
+        ++ at (barZeroY + barReach) (barZeroY + barReach - 5) "−1"
 
 
 {-| Left and right of the plot, inset from the edges.
@@ -336,11 +420,11 @@ barUnit =
     (360 - 2 * barPadX) / 36
 
 
-bar : Config msg -> Float -> Float -> Cell -> Svg msg
-bar config span_ before cell =
+bar : Config msg -> Float -> Cell -> Svg msg
+bar config before cell =
     let
         height =
-            max 2 (abs cell.value / span_ * barReach)
+            max 2 (Rolls.ramp cell.value * barReach)
 
         y =
             if cell.value >= 0 then
@@ -356,8 +440,8 @@ bar config span_ before cell =
         , SvgAttr.height (num height)
         , SvgAttr.rx "2"
         , SvgAttr.class
-            ("rl-bar b-"
-                ++ Rolls.bandName cell.band
+            ("rl-bar is-"
+                ++ Rolls.signName cell.sign
                 ++ (if config.outlined == Just cell.dice then
                         " is-out"
 
@@ -365,8 +449,9 @@ bar config span_ before cell =
                         ""
                    )
             )
+        , attribute "style" (tStyle cell)
         , attribute "data-dice" (Rolls.label cell.dice)
-        , attribute "data-band" (Rolls.bandName cell.band)
+        , attribute "data-sign" (Rolls.signName cell.sign)
         , attribute "data-weight" (String.fromInt cell.weight)
         , attribute "data-out" (bool (config.outlined == Just cell.dice))
         ]
@@ -472,11 +557,11 @@ tagOf which =
 at it: the best roll, the worst, and how many of the thirty-six fall each
 side of the middle.
 
-**Both sides, not just the helpful one.** The hatch on the down arm is
-there because the sign of a cell must not depend on hue; a sentence that
-only counted the green half would leave the same reader to work the other
-one out, and the rest are neutral so it cannot be subtracted. The two
-counts are by band, as the colours are.
+**Both sides, not just the helpful one.** The hatch on the red arm is there
+because the sign of a cell must not depend on hue; a sentence that only
+counted the green half would leave the same reader to work the other one
+out, and the ones inside the dead zone are neither, so it cannot be
+subtracted. The two counts are by sign, which is exactly what the hatch is.
 
 -}
 sentence : Config msg -> Grid -> String

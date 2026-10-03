@@ -3832,54 +3832,74 @@ a.dk-go { text-decoration: none; }
 .dp-delete-yes, .dp-delete-no { height: 40px; padding: 0 16px; font-size: 8px; border-radius: 10px; box-shadow: 2px 2px 0 0 var(--ink); }
 .dp-delete-yes { background: var(--red); }
 
+
 /* ---------- Ui.Rolls: the thirty-six rolls, as a map and as bars ----------
    `assets/src/Ui/Rolls.elm`. GNU Backgammon's Temperature Map and the same
    rolls as bars best-to-worst, with the MAP / BARS toggle and the two
    switches GNU has. One component, three places (the replay's ROLLS tab,
    the analysis board, two plays compared), as `.rp-top` is one table.
 
-   WHY THE BANDS ARE TOKENS AND NOT THE BOARD'S. This drawing lives in the
-   panel, and the panel is outside every `.bg-theme-*` scope (the theme
-   class is on `.bg-still` and `.bg-page`, nowhere above them), so a
-   `--bg-*` here would resolve to the root walnut on all twelve boards and
-   look wrong on eleven. The scale is the notebook's own instead -- which
-   also means its meaning cannot drift when a player changes boards, and
-   green keeps meaning what `.g-best` means.
+   ONE FIXED RAMP, NOT BANDS. A cell is the roll's own equity: 0 is an even
+   game, +1 the far green end, -1 the far red end, clamped past either. The
+   scale never moves -- not re-centred on a position's average, not
+   normalised to the spread in front of it -- so a colour means the same
+   equity in the opening, in a bear-off, and in both halves of a
+   comparison. Elm sends one number per cell, `--rl-t` (the ramp position
+   as a percentage) and the mixing happens here, in oklab, so the colours
+   stay nameable tokens rather than literals in a view.
 
-   SEVEN BANDS, THREE A SIDE, on the site's own grade boundaries: 0.02,
-   0.08, 0.16 (`Words.gradeOf`, `report.gleam`). The engine's error against
-   a rollout is 0.02-0.15, so a finer scale would be drawing noise.
+   An earlier draft had seven discrete bands on the site's grade
+   boundaries. Both halves of that were wrong for this picture: the grade
+   boundaries measure what a player gave up, and no cell here contains a
+   mistake (the engine plays the best move for every roll); and coarseness
+   was a defence against drawing noise when the scale was a few tenths
+   wide. At +-1 the engine's worst error against a rollout (0.15) is a
+   fifteenth of the ramp, so interpolating reads the number rather than the
+   noise -- and a stepped scale would put a visible boundary through the
+   middle of a comparison that ought to come out flat.
+
+   WHY THE TOKENS ARE NOT THE BOARD'S. This drawing lives in the panel, and
+   the panel is outside every `.bg-theme-*` scope (the theme class is on
+   `.bg-still` and `.bg-page`, nowhere above them), so a `--bg-*` here
+   would resolve to the root walnut on all twelve boards and look wrong on
+   eleven. The scale is the notebook's own instead -- which also means its
+   meaning cannot drift when a player changes boards, and green keeps
+   meaning what `.g-best` means.
 
    THE NUMBERS, measured rather than eyeballed (OKLab/OKLCH, the data-viz
    validator):
-     - each arm is monotone in lightness out from the neutral, every step
-       at least 0.06 apart in OKLCH L: up   .952 > .880 > .748 > .398,
-                                        down .952 > .880 > .759 > .571.
-       So strength reads as darkness, which is GNU's reading preserved.
-     - the down arm stops lighter than the up arm on purpose, so the two
-       extremes are 1.8:1 apart in plain greyscale rather than identical.
-     - ink on its own band: 4.9:1 at worst (strong-down), 13.2:1 at best.
-       Every band carries the dice and the value at 8-11px, so all seven
-       clear 4.5:1.
-     - the sign CANNOT be carried by hue: slight-up against slight-down is
-       OKLab dE 0.8 under deuteranopia. Hence the hatch on the down arm --
-       the secondary encoding is not decoration, it is the only thing
-       telling a red-green reader which half of the map they are in.
-     - the pale bands sit 1.4:1 against the white panel, under the 2:1 a
-       floating mark wants, so every cell and every bar carries a dark
-       hairline and reads as a mark whatever its fill. */
+     - the two ends are matched in luminance (relative luminance 0.0685 and
+       0.0697, both about 8.8:1 against the white panel), so one crossing
+       point serves both arms and neither half of the scale is heavier than
+       the other.
+     - the text turns from black to white at 0.72 of the ramp. That is the
+       measured crossing, and the worst ink contrast anywhere on the
+       continuous scale is 4.54:1, there. Everywhere else is higher: 7.1:1
+       at +-0.49, 15.3:1 at +-0.1, 18.3:1 at zero. Pure black and white
+       rather than `--ink`: a two-ink switch over a light-to-dark ramp has
+       a hard ceiling on its worst case, and only black and white put that
+       ceiling (4.58:1) above the 4.5 a number this size wants. With
+       `--ink` the same ramp bottoms out at 3.9:1.
+     - the sign CANNOT be carried by hue: a green and a red of equal
+       lightness are a few units apart in OKLab under deuteranopia. Hence
+       the hatch on every negative cell -- the secondary encoding is not
+       decoration, it is the only thing telling a red-green reader which
+       half of the scale they are in.
+     - near zero the fill sits about 1.2:1 against the white panel, under
+       the 2:1 a floating mark wants, so every cell and every bar carries a
+       dark hairline and reads as a mark whatever its fill. */
 :root {
-  --rl-strong-up-fill: #00562e;   --rl-strong-up-ink: #ffffff;
-  --rl-up-fill: #71c28e;          --rl-up-ink: #0b3521;
-  --rl-slight-up-fill: #b9e4c6;   --rl-slight-up-ink: #15492f;
-  --rl-neutral-fill: #f3efe4;     --rl-neutral-ink: #23243a;
-  --rl-slight-down-fill: #fbcac4; --rl-slight-down-ink: #7d241c;
-  --rl-down-fill: #f69086;        --rl-down-ink: #5f1711;
-  --rl-strong-down-fill: #cc3e38; --rl-strong-down-ink: #ffffff;
-  /* the hairline round every cell and every bar, and the weave on the
-     three bands below zero */
+  --rl-zero: #f3efe4;       /* an even game: the paper */
+  --rl-up-end: #00562e;     /* +1 and beyond */
+  --rl-down-end: #9b0000;   /* -1 and beyond */
+  --rl-ink-dark: #000;      /* under 0.72 of the ramp */
+  --rl-ink-light: #fff;     /* at or over it */
+  /* the hairline round every cell and every bar, and the weave that says
+     "this side of zero" without using a colour to say it */
   --rl-edge: color-mix(in oklab, var(--ink) 22%, transparent);
   --rl-weave: color-mix(in oklab, var(--ink) 13%, transparent);
+  /* a cell with no --rl-t of its own is a cell at zero */
+  --rl-t: 0%;
 }
 
 .rl { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -3915,6 +3935,7 @@ a.dk-go { text-decoration: none; }
 .rl-cell {
   position: relative; display: grid; place-items: center;
   min-width: 0; padding: 11px 1px 1px; border: 0; border-radius: 3px; cursor: pointer;
+  background: var(--rl-zero); color: var(--rl-ink-dark);
   box-shadow: inset 0 0 0 1px var(--rl-edge);
 }
 .rl-cell-dice {
@@ -3928,44 +3949,47 @@ a.dk-go { text-decoration: none; }
 .rl-cell.is-out { box-shadow: inset 0 0 0 3px var(--ink); }
 .rl-cell:focus-visible { outline: 2px solid var(--pen); outline-offset: 1px; z-index: 1; }
 
-.rl-cell.b-strong-up { background: var(--rl-strong-up-fill); color: var(--rl-strong-up-ink); }
-.rl-cell.b-up { background: var(--rl-up-fill); color: var(--rl-up-ink); }
-.rl-cell.b-slight-up { background: var(--rl-slight-up-fill); color: var(--rl-slight-up-ink); }
-.rl-cell.b-neutral { background: var(--rl-neutral-fill); color: var(--rl-neutral-ink); }
-.rl-cell.b-slight-down { background: var(--rl-slight-down-fill); color: var(--rl-slight-down-ink); }
-.rl-cell.b-down { background: var(--rl-down-fill); color: var(--rl-down-ink); }
-.rl-cell.b-strong-down { background: var(--rl-strong-down-fill); color: var(--rl-strong-down-ink); }
+/* The ramp. `--rl-t` is the cell's own distance along it, nothing else. */
+.rl-cell.is-up { background: color-mix(in oklab, var(--rl-up-end) var(--rl-t), var(--rl-zero)); }
+.rl-cell.is-down { background: color-mix(in oklab, var(--rl-down-end) var(--rl-t), var(--rl-zero)); }
+.rl-cell.is-lit { color: var(--rl-ink-light); }
 
-/* The weave on the three bands below zero: the sign of a cell, for a reader
-   for whom red and green are one colour. Faint on purpose -- it has to read
-   as a texture under 8px type, not as stripes over it. */
-.rl-cell.b-slight-down, .rl-cell.b-down, .rl-cell.b-strong-down {
+/* The weave on every cell below zero: the sign, for a reader for whom red
+   and green are one colour. Faint on purpose -- it has to read as a texture
+   under 8px type, not as stripes over it. */
+.rl-cell.is-down {
   background-image: repeating-linear-gradient(
     45deg, var(--rl-weave) 0 2px, transparent 2px 5px);
 }
 
 /* The bars, as `Ui.Charts` draws: a viewBox and nothing fixed in pixels, no
-   axes, the two ends labelled where they occur. The square box is the map's.
-   Every bar carries the hairline, which both separates it from its
-   neighbour and gives the palest bands something to read against. */
+   axes, the two ends labelled where they occur. The square box is the map's,
+   and so is the scale: a bar reaching the top is an equity of 1 and nothing
+   else. Every bar carries the hairline, which both separates it from its
+   neighbour and gives the palest fills something to read against. */
 .rl-bars { width: 100%; height: 100%; display: block; }
 /* Zero is the thing every bar is read against, so it is a real line and not
    a hint: the box is 360 units wide and draws at about 300, so 1.6 units is
    a bit over a pixel. */
 .rl-bars-zero { stroke: color-mix(in oklab, var(--ink) 55%, transparent); stroke-width: 1.6; }
-.rl-bars .rl-bar { stroke: var(--rl-edge); stroke-width: 1; }
+.rl-bars .rl-bar { stroke: var(--rl-edge); stroke-width: 1; fill: var(--rl-zero); }
+.rl-bars .rl-bar.is-up { fill: color-mix(in oklab, var(--rl-up-end) var(--rl-t), var(--rl-zero)); }
+.rl-bars .rl-bar.is-down { fill: color-mix(in oklab, var(--rl-down-end) var(--rl-t), var(--rl-zero)); }
 .rl-bars .rl-bar.is-out { stroke: var(--ink); stroke-width: 2.5; }
-.rl-bars .b-strong-up { fill: var(--rl-strong-up-fill); }
-.rl-bars .b-up { fill: var(--rl-up-fill); }
-.rl-bars .b-slight-up { fill: var(--rl-slight-up-fill); }
-.rl-bars .b-neutral { fill: var(--rl-neutral-fill); }
-.rl-bars .b-slight-down { fill: var(--rl-slight-down-fill); }
-.rl-bars .b-down { fill: var(--rl-down-fill); }
-.rl-bars .b-strong-down { fill: var(--rl-strong-down-fill); }
 .rl-bars-end { fill: var(--pencil); font-size: 13px; font-weight: 600; }
+/* The ends of the fixed scale, quiet enough to be read past: without them a
+   short bar could be a flat position or a big scale, and the empty half of
+   the box is emptiness rather than the rest of the ramp. */
+.rl-bars-reach {
+  stroke: color-mix(in oklab, var(--ink) 18%, transparent);
+  stroke-width: 1; stroke-dasharray: 3 4;
+}
+.rl-bars-reach-label { fill: var(--pencil); font-size: 11px; opacity: 0.75; }
 
 /* The depth, one line, always: the grid is 3-ply and the verdict above it
-   is 4-ply, and unlabelled the two read as a disagreement. */
+   is 4-ply, and unlabelled the two read as a disagreement. With the cells
+   on the absolute scale this line is the plainest it can be -- the figure
+   it names is the weighted mean of the thirty-six numbers above it. */
 .rl-depth { flex: none; margin: 0; font-size: 11px; line-height: 1.4; color: var(--pencil); }
 /* The cell in words. Two lines of room whether or not there is anything to
    say, and last in the column, because it is the one part whose height

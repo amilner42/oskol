@@ -17,9 +17,9 @@ by `test.js`. When the ROLLS tab lands, the screenshots move onto the real
 page (`review-analysis`) and this goes away.
 
 Two screens: the opening position, whose numbers are in `RollsTest.elm`, and
-a made-up grid that walks all seven bands, so the scale and the contrast of
-the dice and the numbers on every band can be checked in one picture. The
-second is a swatch sheet, not a position.
+a made-up grid that walks the whole fixed scale, so every colour the ramp
+can make -- and the contrast of the dice and the numbers on each of them --
+can be checked in one picture. The second is a swatch sheet, not a position.
 
 -}
 
@@ -111,16 +111,19 @@ update msg model =
 -- THE SCALE SHEET
 
 
-{-| Twenty-one rolls spread across all seven bands, so one picture shows the
-whole scale and the dice and the numbers on every one of them. Made up: it
-is a swatch sheet, not a position.
+{-| Twenty-one rolls walking the whole fixed scale, +1 down to -1 and past
+both ends, so one picture shows every colour the ramp can make and the dice
+and the numbers on each of them. The two values either side of 0.72 are
+there on purpose: that is where the text turns from black to white, and it
+is the worst contrast anywhere on the scale (4.54:1). Made up: a swatch
+sheet, not a position.
 -}
 scale : Grid
 scale =
     let
         values =
-            [ 0.42, 0.3, 0.19, 0.17, -0.22, -0.34 ]
-                ++ [ 0.14, 0.12, 0.095, 0.082, 0.06, 0.045, 0.03, 0.021, 0.005, -0.004, -0.03, -0.055, -0.09, -0.13, -0.18 ]
+            [ 1.4, 1, 0.85, 0.75, 0.7, 0.6 ]
+                ++ [ 0.5, 0.4, 0.3, 0.2, 0.1, 0.02, 0, -0.02, -0.1, -0.25, -0.45, -0.65, -0.75, -1, -1.6 ]
     in
     { level = "3ply"
     , equity = 0
@@ -130,7 +133,7 @@ scale =
                 { dice = dice
                 , weight = Rolls.weightOf dice
                 , value = value
-                , band = Rolls.bandOf value
+                , sign = Rolls.signOf value
                 , best = "24/18(2) 13/7(2)"
                 }
             )
@@ -159,7 +162,7 @@ view model =
             [ h1 [ class "pixel text-[10px]" ] [ text "ROLLS · Ui.Rolls review harness" ] ]
         , div [ class "rl-harness-switch" ]
             [ pick (model.screen == Opening) "screen-opening" "THE OPENING" (Screen Opening)
-            , pick (model.screen == Scale) "screen-scale" "THE SEVEN BANDS" (Screen Scale)
+            , pick (model.screen == Scale) "screen-scale" "THE WHOLE SCALE" (Screen Scale)
             , pick (model.theme == "midnight") "theme-midnight" "MIDNIGHT" (Theme "midnight")
             , pick (model.theme == "sand") "theme-sand" "SAND" (Theme "sand")
             ]
@@ -192,7 +195,7 @@ view model =
                             , tapped = model.tapped
                             , onTap = Tap
                             , mover = "Arie"
-                            , words = Rolls_.luck
+                            , words = Rolls_.equity
                             , attrs = [ id "rolls" ]
                             }
                             grid

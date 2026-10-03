@@ -1,10 +1,8 @@
 module Games.Backgammon.Rolls exposing
-    ( Band(..)
-    , Cell
+    ( Cell
     , Grid
+    , Sign(..)
     , allRolls
-    , bandName
-    , bandOf
     , canonical
     , decoder
     , helped
@@ -13,7 +11,11 @@ module Games.Backgammon.Rolls exposing
     , label
     , levelInWords
     , mirrored
+    , near
+    , ramp
     , short
+    , signName
+    , signOf
     , sorted
     , weightOf
     )
@@ -33,18 +35,30 @@ for everything else. `mirrored` lays the twenty-one out as the six-by-six
 grid a player reads, so 6-5 is drawn in two places and 6-6 in one -- which
 is the whole reason a map beats a list.
 
-**A cell's value is luck, not equity.** The roll's equity less the
-position's own, so zero is neutral, a positive cell is a roll that helps
-the player on roll, and the thirty-six values average to exactly nothing.
-The engine's own figure (`Grid.equity`) is the weighted mean of the rows it
-sent -- exactly, to six decimals (Aveline `bg-roll-breakdown`) -- so it is
-read off the wire and never recomputed here.
+**A cell's value is the roll's own equity.** Not the roll against the
+position's average -- the roll against an even game. Zero means neither
+player is ahead, so a winning position reads green and a losing one reads
+red, and the grid answers "how good is this position" before it answers
+"which roll do I want". The engine's own figure (`Grid.equity`) is the
+weighted mean of the rows it sent -- exactly, to six decimals (Aveline
+`bg-roll-breakdown`) -- so it is read off the wire, never recomputed, and
+now stands in the same units as every cell under it.
 
-**The bands are coarse on purpose.** The engine's error against a rollout
-is 0.02 to 0.15, so a scale with fine gradations would be drawing noise.
-Seven bands, three a side, on the site's own grade boundaries (0.02 /
-0.08 / 0.16 -- `Words.gradeOf`), because those are already the numbers this
-product calls a nothing, a slip, a mistake and a blunder.
+**The scale is fixed and absolute: `ramp`.** +1 is the far green end, -1
+the far red end, anything beyond is clamped, and nothing is re-centred or
+normalised per grid. That is the property the whole feature turns on: a
+colour means the same equity in the opening as in a bear-off, and in both
+halves of a comparison. A scale that stretched to fit each grid would make
+two pictures of the same number look different.
+
+**There are no bands.** An earlier draft had seven, on the site's grade
+boundaries; both were wrong here. The boundaries measure what a player
+*gave up*, and no cell in this grid contains a mistake -- the engine plays
+the best move for every roll. And coarseness was a defence against drawing
+noise when the scale was a few tenths wide; at ±1 the engine's worst error
+against a rollout (0.15) is a fifteenth of the ramp, so interpolating is
+reading the number, not the noise. `signOf` is all that stays discrete, and
+only because the sign must be legible without colour.
 
 Everything here is pure: a decoder, and arithmetic over the rows. It knows
 nothing about a page or a drawing (`Ui.Rolls`).
@@ -77,8 +91,10 @@ type alias Grid =
 
   - `dice` is canonical: `( a, b )` with `a <= b`.
   - `weight` is how many of the thirty-six this roll is: 1 or 2.
-  - `value` is luck -- the roll's equity less the grid's.
-  - `band` is `value`'s band, the only thing a colour is allowed to read.
+  - `value` is the roll's equity, on the absolute scale (a comparison grid
+    puts the difference between two plays here instead).
+  - `sign` is which way, with a dead zone round nothing: the one thing in
+    the picture that is not allowed to depend on colour.
   - `best` is the engine's play for the roll, already as notation.
 
 -}
@@ -86,21 +102,17 @@ type alias Cell =
     { dice : ( Int, Int )
     , weight : Int
     , value : Float
-    , band : Band
+    , sign : Sign
     , best : String
     }
 
 
-{-| Seven bands, three a side of a neutral middle.
+{-| Which way a cell goes, and nothing about how far.
 -}
-type Band
-    = StrongUp
-    | Up
-    | SlightUp
-    | Neutral
-    | SlightDown
+type Sign
+    = Up
+    | Zero
     | Down
-    | StrongDown
 
 
 
@@ -204,20 +216,16 @@ build level equity rows =
         D.succeed
             { level = level
             , equity = equity
-            , cells = List.map (cellOf equity) rows
+            , cells = List.map cellOf rows
             }
 
 
-cellOf : Float -> Row -> Cell
-cellOf equity row =
-    let
-        value =
-            row.equity - equity
-    in
+cellOf : Row -> Cell
+cellOf row =
     { dice = row.dice
     , weight = row.weight
-    , value = value
-    , band = bandOf value
+    , value = row.equity
+    , sign = signOf row.equity
     , best = row.best
     }
 
@@ -317,122 +325,101 @@ rollIndex dice =
         |> Maybe.withDefault 99
 
 
-{-| How many of the thirty-six help: the weight of every roll in one of the
-three bands above the middle.
+{-| How many of the thirty-six leave the player on roll ahead: the weight
+of every cell whose sign is up.
 
-**Bands and not merely a positive value**, because this sentence is what a
-reader who cannot see the drawing is given instead of it, and both drawings
-colour by band. A roll a hundredth above the average is drawn as the
-neutral paper -- counting it here would have the sentence say nine where
-seven cells are green, and a reader checking one against the other would be
-right to think something was wrong.
+**By sign, which is what the picture shows.** This sentence is what a
+reader who cannot see the drawing is given instead of it, and the drawing's
+one discrete mark is the hatching, which is `signOf` and nothing else. So a
+cell that is counted here is a cell that is not hatched, and the dead zone
+means neither claims a roll whose number prints as `0`.
 
 -}
 helped : List Cell -> Int
 helped cells =
-    weightIn [ StrongUp, Up, SlightUp ] cells
+    weightIn Up cells
 
 
-{-| And how many hurt: the three bands below the middle. The neutral ones
-are neither, which is why these two do not add up to thirty-six.
+{-| And how many leave them behind. The ones inside the dead zone are
+neither, which is why these two need not add up to thirty-six.
 -}
 hurt : List Cell -> Int
 hurt cells =
-    weightIn [ StrongDown, Down, SlightDown ] cells
+    weightIn Down cells
 
 
-weightIn : List Band -> List Cell -> Int
-weightIn bands cells =
+weightIn : Sign -> List Cell -> Int
+weightIn sign cells =
     cells
-        |> List.filter (\c -> List.member c.band bands)
+        |> List.filter (\c -> c.sign == sign)
         |> List.map .weight
         |> List.sum
 
 
 
--- THE BANDS
+-- THE SCALE
 
 
-{-| Which band a value falls in.
+{-| Where a value sits on the fixed scale: 0 at an even game, 1 at the far
+end, clamped beyond it.
 
-The site's own grade boundaries, mirrored about zero: 0.02 is the figure
-this product already calls "not a mistake", 0.08 a slip and 0.16 a blunder
-(`Words.gradeOf`). Coarser than the colour scale a reader might expect, and
-deliberately so -- the engine's error against a rollout is 0.02 to 0.15, so
-anything finer would be drawing noise.
+**Nothing here looks at the other cells**, which is the whole point. The
+same equity is the same colour in the opening, in a bear-off, and in both
+halves of a comparison; a scale that stretched to each grid's own spread
+would draw two pictures of one number differently.
 
-A value exactly on a boundary takes the further-out band, as `gradeOf`
-does, and the epsilon is there for the same reason: `0.08` arrives from
-arithmetic on floats, not as a literal.
+A value past 1 is a position already won by more than a point -- a gammon
+in hand -- and past -1 the same the other way round. Those are real, and
+they clamp: the ends say "as good as it gets" rather than re-scaling every
+other cell to make room for one.
 
 -}
-bandOf : Float -> Band
-bandOf value =
-    let
-        step =
-            if abs value >= 0.16 - 0.000001 then
-                3
+ramp : Float -> Float
+ramp value =
+    min 1 (abs value)
 
-            else if abs value >= 0.08 - 0.000001 then
-                2
 
-            else if abs value >= 0.02 - 0.000001 then
-                1
+{-| The dead zone round nothing: half a hundredth.
 
-            else
-                0
-    in
-    if step == 0 then
-        Neutral
+Exactly the width at which `short` gives up and prints `0`, so the three
+ways a cell can say it is neutral cannot disagree -- no colour, no hatching
+and no number, and counted in neither total.
 
-    else if value > 0 then
-        case step of
-            3 ->
-                StrongUp
+-}
+near : Float
+near =
+    0.005
 
-            2 ->
-                Up
 
-            _ ->
-                SlightUp
+{-| Which way a cell goes, and nothing about how far. The one discrete
+thing left in the picture, and only because the sign must be legible to a
+reader for whom red and green are one colour.
+-}
+signOf : Float -> Sign
+signOf value =
+    if value >= near then
+        Up
+
+    else if value <= -near then
+        Down
 
     else
-        case step of
-            3 ->
-                StrongDown
-
-            2 ->
-                Down
-
-            _ ->
-                SlightDown
+        Zero
 
 
-{-| A band's name, which is its class suffix and its `data-band`.
+{-| A sign's name, which is its class suffix and its `data-sign`.
 -}
-bandName : Band -> String
-bandName band =
-    case band of
-        StrongUp ->
-            "strong-up"
-
+signName : Sign -> String
+signName sign =
+    case sign of
         Up ->
             "up"
 
-        SlightUp ->
-            "slight-up"
-
-        Neutral ->
-            "neutral"
-
-        SlightDown ->
-            "slight-down"
+        Zero ->
+            "zero"
 
         Down ->
             "down"
-
-        StrongDown ->
-            "strong-down"
 
 
 

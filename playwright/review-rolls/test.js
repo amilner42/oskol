@@ -201,11 +201,11 @@ async function main() {
       await page.click('[data-switch="moves"]');
       await shot(page, tag, '06-bars-numbers');
 
-      log(`${tag}: the seven bands`);
+      log(`${tag}: the whole scale`);
       await page.click('[data-tab="map"]');
       await page.click('#screen-scale');
       await page.waitForFunction(() =>
-        new Set([...document.querySelectorAll('#rolls .rl-cell')].map((e) => e.dataset.band)).size === 7);
+        [...document.querySelectorAll('#rolls .rl-cell')].some((e) => e.classList.contains('is-lit')));
       await shot(page, tag, '07-scale');
 
       log(`${tag}: the same, on SAND`);

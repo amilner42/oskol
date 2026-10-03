@@ -1,7 +1,7 @@
 module RollsTest exposing (suite)
 
-{-| The thirty-six rolls: the wire, the mirroring, the bands, and the two
-drawings.
+{-| The thirty-six rolls: the wire, the mirroring, the fixed scale, and the
+two drawings.
 
 The fixture is the opening position at 3-ply. **Four of its rows are the
 engine's own, taken off the live engine and pinned here**: 6-6 at +0.489
@@ -9,13 +9,17 @@ engine's own, taken off the live engine and pinned here**: 6-6 at +0.489
 1-2 at −0.004, under a grid equity of 0.096737. The other seventeen are
 the standard opening plays with equities shaped to leave the weighted mean
 exactly where the engine put it, so the invariant below is a real
-arithmetic check and the four pinned rows are a real check of the bands.
+arithmetic check and the four pinned rows are a real check of the scale.
 They are not engine output and must not be quoted as such.
 
 The invariant that makes the whole feature honest: **the rows' weighted
 mean is the grid's own equity, exactly** (Aveline `bg-roll-breakdown`,
 measured to six decimals on eight boards). It is asserted here and never
 recomputed for display.
+
+A cell is the roll's own equity on one fixed scale -- 0 an even game, +-1
+the ends -- so the opening comes out mostly green: 32 of its 36 rolls leave
+the player on roll ahead, which is what being on roll is worth.
 
 The orientation check, because a sign error here would be the most
 embarrassing possible bug: this is correct backgammon, so 6-6 must come
@@ -25,7 +29,7 @@ above 6-6, something is inverted.
 -}
 
 import Expect exposing (FloatingPointTolerance(..))
-import Games.Backgammon.Rolls as Rolls exposing (Band(..))
+import Games.Backgammon.Rolls as Rolls
 import Html.Attributes
 import Json.Decode as D
 import Test exposing (Test, describe, test)
@@ -39,7 +43,7 @@ suite =
     describe "Games.Backgammon.Rolls / Ui.Rolls"
         [ theWire
         , theInvariant
-        , theBands
+        , theScale
         , theMirror
         , theSort
         , theMap
@@ -117,13 +121,6 @@ theWire =
                     , .cells >> List.length >> Expect.equal 21
                     ]
                     grid
-        , test "a cell's value is luck: the roll's equity less the grid's" <|
-            \_ ->
-                -- 6-6 is the engine's +0.489 under a grid of +0.096737
-                cellOf ( 6, 6 )
-                    |> Maybe.map .value
-                    |> Maybe.withDefault 0
-                    |> Expect.within (Absolute 1.0e-9) 0.392263
         , test "carries the engine's play for the roll, as notation" <|
             \_ ->
                 cellOf ( 6, 6 )
@@ -177,6 +174,29 @@ cellOf dice =
     List.head (List.filter (\c -> c.dice == dice) grid.cells)
 
 
+{-| A made-up grid: 1-1 at a quarter, 2-2 at `top`, everything else level.
+Two of these with different `top`s are the same picture of 1-1, which is
+what a fixed scale means and what a fitted one would break.
+-}
+spread : Float -> Rolls.Grid
+spread top =
+    { level = "3ply"
+    , equity = 0
+    , cells =
+        List.map2
+            (\dice value ->
+                { dice = dice
+                , weight = Rolls.weightOf dice
+                , value = value
+                , sign = Rolls.signOf value
+                , best = "24/18(2) 13/7(2)"
+                }
+            )
+            Rolls.allRolls
+            (0.25 :: top :: List.repeat 19 0)
+    }
+
+
 
 -- THE INVARIANT
 
@@ -186,75 +206,94 @@ theInvariant =
     describe "the rows average to the grid's own equity"
         [ test "the weighted mean of the rolls is the engine's figure, exactly" <|
             \_ ->
-                -- value is equity - grid.equity, so the weighted mean of the
-                -- equities is grid.equity exactly when the weighted mean of
-                -- the values is nothing at all.
+                -- the cells ARE the equities now, so this is the headline
+                -- and the thirty-six numbers under it being one quantity
                 grid.cells
                     |> List.map (\c -> toFloat c.weight * c.value)
                     |> List.sum
                     |> (\total -> total / 36)
-                    |> Expect.within (Absolute 1.0e-9) 0
-        , test "so zero really is the middle of the scale" <|
+                    |> Expect.within (Absolute 1.0e-9) grid.equity
+        , test "and a cell is the roll's own equity, not the roll against that mean" <|
             \_ ->
-                Expect.equal (Rolls.bandOf 0) Rolls.Neutral
+                -- 6-6 is the engine's +0.489 and reads +0.489, whatever the
+                -- position it sits in averages to
+                cellOf ( 6, 6 )
+                    |> Maybe.map .value
+                    |> Maybe.withDefault 0
+                    |> Expect.within (Absolute 1.0e-9) 0.489
         ]
 
 
 
--- THE BANDS
+-- THE SCALE
 
 
-theBands : Test
-theBands =
-    describe "the bands, at their boundaries"
-        [ test "the site's grade boundaries, mirrored about zero" <|
+theScale : Test
+theScale =
+    describe "the fixed scale"
+        [ test "0 is an even game, 1 is the far end, and past it clamps" <|
             \_ ->
                 Expect.equal
-                    (List.map Rolls.bandOf
-                        [ 0.4, 0.16, 0.12, 0.08, 0.05, 0.02, 0.019, 0, -0.019, -0.02, -0.05, -0.08, -0.12, -0.16, -0.4 ]
-                    )
-                    [ StrongUp
-                    , StrongUp
-                    , Up
-                    , Up
-                    , SlightUp
-                    , SlightUp
-                    , Neutral
-                    , Neutral
-                    , Neutral
-                    , SlightDown
-                    , SlightDown
-                    , Down
-                    , Down
-                    , StrongDown
-                    , StrongDown
-                    ]
-        , test "a value on a boundary takes the further-out band, as gradeOf does" <|
+                    (List.map Rolls.ramp [ 0, 0.25, 0.489, 1, 1.4, 3, -0.25, -1, -2.6 ])
+                    [ 0, 0.25, 0.489, 1, 1, 1, 0.25, 1, 1 ]
+        , test "it does not look at the other cells: the same equity draws the same bar in any grid" <|
             \_ ->
+                -- The property the whole change turns on. One grid where
+                -- nothing else reaches a twentieth and one where another roll
+                -- is a whole point: +0.25 must draw at exactly the same
+                -- height in both. A scale fitted to each grid's own spread
+                -- would put it near the top of the first.
+                let
+                    height top =
+                        Rolls_.view { config | drawing = Rolls_.Bars } (spread top)
+                            |> Query.fromHtml
+                            |> Query.find [ attr "data-dice" "1-1" ]
+                in
                 Expect.all
-                    [ \_ -> Expect.equal (Rolls.bandOf (0.02 - 0.0001)) Neutral
-                    , \_ -> Expect.equal (Rolls.bandOf 0.02) SlightUp
-                    , \_ -> Expect.equal (Rolls.bandOf (0.08 - 0.0001)) SlightUp
-                    , \_ -> Expect.equal (Rolls.bandOf 0.08) Up
-                    , \_ -> Expect.equal (Rolls.bandOf (0.16 - 0.0001)) Up
-                    , \_ -> Expect.equal (Rolls.bandOf 0.16) StrongUp
+                    [ \_ -> height 0.05 |> Query.has [ attr "height" "36.5" ]
+                    , \_ -> height 1 |> Query.has [ attr "height" "36.5" ]
                     ]
                     ()
-        , test "the boundary survives arithmetic on floats, not just literals" <|
+        , test "the dead zone is exactly where the number stops printing" <|
             \_ ->
-                -- 0.08 arrives as a subtraction, never as a literal
-                Expect.equal (Rolls.bandOf (0.176737 - 0.096737)) Up
+                -- no colour, no hatching, no number and in neither count:
+                -- the four ways of saying nothing cannot disagree
+                Expect.equal
+                    (List.map (\v -> ( Rolls.signName (Rolls.signOf v), Rolls.short v ))
+                        [ 0.006, 0.005, 0.0049, 0, -0.0049, -0.005, -0.006 ]
+                    )
+                    [ ( "up", "+.01" )
+                    , ( "up", "+.01" )
+                    , ( "zero", "0" )
+                    , ( "zero", "0" )
+                    , ( "zero", "0" )
+                    , ( "down", "−.01" )
+                    , ( "down", "−.01" )
+                    ]
+        , test "the dead zone is the one `near` names, not a literal somewhere else" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Expect.equal (Rolls.signOf Rolls.near) Rolls.Up
+                    , \_ -> Expect.equal (Rolls.signOf -Rolls.near) Rolls.Down
+                    ]
+                    ()
         , test "the opening's four pinned rolls land where backgammon says" <|
             \_ ->
                 -- a map that puts 2-1 above 6-6 is inverted
                 Expect.equal
-                    (List.map (\d -> ( Rolls.label d, Maybe.map (.band >> Rolls.bandName) (cellOf d) ))
+                    (List.map
+                        (\d ->
+                            ( Rolls.label d
+                            , Maybe.map (.sign >> Rolls.signName) (cellOf d)
+                            , Maybe.map (.value >> Rolls.short) (cellOf d)
+                            )
+                        )
                         [ ( 6, 6 ), ( 4, 4 ), ( 1, 4 ), ( 1, 2 ) ]
                     )
-                    [ ( "6-6", Just "strong-up" )
-                    , ( "4-4", Just "strong-up" )
-                    , ( "4-1", Just "down" )
-                    , ( "2-1", Just "down" )
+                    [ ( "6-6", Just "up", Just "+.49" )
+                    , ( "4-4", Just "up", Just "+.42" )
+                    , ( "4-1", Just "down", Just "−.01" )
+                    , ( "2-1", Just "zero", Just "0" )
                     ]
         ]
 
@@ -352,11 +391,15 @@ theSort =
                 -- is counted -- the sentence has to say what the picture
                 -- shows or a reader counting the green cells finds two
                 -- missing.
-                Rolls.helped grid.cells |> Expect.equal 7
+                Rolls.helped grid.cells |> Expect.equal 32
         , test "and nothing helps in a grid that is all one band" <|
             \_ ->
-                Rolls.helped (List.map (\c -> { c | band = Rolls.Neutral }) grid.cells)
-                    |> Expect.equal 0
+                Expect.all
+                    [ \_ -> Rolls.hurt grid.cells |> Expect.equal 2
+                    , \_ -> Rolls.helped (List.map (\c -> { c | sign = Rolls.Zero }) grid.cells) |> Expect.equal 0
+                    , \_ -> Rolls.hurt (List.map (\c -> { c | sign = Rolls.Zero }) grid.cells) |> Expect.equal 0
+                    ]
+                    ()
         ]
 
 
@@ -383,7 +426,7 @@ config =
     , tapped = Nothing
     , onTap = Tap
     , mover = "Arie"
-    , words = Rolls_.luck
+    , words = Rolls_.equity
     , attrs = []
     }
 
@@ -409,8 +452,9 @@ theMap =
                     |> Query.findAll [ attr "data-dice" "6-6" ]
                     |> Query.each
                         (Expect.all
-                            [ Query.has [ class "b-strong-up" ]
-                            , Query.has [ attr "data-band" "strong-up" ]
+                            [ Query.has [ class "is-up" ]
+                            , Query.has [ attr "data-sign" "up" ]
+                            , Query.has [ attr "style" "--rl-t:48.9%" ]
                             ]
                         )
         , test "and the worst roll wears its own" <|
@@ -418,7 +462,12 @@ theMap =
                 Rolls_.view config grid
                     |> Query.fromHtml
                     |> Query.findAll [ attr "data-dice" "4-1" ]
-                    |> Query.each (Query.has [ class "b-down" ])
+                    |> Query.each
+                        (Expect.all
+                            [ Query.has [ class "is-down", attr "data-sign" "down" ]
+                            , Query.has [ attr "style" "--rl-t:0.7%" ]
+                            ]
+                        )
         , test "NUMBERS off hides the values" <|
             \_ ->
                 Rolls_.view config grid
@@ -433,7 +482,7 @@ theMap =
                         [ Query.findAll [ class "rl-cell-value" ] >> Query.count (Expect.equal 36)
                         , Query.findAll [ attr "data-dice" "6-6" ]
                             >> Query.first
-                            >> Query.has [ text "+.39" ]
+                            >> Query.has [ text "+.49" ]
                         ]
         , test "the thrown roll is outlined -- in both its cells, when it has two" <|
             \_ ->
@@ -465,7 +514,7 @@ theMap =
                         Rolls_.view { config | tapped = Just ( 4, 1 ) } grid
                             |> Query.fromHtml
                             |> Query.find [ class "rl-said" ]
-                            |> Query.has [ text "4-1 · −0.104 · 2 in 36" ]
+                            |> Query.has [ text "4-1 · −0.007 · 2 in 36" ]
                     , \_ ->
                         bars { config | outlined = Just ( 6, 5 ) }
                             |> Query.findAll [ attr "data-out" "true" ]
@@ -535,12 +584,25 @@ theBars =
             \_ ->
                 bars config
                     |> Expect.all
-                        [ Query.findAll [ Selector.tag "line" ] >> Query.count (Expect.equal 1)
-                        , Query.find [ Selector.tag "line" ] >> Query.has [ attr "y1" "186", attr "y2" "186" ]
+                        [ Query.findAll [ attr "data-zero" "true" ] >> Query.count (Expect.equal 1)
+                        , Query.find [ attr "data-zero" "true" ] >> Query.has [ attr "y1" "186", attr "y2" "186" ]
 
-                        -- 6-6 is the best roll, so its bar runs up to the
-                        -- zero line from above: y + height = 186.
-                        , Query.find [ attr "data-dice" "6-6" ] >> Query.has [ attr "y" "40", attr "height" "146" ]
+                        -- and the ends of the fixed scale are drawn with it,
+                        -- so a short bar is not read as a flat position
+                        , Query.findAll [ Selector.tag "line" ] >> Query.count (Expect.equal 3)
+                        , Query.has [ text "+1", text "−1" ]
+
+                        -- 6-6 is the best roll at +0.489, so on the fixed
+                        -- scale its bar is 0.489 of the 146 it could reach,
+                        -- and it runs up to the zero line: y + height = 186.
+                        , Query.find [ attr "data-dice" "6-6" ] >> Query.has [ attr "y" "114.61", attr "height" "71.39" ]
+
+                        -- and a roll at the end of the scale fills it
+                        , \_ ->
+                            Rolls_.view { config | drawing = Rolls_.Bars } (spread 1.4)
+                                |> Query.fromHtml
+                                |> Query.find [ attr "data-dice" "2-2" ]
+                                |> Query.has [ attr "height" "146" ]
 
                         -- 4-1 is the worst, so its bar hangs from the line
                         , Query.find [ attr "data-dice" "4-1" ] >> Query.has [ attr "y" "186" ]
@@ -578,13 +640,13 @@ theWords =
                 Rolls_.view { config | tapped = Just ( 1, 4 ) } grid
                     |> Query.fromHtml
                     |> Query.find [ class "rl-said" ]
-                    |> Query.has [ text "4-1 · −0.104 · 2 in 36" ]
+                    |> Query.has [ text "4-1 · −0.007 · 2 in 36" ]
         , test "MOVES adds the engine's play to it -- the cell has no room for it" <|
             \_ ->
                 Rolls_.view { config | tapped = Just ( 6, 6 ), moves = True } grid
                     |> Query.fromHtml
                     |> Query.find [ class "rl-said" ]
-                    |> Query.has [ text "6-6: 24/18(2) 13/7(2) · +0.392 · 1 in 36" ]
+                    |> Query.has [ text "6-6: 24/18(2) 13/7(2) · +0.489 · 1 in 36" ]
         , test "the thrown roll is said first, and the tapped one after it" <|
             \_ ->
                 Rolls_.view { config | outlined = Just ( 5, 6 ), tapped = Just ( 1, 4 ) } grid
@@ -606,16 +668,16 @@ theWords =
                 Rolls_.view config grid
                     |> Query.fromHtml
                     |> Query.findAll [ attr "data-dice" "4-1" ]
-                    |> Query.each (Query.has [ attr "aria-label" "4-1 · −0.104 · 2 in 36" ])
+                    |> Query.each (Query.has [ attr "aria-label" "4-1 · −0.007 · 2 in 36" ])
         , test "and the drawing as a whole says the best, the worst and how many help" <|
             \_ ->
                 bars config
                     |> Query.find [ attr "data-rolls" "bars" ]
                     |> Query.has
                         [ attr "aria-label"
-                            ("The 3-ply luck of every roll for Arie."
-                                ++ " Best 6-6 at +0.392, worst 4-1 at −0.104."
-                                ++ " Of 36 rolls, 7 help and 24 hurt."
+                            ("The 3-ply equity of every roll for Arie."
+                                ++ " Best 6-6 at +0.489, worst 4-1 at −0.007."
+                                ++ " Of 36 rolls, 32 ahead and 2 behind."
                             )
                         ]
         , test "the map says the same sentence, so either drawing reads aloud" <|
@@ -623,10 +685,10 @@ theWords =
                 Rolls_.view config grid
                     |> Query.fromHtml
                     |> Query.find [ class "rl-map" ]
-                    |> Query.has [ text "", attr "aria-label" "The 3-ply luck of every roll for Arie. Best 6-6 at +0.392, worst 4-1 at −0.104. Of 36 rolls, 7 help and 24 hurt." ]
+                    |> Query.has [ text "", attr "aria-label" "The 3-ply equity of every roll for Arie. Best 6-6 at +0.489, worst 4-1 at −0.007. Of 36 rolls, 32 ahead and 2 behind." ]
         , test "a comparison calls its numbers something else" <|
             \_ ->
                 bars { config | words = Rolls_.difference }
                     |> Query.find [ attr "data-rolls" "bars" ]
-                    |> Query.has [ attr "aria-label" "The 3-ply difference of every roll for Arie. Best 6-6 at +0.392, worst 4-1 at −0.104. Of 36 rolls, 7 better and 24 worse." ]
+                    |> Query.has [ attr "aria-label" "The 3-ply difference of every roll for Arie. Best 6-6 at +0.489, worst 4-1 at −0.007. Of 36 rolls, 32 better and 2 worse." ]
         ]
