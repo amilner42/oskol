@@ -21,7 +21,7 @@ defmodule Oskol.Game.ClockTest do
     {:ok, _p2, started} = Game.join_game(game_id, "Bob", nil)
 
     assert GameKit.player_update(started.instance, p1)["clock"]["label"] ==
-             "3 min, 12 s delay every turn"
+             "3 min a game, 12 s delay every turn"
   end
 
   test "updates carry the clock and a game with no clock has it disabled" do

@@ -327,7 +327,7 @@ defmodule Oskol.Game.RoomTest do
       [new_p1 | _] = rematch.seat_order
       update = GameKit.player_update(rematch.instance, new_p1)
       assert update["clock"]["enabled"] == true
-      assert update["clock"]["label"] == "3 min, 12 s delay every turn"
+      assert update["clock"]["label"] == "3 min a game, 12 s delay every turn"
       refute GameKit.finished?(rematch.instance)
     end
   end

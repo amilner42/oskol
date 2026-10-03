@@ -119,7 +119,8 @@ pub fn control_label(control: Control) -> String {
     Bronstein(base, delay) ->
       minutes(base) <> ", " <> seconds(delay) <> " delay"
     PerMove(ms) -> seconds(ms) <> " per move"
-    PerPeriod(base) -> minutes(base)
+    // A bank refilled every period: in words, a game's worth.
+    PerPeriod(base) -> minutes(base) <> " a game"
   }
 }
 

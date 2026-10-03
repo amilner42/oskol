@@ -217,7 +217,7 @@ pub fn a_per_period_bank_refills_and_nothing_else_does_test() {
   let refilled = clock.refill(c, 42_000)
   assert clock.remaining(refilled, a, 50_000) == 60_000
   assert clock.running(refilled, a) == False
-  assert clock.label(c) == "1 min, 12 s delay every turn"
+  assert clock.label(c) == "1 min a game, 12 s delay every turn"
   // A bank for the whole session is left alone.
   let fixed =
     clock.new(clock.Fischer(60_000, 0), [a, b])
