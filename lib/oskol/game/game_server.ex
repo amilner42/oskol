@@ -534,7 +534,7 @@ defmodule Oskol.Game.GameServer do
     case apply_action(state, player_id, action) do
       {:ok, new_state, events} ->
         new_state = Bot.think(new_state)
-        broadcast(new_state, events)
+        broadcast(new_state, events, player_id)
         grade_turn(new_state, events)
         {:reply, {:ok, new_state, events}, new_state, @timeout}
 
@@ -647,7 +647,7 @@ defmodule Oskol.Game.GameServer do
     case apply_action(state, player_id, action) do
       {:ok, new_state, events} ->
         new_state = Bot.think(new_state)
-        broadcast(new_state, events)
+        broadcast(new_state, events, player_id)
         grade_turn(new_state, events)
         {:noreply, new_state, @timeout}
 
@@ -1210,11 +1210,18 @@ defmodule Oskol.Game.GameServer do
     :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
   end
 
-  defp broadcast(%GameServerState{} = state, events) do
+  # Every change to the room goes to every connection on it, each of which
+  # projects it for its own seat (`OskolWeb.GameChannel`). `by` is the seat
+  # whose action made the change, nil when the room itself did (a start, a
+  # clock, a seat coming or going): a channel pushes its own seat's actions at
+  # once and coalesces a burst of somebody else's -- a mover staging checkers
+  # quickly reaches the opponent as their ghosts, not as a flood. `id` names
+  # this one broadcast, so a subscriber that hears it twice can tell.
+  defp broadcast(%GameServerState{} = state, events, by \\ nil) do
     Phoenix.PubSub.broadcast(
       Oskol.PubSub,
       topic(state.game_id),
-      {:game_state_updated, state, events}
+      {:game_state_updated, state, events, %{by: by, id: make_ref()}}
     )
   end
 end

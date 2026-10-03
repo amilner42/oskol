@@ -111,8 +111,10 @@ async function main() {
       } catch (_) { break; }
       await sleep(400);
     }
-    // Moves are staged privately; the turn ends with PLAY.
-    if ((await waiter.locator('.checker').count()) !== 30) throw new Error('opponent view should not change during staging');
+    // Staged moves reach the opponent as ghosts over the committed board,
+    // which stays as it was; the turn ends with PLAY.
+    if ((await waiter.locator('.checker:not(.ghost)').count()) !== 30) throw new Error("the opponent's committed board should not change during staging");
+    await waiter.waitForSelector('.checker.ghost', { timeout: 3000 });
     await mover.waitForSelector('#bg-action-play', { timeout: 10000 });
     await mover.click('#bg-action-play');
     await waiter.waitForSelector('button:has-text("ROLL")', { timeout: 10000 });

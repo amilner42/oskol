@@ -189,6 +189,10 @@ if [[ "$mode" == "--browser" ]]; then
   # (engine.exs, on ANALYSIS_STUB_PORT): its dice land and its think dot
   # stays lit before any checker of its moves.
   node playwright/test-sage-pacing/test.js
+  # Two players: the mover's staged checkers reach the other browser as
+  # ghosts within a second, an undo takes one back, a reload mid-turn keeps
+  # it, and PLAY leaves the played position with none.
+  node playwright/test-ghost-opponent/test.js
   node playwright/test-guest-prefill/test.js
   # The clock tiers in the sentence and PLAY's dialog at four sizes, every
   # box held while the format changes; the lobby and the invite name them.

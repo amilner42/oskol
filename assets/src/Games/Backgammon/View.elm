@@ -1497,7 +1497,7 @@ viewPoint board isTop index point =
                 Nothing ->
                     []
     in
-    div
+    Keyed.node "div"
         ([ classList
             [ ( "bg-point flex flex-col items-center gap-px px-px", True )
             , ( "top", isTop )
@@ -1527,75 +1527,163 @@ viewPoint board isTop index point =
             ++ click
             ++ board.zone ("point:" ++ id)
         )
-        (viewStackTinted board.landed.color (Dict.get point board.landed.points |> Maybe.withDefault 0) tokens)
-
-
-viewStack : List Token -> List (Html Msg)
-viewStack tokens =
-    let
-        shown =
-            List.take 5 tokens
-
-        extra =
-            List.length tokens - 5
-
-        lastIndex =
-            List.length shown - 1
-    in
-    List.indexedMap
-        (\i t ->
-            viewChecker
-                (if i == lastIndex && extra > 0 then
-                    Just (extra + 5)
-
-                 else
-                    Nothing
-                )
-                t
+        (viewLayers
+            { landedColor = board.landed.color
+            , landed = Dict.get point board.landed.points |> Maybe.withDefault 0
+            , ghosts = ghostsOf board.ctx.scene
+            , zone = "point:" ++ id
+            }
+            tokens
         )
-        shown
 
 
-{-| A point's stack with its top `n` checkers marked as the ones the last
-turn landed there, as long as they are the mover's `color`. A point holds
-one colour at a time: if its top is the other colour, what landed there
-has been hit since (the viewer staging a hit on a blot the last turn left).
+{-| The mover's staging as the opponent and a spectator see it (the scene's
+`ghosts`, which only a watcher's scene carries, and only while something is
+staged): the committed board stays where it is, each checker the staging
+moves somewhere new is a ghost there, and the checkers it takes away keep
+their place, ringed, so the table reads "these left here, for there". The
+mover's own board never has any: their staging is their board.
 -}
-viewStackTinted : String -> Int -> List Token -> List (Html Msg)
-viewStackTinted color n tokens =
-    let
-        shown =
-            List.take 5 tokens
+type alias Ghosts =
+    { arrive : List Ghost
+    , leave : List { zone : String, color : String, count : Int }
+    }
 
-        extra =
-            List.length tokens - 5
+
+type alias Ghost =
+    { id : String, color : String, zone : String }
+
+
+ghostsOf : Scene -> Ghosts
+ghostsOf scene =
+    Protocol.sceneData ghostsDecoder "ghosts" scene
+        |> Maybe.withDefault { arrive = [], leave = [] }
+
+
+{-| How many ghosts a tray has: checkers the staging bears off.
+-}
+offGhosts : String -> Scene -> Int
+offGhosts zone scene =
+    (ghostsOf scene).arrive |> List.filter (\g -> g.zone == zone) |> List.length
+
+
+ghostsDecoder : D.Decoder Ghosts
+ghostsDecoder =
+    D.map2 Ghosts
+        (D.field "arrive"
+            (D.list
+                (D.map3 Ghost
+                    (D.field "id" D.string)
+                    (D.field "color" D.string)
+                    (D.field "zone" D.string)
+                )
+            )
+        )
+        (D.field "leave"
+            (D.list
+                (D.map3 (\z c n -> { zone = z, color = c, count = n })
+                    (D.field "zone" D.string)
+                    (D.field "color" D.string)
+                    (D.field "count" D.int)
+                )
+            )
+        )
+
+
+{-| How one place's stack is drawn: the checkers the last turn landed (as
+long as they are `landedColor`), and the staging's ghosts and leavers there.
+-}
+type alias Layers =
+    { landedColor : String
+    , landed : Int
+    , ghosts : Ghosts
+    , zone : String
+    }
+
+
+plainLayers : String -> Ghosts -> Layers
+plainLayers zone ghosts =
+    { landedColor = "", landed = 0, ghosts = ghosts, zone = zone }
+
+
+{-| A stack, keyed by checker so a ghost that arrives is a new element and
+plays its arrival once. Five checkers fit a point; a taller stack shows
+five, the top one of the committed checkers carrying their full count. The
+ghosts sit on top of it and take their room from the committed checkers
+shown, never from the point's height, so nothing on the board moves when
+one comes or goes.
+-}
+viewLayers : Layers -> List Token -> List ( String, Html Msg )
+viewLayers layers tokens =
+    let
+        ghosts =
+            layers.ghosts.arrive
+                |> List.filter (\g -> g.zone == layers.zone)
+                |> List.take 4
+
+        leaving =
+            layers.ghosts.leave
+                |> List.filter (\l -> l.zone == layers.zone)
+                |> List.map .count
+                |> List.sum
+
+        room =
+            5 - List.length ghosts
+
+        shown =
+            List.take room tokens
+
+        total =
+            List.length tokens
 
         lastIndex =
             List.length shown - 1
+
+        colorOfToken t =
+            Protocol.tokenProp D.string "color" t |> Maybe.withDefault "white"
     in
     List.indexedMap
         (\i t ->
-            viewCheckerWith (i > lastIndex - n && (Protocol.tokenProp D.string "color" t |> Maybe.withDefault "white") == color)
-                (if i == lastIndex && extra > 0 then
-                    Just (extra + 5)
+            ( t.id
+            , viewCheckerAs
+                { justMoved = i > lastIndex - layers.landed && colorOfToken t == layers.landedColor
+                , leaving = i > lastIndex - leaving
+                , count =
+                    if i == lastIndex && total > List.length shown then
+                        Just total
 
-                 else
-                    Nothing
-                )
+                    else
+                        Nothing
+                }
                 t
+            )
         )
         shown
+        ++ List.map (\g -> ( "ghost-" ++ g.id, viewGhost g )) ghosts
+
+
+{-| A checker the mover has staged here and not yet played: translucent, in
+the mover's colour, drawn and never tapped.
+-}
+viewGhost : Ghost -> Html Msg
+viewGhost ghost =
+    div
+        [ classList
+            [ ( "checker ghost relative shrink-0", True )
+            , ( "white", ghost.color == "white" )
+            , ( "black", ghost.color /= "white" )
+            ]
+        , attribute "data-ghost" ghost.id
+        , attribute "aria-hidden" "true"
+        ]
+        []
 
 
 {-| A checker; the top one of a tall stack carries the stack's full count.
+`leaving` rings it as one the mover's staging takes off this place.
 -}
-viewChecker : Maybe Int -> Token -> Html Msg
-viewChecker =
-    viewCheckerWith False
-
-
-viewCheckerWith : Bool -> Maybe Int -> Token -> Html Msg
-viewCheckerWith justMoved count token =
+viewCheckerAs : { justMoved : Bool, leaving : Bool, count : Maybe Int } -> Token -> Html Msg
+viewCheckerAs look token =
     let
         color =
             Protocol.tokenProp D.string "color" token |> Maybe.withDefault "white"
@@ -1605,11 +1693,12 @@ viewCheckerWith justMoved count token =
             [ ( "checker relative shrink-0 transition-transform", True )
             , ( "white", color == "white" )
             , ( "black", color /= "white" )
-            , ( "just-moved", justMoved )
+            , ( "just-moved", look.justMoved && not look.leaving )
+            , ( "leaving", look.leaving )
             ]
         , title token.id
         ]
-        (case count of
+        (case look.count of
             Just n ->
                 [ span [ class "checker-count" ] [ text (String.fromInt n) ] ]
 
@@ -1634,6 +1723,10 @@ viewBarColumn board themId =
 
         myTokens =
             Protocol.zoneTokens ("bar:" ++ seat) board.ctx.scene
+
+        -- a checker the mover's staging hits waits here as a ghost
+        ghosts =
+            ghostsOf board.ctx.scene
 
         mine =
             seat == board.ctx.playerId
@@ -1670,14 +1763,14 @@ viewBarColumn board themId =
             ++ click
         )
         [ div (class "bg-bar-row theirs flex flex-col items-center justify-between gap-px w-full py-1" :: board.zone ("bar:" ++ themId))
-            [ div [ class "flex flex-col items-center gap-px w-full" ] (viewStack theirTokens)
+            [ Keyed.node "div" [ class "flex flex-col items-center gap-px w-full" ] (viewLayers (plainLayers ("bar:" ++ themId) ghosts) theirTokens)
             , viewCube board Theirs
             ]
         , div [ class "bg-bar-row centre flex items-center justify-center w-full" ]
             [ viewCube board Centred ]
         , div (class "bg-bar-row mine flex flex-col-reverse items-center justify-between gap-px w-full py-1" :: board.zone ("bar:" ++ seat))
-            [ div [ class "flex flex-col-reverse items-center gap-px w-full" ]
-                (viewStack myTokens)
+            [ Keyed.node "div" [ class "flex flex-col-reverse items-center gap-px w-full" ]
+                (viewLayers (plainLayers ("bar:" ++ seat) ghosts) myTokens)
             , viewCube board Mine
             ]
         ]
@@ -1719,9 +1812,21 @@ viewTray board ownerId isMine =
             else
                 "theirs"
 
+        -- checkers the mover's staging bears off: ghost sticks after the
+        -- committed ones
+        staged =
+            offGhosts ("off:" ++ ownerId) board.ctx.scene
+
         holder index =
+            let
+                filled =
+                    clamp 0 5 (count - 5 * index)
+            in
             div [ class "off-holder flex flex-row items-stretch" ]
-                (List.repeat (clamp 0 5 (count - 5 * index)) (div [ class ("off-stick " ++ color) ] []))
+                (List.repeat filled (div [ class ("off-stick " ++ color) ] [])
+                    ++ List.repeat (clamp 0 (5 - filled) (count + staged - 5 * index - filled))
+                        (div [ class ("off-stick ghost " ++ color), attribute "data-ghost" "off" ] [])
+                )
 
         -- an editor board's tray is a place too (`viewEdit`), and says its
         -- count in words, always, in a slot of its own
@@ -1869,10 +1974,18 @@ viewTrayColumn board =
                     else
                         []
 
+                -- checkers the mover's staging bears off, as ghosts after
+                -- the committed ones
+                staged =
+                    offGhosts ("off:" ++ ownerId) board.ctx.scene
+
                 -- One sliver: the i-th checker off, counted from the outer end.
                 sliver i =
                     if i < n then
                         div [ classList [ ( "off-sliver " ++ color, True ), ( "just-moved", i >= n - landed ) ] ] []
+
+                    else if i < n + staged then
+                        div [ class ("off-sliver ghost " ++ color), attribute "data-ghost" "off" ] []
 
                     else
                         div [ class "off-sliver empty" ] []
@@ -3248,9 +3361,14 @@ lastLanded live =
                             recordOf live.scene
                     in
                     lastTurnIn entries |> Maybe.andThen (\i -> entries |> List.drop i |> List.head)
+        -- While the mover stages, the yellow on a watcher's board says what
+        -- the staging takes away (`viewLayers`); the last turn's own rings
+        -- would read the same, so they wait for the play.
+        staging =
+            live.model.viewing == Nothing && not (List.isEmpty (ghostsOf live.scene).arrive)
     in
-    case focus of
-        Just (TurnEntry turn) ->
+    case ( focus, staging ) of
+        ( Just (TurnEntry turn), False ) ->
             { color = colorOf (Protocol.findPlayer turn.player live.scene)
             , points = List.foldl (\p acc -> Dict.update p (\c -> Just (1 + Maybe.withDefault 0 c)) acc) Dict.empty turn.landed
             , off = List.map offIn turn.moves |> List.sum
@@ -3475,11 +3593,13 @@ stillScene scene turn =
 
         -- Everything that describes the live moment goes: a resignation on
         -- offer, the pause between games (whose result the bands would
-        -- print beside this turn, in place of its dice) and a winner.
+        -- print beside this turn, in place of its dice), the mover's
+        -- staging drawn as ghosts, and a winner.
         data =
             D.decodeValue (D.dict D.value) scene.data
                 |> Result.withDefault Dict.empty
                 |> Dict.remove "between_games"
+                |> Dict.remove "ghosts"
                 |> Dict.insert "winner_id" E.null
                 |> Dict.insert "to_move" (E.string turn.player)
                 |> Dict.insert "to_act" E.null

@@ -52,8 +52,8 @@ defmodule Oskol.Game.ClockTest do
     assert running == [mover]
 
     # First broadcast is the start itself; the next one is the forfeit.
-    assert_receive {:game_state_updated, _started, []}
-    assert_receive {:game_state_updated, %{instance: instance}, events}, 14_000
+    assert_receive {:game_state_updated, _started, [], _by}
+    assert_receive {:game_state_updated, %{instance: instance}, events, _by}, 14_000
     assert GameKit.finished?(instance)
     assert {:finished, [^waiting]} = GameKit.outcome(instance)
     assert Enum.any?(events, &(&1 |> elem(0) == :message))

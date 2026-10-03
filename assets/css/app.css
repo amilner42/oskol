@@ -1088,6 +1088,32 @@ a.q-card:hover, a.q-card:focus-visible {
      which sits too close to some felts), with a thin dark edge outside it */
   box-shadow: 0 0 0 2.5px #ffd23f, 0 0 0 4px rgba(20, 16, 12, 0.9);
 }
+/* The mover's staging on the opponent's and a spectator's board: the
+   checkers it takes off a place keep their place there, ringed in the same
+   yellow, and each one it puts somewhere new is a ghost: translucent, in
+   its colour, settling in quickly when it arrives. A ghost is drawn, never
+   tapped. Its room in the stack is reserved by the stack itself (five
+   checkers a point, ghosts included), so nothing moves when one comes. */
+.checker.leaving {
+  box-shadow: 0 0 0 2.5px #ffd23f, 0 0 0 4px rgba(20, 16, 12, 0.9);
+}
+.checker.ghost {
+  /* half its colour, and a dashed rim of the yellow that rings where it
+     came from, so a dark ghost still reads on a dark felt */
+  border: 2px dashed #ffd23f;
+  box-shadow: none;
+  pointer-events: none;
+  animation: ghost-in 180ms ease-out both;
+}
+.checker.ghost.white { background: color-mix(in oklab, var(--bg-checker-light) 60%, transparent); }
+.checker.ghost.black { background: color-mix(in oklab, var(--bg-checker-dark) 65%, transparent); }
+@keyframes ghost-in {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .checker.ghost { animation: none; }
+}
 /* The bar: the frame runs through the middle of the board; checkers hit
    sit on it, and the cube hangs on it. Its three rows are the halves'
    own -- points, band, points -- so the opponent's hit checkers hang
@@ -1101,6 +1127,7 @@ a.q-card:hover, a.q-card:focus-visible {
 /* A checker on the bar is the size of one on a point, not of the bar. */
 .bg-bar .checker { width: calc((var(--bg-pw) - 2px) * 0.84); } /* a point has 1px of side padding */
 .bg-bar .checker.black { border-color: var(--bg-checker-dark-ink); }
+.bg-bar .checker.ghost { border-color: #ffd23f; }
 /* The bear-off trays on a phone held upright, and on the still boards
    (the replay, a puzzle, the analysis board) everywhere: one per player,
    in that player's identity bar, three holders of five laid along it the
@@ -1135,6 +1162,7 @@ a.q-card:hover, a.q-card:focus-visible {
 }
 .off-stick.white { background: var(--bg-checker-light); box-shadow: 1px 0 0 rgba(0, 0, 0, 0.35); }
 .off-stick.black { background: var(--bg-checker-dark); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55); }
+.off-stick.ghost { opacity: 0.45; } /* staged off by the mover, not yet played */
 .off-count {
   margin-left: 2px;
   padding: 1px 4px; border-radius: 3px;
@@ -1213,6 +1241,8 @@ a.q-card:hover, a.q-card:focus-visible {
   .off-sliver.black { background: var(--bg-checker-dark); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45); }
   /* the last turn's own checkers off, ringed the way a landed checker is */
   .off-sliver.just-moved { box-shadow: 0 0 0 1.5px #ffd23f; }
+  /* one the mover has staged off and not yet played */
+  .off-sliver.ghost { opacity: 0.45; }
   .bg-off-mid { padding: 3px 0; pointer-events: none; }
   .off-plate {
     font-size: 7px; line-height: 1;

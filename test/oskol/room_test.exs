@@ -132,7 +132,7 @@ defmodule Oskol.Game.RoomTest do
 
       send(pid, :stop)
       assert eventually(fn -> not Game.get_server_state(game_id).connections[p1].connected end)
-      assert_receive {:game_state_updated, %{instance: nil}, []}
+      assert_receive {:game_state_updated, %{instance: nil}, [], _by}
 
       # A name is not a credential, and neither is the public player id.
       assert {:error, :no_seat} = Game.attach(game_id, "Alice", self())

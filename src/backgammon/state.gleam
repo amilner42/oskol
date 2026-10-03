@@ -64,7 +64,8 @@ pub type GameState {
     /// landed, and true until the mover commits the empty turn. Only
     /// meaningful in `Moving`; read it through `no_moves`.
     turn_dead: Bool,
-    /// The board as the opponent sees it: before any move staged this turn.
+    /// The committed board: before any move staged this turn. The opponent
+    /// and spectators see it, with the staging drawn over it as ghosts.
     turn_board: Board,
     /// Moves staged this turn, oldest first. Committed by `play`.
     staged: List(Staged),
@@ -370,8 +371,9 @@ pub fn turn_dice(state: GameState) -> List(Int) {
   }
 }
 
-/// The board this viewer may see: the mover's own staging, or the board as
-/// it stood when the turn began for everyone else.
+/// The board on this viewer's points: the mover's own staging, or the
+/// committed board as it stood when the turn began for everyone else (who
+/// see the staging as a layer of ghosts over it: `projection.ghosts_data`).
 pub fn visible_board(state: GameState, viewer: Option(PlayerId)) -> Board {
   case state.phase {
     Moving(c, _) ->

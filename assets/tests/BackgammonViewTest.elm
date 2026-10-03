@@ -2744,15 +2744,25 @@ perFixture fixture =
                                         |> List.filter (\token -> token.kind == "checker")
                                         |> List.length
 
+                                -- a watcher's board has the mover's staging over it
+                                -- as ghosts: each zone's ghosts sit on its stack
+                                -- and take their room from the committed checkers
+                                ghostZones =
+                                    Protocol.sceneData (D.at [ "arrive" ] (D.list (D.field "zone" D.string))) "ghosts" u.scene
+                                        |> Maybe.withDefault []
+
+                                ghostsIn zone =
+                                    ghostZones |> List.filter ((==) zone) |> List.length |> min 4
+
                                 renderedCheckerCount =
                                     checkerZones
-                                        |> List.map (.tokens >> List.length >> min 5)
+                                        |> List.map (\z -> min (List.length z.tokens) (5 - ghostsIn z.id) + ghostsIn z.id)
                                         |> List.sum
 
                                 offCount =
                                     u.scene.zones
                                         |> List.filter (.id >> String.startsWith "off:")
-                                        |> List.map .count
+                                        |> List.map (\z -> z.count + ghostsIn z.id)
                                         |> List.sum
 
                                 tallCounts =

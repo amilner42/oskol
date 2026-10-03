@@ -1,5 +1,6 @@
-//// Staged turns: moves are private until played, can be undone, and a turn
-//// can only be played once every usable die is used.
+//// Staged turns: moves are staged, never committed, until played; everyone
+//// else sees them as ghosts over the committed board; they can be undone,
+//// and a turn can only be played once every usable die is used.
 
 import backgammon/board.{Bar, Black, Off, Point, White}
 import backgammon/engine
@@ -11,6 +12,7 @@ import gamekit/game.{Seat}
 import gamekit/rng
 import gamekit/scene
 import gleam/dict
+import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
@@ -83,14 +85,15 @@ fn open_board() -> board.Board {
 pub fn staged_moves_are_private_until_played_test() {
   let s = position(1, open_board(), [5, 3])
   let #(s, events) = apply(s, "p1", engine.MoveChecker(Point(13), Point(8)))
-  // The mover sees the move; the opponent and a spectator see the turn's start
+  // The mover sees the move; the opponent and a spectator see the committed
+  // board, the turn's start, with the move over it as a ghost (below)
   let mine = backgammon.game().scene(s, scene.Player("p1"))
   let theirs = backgammon.game().scene(s, scene.Player("p2"))
   let watching = backgammon.game().scene(s, scene.Spectator)
   assert white_at(mine, 13) == 1 && white_at(mine, 8) == 2
   assert white_at(theirs, 13) == 2 && white_at(theirs, 8) == 1
   assert white_at(watching, 13) == 2
-  // The opponent's dice show nothing used yet; the mover's show one die used
+  // Everyone sees which dice the staging has used: it is on the table
   let used = fn(sc: scene.Scene) {
     let assert Ok(z) = scene.find_zone(sc, "dice")
     list.filter(z.tokens, fn(t) {
@@ -98,7 +101,7 @@ pub fn staged_moves_are_private_until_played_test() {
     })
     |> list.length
   }
-  assert used(mine) == 1 && used(theirs) == 0
+  assert used(mine) == 1 && used(theirs) == 1 && used(watching) == 1
   // Staging events say nothing about the move itself
   assert events
     == [
@@ -436,4 +439,139 @@ pub fn a_spent_double_fades_from_the_left_test() {
   assert used_ids(s) == ["die:0", "die:1"]
   let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(10), Point(7)))
   assert used_ids(s) == ["die:0", "die:1", "die:2"]
+}
+
+// ---------- Ghosts: the staging as the opponent and spectators see it ----------
+
+type Ghosts {
+  Ghosts(
+    arrive: List(#(String, String, String)),
+    leave: List(#(String, String, Int)),
+  )
+}
+
+/// The scene's ghost layer, if it has one: each arriving ghost as
+/// `#(id, color, zone)`, each place checkers leave as `#(zone, color, count)`.
+fn ghosts(sc: scene.Scene) -> Result(Ghosts, Nil) {
+  case list.key_find(sc.data, "ghosts") {
+    Error(Nil) -> Error(Nil)
+    Ok(value) -> {
+      let arrive = {
+        use id <- decode.field("id", decode.string)
+        use color <- decode.field("color", decode.string)
+        use zone <- decode.field("zone", decode.string)
+        decode.success(#(id, color, zone))
+      }
+      let leave = {
+        use zone <- decode.field("zone", decode.string)
+        use color <- decode.field("color", decode.string)
+        use count <- decode.field("count", decode.int)
+        decode.success(#(zone, color, count))
+      }
+      let decoder = {
+        use a <- decode.field("arrive", decode.list(arrive))
+        use l <- decode.field("leave", decode.list(leave))
+        decode.success(Ghosts(a, l))
+      }
+      let assert Ok(g) = json.parse(json.to_string(value), decoder)
+      Ok(g)
+    }
+  }
+}
+
+fn views(s: state.GameState) -> #(scene.Scene, scene.Scene, scene.Scene) {
+  #(
+    backgammon.game().scene(s, scene.Player("p1")),
+    backgammon.game().scene(s, scene.Player("p2")),
+    backgammon.game().scene(s, scene.Spectator),
+  )
+}
+
+pub fn watchers_see_staged_moves_as_ghosts_over_the_committed_board_test() {
+  // White has 13 (w1, w2) and 8 (w3), and rolls 5-3
+  let s = position(1, open_board(), [5, 3])
+
+  // Nothing staged: nobody has a ghost layer
+  let #(mine, theirs, watching) = views(s)
+  assert ghosts(mine) == Error(Nil)
+  assert ghosts(theirs) == Error(Nil)
+  assert ghosts(watching) == Error(Nil)
+
+  // 13/8: the top checker of 13 is a ghost on 8, and 13 is one short
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(13), Point(8)))
+  let #(mine, theirs, watching) = views(s)
+  let one =
+    Ghosts(arrive: [#("w2", "white", "point:8")], leave: [
+      #("point:13", "white", 1),
+    ])
+  assert ghosts(mine) == Error(Nil)
+  assert ghosts(theirs) == Ok(one)
+  assert ghosts(watching) == Ok(one)
+  // ...drawn over the committed board, which has not moved
+  assert white_at(theirs, 13) == 2 && white_at(theirs, 8) == 1
+  assert white_at(watching, 13) == 2 && white_at(watching, 8) == 1
+  // The mover's own board is the staging, as before
+  assert white_at(mine, 13) == 1 && white_at(mine, 8) == 2
+  // A ghost is never a tap for anyone but the mover: the watcher has no move
+  assert !list.contains(names(s, "p2"), "move")
+  assert list.contains(names(s, "p1"), "move")
+
+  // 8/5 on: the net path, 13/5. Point 8 lost one and gained one, so it
+  // shows nothing; the ghost is on 5.
+  let #(s2, _) = apply(s, "p1", engine.MoveChecker(Point(8), Point(5)))
+  let #(_, theirs2, watching2) = views(s2)
+  let net =
+    Ghosts(arrive: [#("w3", "white", "point:5")], leave: [
+      #("point:13", "white", 1),
+    ])
+  assert ghosts(theirs2) == Ok(net)
+  assert ghosts(watching2) == Ok(net)
+
+  // UNDO takes the last ghost back, and the next undo the first
+  let #(s3, _) = apply(s2, "p1", engine.Undo)
+  let #(_, theirs3, _) = views(s3)
+  assert ghosts(theirs3) == Ok(one)
+  let #(s4, _) = apply(s3, "p1", engine.Undo)
+  let #(_, theirs4, watching4) = views(s4)
+  assert ghosts(theirs4) == Error(Nil)
+  assert ghosts(watching4) == Error(Nil)
+
+  // PLAY commits: the played position, for everyone, with no ghosts
+  let #(played, _) = apply(s2, "p1", engine.Play)
+  let #(mine, theirs, watching) = views(played)
+  assert ghosts(mine) == Error(Nil)
+  assert ghosts(theirs) == Error(Nil)
+  assert ghosts(watching) == Error(Nil)
+  assert white_at(theirs, 13) == 1 && white_at(theirs, 8) == 1
+  assert white_at(theirs, 5) == 1 && white_at(watching, 5) == 1
+}
+
+pub fn a_staged_hit_puts_a_ghost_on_the_bar_test() {
+  // White on 13 (w1, w2); a Black blot on 10 (b1) and two on 1 (b2, b3)
+  let b =
+    setup([
+      #(White, Point(13), 2),
+      #(Black, Point(10), 1),
+      #(Black, Point(1), 2),
+    ])
+  let s = position(1, b, [3, 1])
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(13), Point(10)))
+  let #(mine, theirs, watching) = views(s)
+  let hit =
+    Ghosts(
+      arrive: [#("w2", "white", "point:10"), #("b1", "black", "bar:p2")],
+      leave: [#("point:13", "white", 1), #("point:10", "black", 1)],
+    )
+  assert ghosts(mine) == Error(Nil)
+  assert ghosts(theirs) == Ok(hit)
+  assert ghosts(watching) == Ok(hit)
+  // The committed board still has the blot on 10 and nobody on the bar
+  assert scene.zone_token_ids(theirs, "point:10") == ["b1"]
+  assert scene.zone_token_ids(theirs, "bar:p2") == []
+  // The mover's board has the hit made
+  assert scene.zone_token_ids(mine, "bar:p2") == ["b1"]
+  // Undone, the blot is back and the bar ghost gone
+  let #(s, _) = apply(s, "p1", engine.Undo)
+  let #(_, theirs, _) = views(s)
+  assert ghosts(theirs) == Error(Nil)
 }

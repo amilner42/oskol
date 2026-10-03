@@ -14,11 +14,16 @@ pub const slug = "backgammon"
 
 pub fn build(state: GameState, viewer: Viewer) -> Scene {
   let viewer_id = scene.viewer_id(viewer)
-  // Only the mover sees their staged moves; everyone else sees the board as
-  // it was when the turn began.
+  // The mover's board is their staging: the checkers stand where they put
+  // them. Everyone else -- the opponent, a spectator -- keeps the board as
+  // it was when the turn began, the committed position, with the staging
+  // drawn over it as ghosts (`ghosts_data`): nothing is committed until
+  // PLAY, but a real table shows a player pushing checkers about, and so
+  // does this one.
   let is_mover = viewer_id != None && state.to_move(state) == viewer_id
   // Read off the real state before the board is swapped for this viewer's.
   let no_moves = state.no_moves(state)
+  let ghosts = ghosts_data(state, is_mover)
   let state =
     state.GameState(..state, board: state.visible_board(state, viewer_id))
   // The record of the game on the board, oldest first (the state keeps the
@@ -32,9 +37,10 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
     zones: list.flatten([
       point_zones(state),
       player_zones(state),
-      [dice_zone(state, is_mover), cube_zone(state)],
+      [dice_zone(state), cube_zone(state)],
     ]),
     data: list.flatten([
+      ghosts,
       resign_offer_data(state),
       between_games_data(state),
       [
@@ -74,17 +80,7 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
             None -> False
           }),
         ),
-        #(
-          "dice",
-          json.array(
-            canonical_dice(case state.phase, is_mover {
-              // Which dice are used is part of the private staging
-              state.Moving(_, _), False -> state.turn_dice(state)
-              _, _ -> state.dice_left(state)
-            }),
-            json.int,
-          ),
-        ),
+        #("dice", json.array(canonical_dice(state.dice_left(state)), json.int)),
         #("last_roll", json.array(canonical_dice(state.last_roll), json.int)),
         #("target", json.int(state.config.target)),
         #("game_number", json.int(state.game_number)),
@@ -156,6 +152,87 @@ pub fn record_json(state: GameState) -> json.Json {
       }),
     ),
   ])
+}
+
+/// The mover's staging as everyone else sees it: the committed board stays
+/// on the points, and this layer says what the staged moves would change.
+/// `arrive` is a ghost for every checker the staging puts somewhere it is
+/// not on the committed board (the mover's checker on its new point, a
+/// checker it hit on its owner's bar, one borne off in the tray); `leave`
+/// says how many checkers of a colour the staging takes off a place, the
+/// top ones of its stack. Both are net: a checker moved twice is one ghost
+/// where it ends, and a point a checker passed through shows nothing.
+///
+/// Only a watcher gets it -- the mover's own board already is the staging --
+/// and only while something is staged, so a scene without staging reads
+/// exactly as before. It is drawn, never tapped: the mover's moves are the
+/// mover's.
+fn ghosts_data(state: GameState, is_mover: Bool) -> List(#(String, json.Json)) {
+  case state.phase, state.staged, is_mover {
+    state.Moving(_, _), [_, ..], False -> {
+      let places =
+        list.flat_map(state.order, fn(id) {
+          let color = color_for(state, id)
+          list.map([Bar, Off, ..list.map(list.range(1, 24), Point)], fn(loc) {
+            #(color, loc, board.zone_id(loc, id))
+          })
+        })
+      let changes =
+        list.map(places, fn(place) {
+          let #(color, loc, zone) = place
+          let before = board.checkers_at(state.turn_board, color, loc)
+          let after = board.checkers_at(state.board, color, loc)
+          #(color, zone, before, after)
+        })
+      let arrive =
+        list.flat_map(changes, fn(change) {
+          let #(color, zone, before, after) = change
+          let net = list.length(after) - list.length(before)
+          case net > 0 {
+            True ->
+              after
+              |> list.filter(fn(id) { !list.contains(before, id) })
+              |> list.reverse
+              |> list.take(net)
+              |> list.reverse
+              |> list.map(fn(id) {
+                json.object([
+                  #("id", json.string(id)),
+                  #("color", json.string(board.color_name(color))),
+                  #("zone", json.string(zone)),
+                ])
+              })
+            False -> []
+          }
+        })
+      let leave =
+        list.filter_map(changes, fn(change) {
+          let #(color, zone, before, after) = change
+          let net = list.length(before) - list.length(after)
+          case net > 0 {
+            True ->
+              Ok(
+                json.object([
+                  #("zone", json.string(zone)),
+                  #("color", json.string(board.color_name(color))),
+                  #("count", json.int(net)),
+                ]),
+              )
+            False -> Error(Nil)
+          }
+        })
+      [
+        #(
+          "ghosts",
+          json.object([
+            #("arrive", json.preprocessed_array(arrive)),
+            #("leave", json.preprocessed_array(leave)),
+          ]),
+        ),
+      ]
+    }
+    _, _, _ -> []
+  }
 }
 
 /// Between the games of a match: how the game just played ended, and who
@@ -285,24 +362,21 @@ fn player_zones(state: GameState) -> List(Zone) {
   })
 }
 
-fn dice_zone(state: GameState, is_mover: Bool) -> Zone {
+fn dice_zone(state: GameState) -> Zone {
   let rolled = canonical_dice(state.last_roll)
   let left = state.dice_left(state)
   let tokens = case state.phase {
     state.Moving(_, _) -> {
-      // Every die of the roll (four for doubles); only the mover sees which
-      // are used, since their moves are still private.
+      // Every die of the roll (four for doubles), and which of them the
+      // staged moves have used: everyone sees the staging, so everyone sees
+      // the dice it spent.
       // State keeps the seeded roll's raw order for replay; the projection
       // is the canonical board order players act on: larger die on the left.
       let all = canonical_dice(state.turn_dice(state))
-      let unused = case is_mover {
-        True -> left
-        False -> all
-      }
       // The dice spent are the roll less the dice left. They are marked
       // from the left: of a double, the leftmost die reads as used first,
       // so the row fades left to right whatever order the moves came in.
-      let spent = list.fold(unused, all, remove_one)
+      let spent = list.fold(left, all, remove_one)
       mark_used(all, spent, 0, [])
     }
     _ -> list.index_map(rolled, fn(value, i) { die_token(i, value, True) })

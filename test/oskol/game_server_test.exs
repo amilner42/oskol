@@ -102,7 +102,7 @@ defmodule Oskol.Game.GameServerTest do
       assert {:ok, after_move, events} = move(game_id, mover, action)
       assert Enum.any?(events, &match?({:custom, "move_staged", _}, &1))
       expected_instance = after_move.instance
-      assert_receive {:game_state_updated, %{instance: ^expected_instance}, _events}
+      assert_receive {:game_state_updated, %{instance: ^expected_instance}, _events, _by}
 
       assert {:error, "Not your turn"} = move(game_id, waiting, action)
 
