@@ -66,11 +66,13 @@ with three knobs in `config :oskol, :bot` -- `settle_ms` 1900 (the tumble is
 that prompted a `Beat` -- all 0 in test. A turn is one task from the roll to
 the play (decide, play, and while the turn is still the bot's and nobody else
 has moved, decide again), so the move decision is thought about while the
-dice are in the air and the dot stays lit throughout. Staging is the mover's
-alone (`backgammon/projection`), so the person sees the dice land, the dot
-pulse, then the play land whole when Sage commits: about 2.9 s after the
-throw for two checkers, 3.9 s for a double's four, or later if the think is
-slower. All of it stays well inside the 12 s free delay (asserted in
+dice are in the air and the dot stays lit throughout. Every mover's staging
+reaches the other viewers as ghosts (`backgammon/projection`, `data.ghosts`),
+so the person sees the dice land, the dot pulse, then Sage's checkers step
+across one by one, 500 ms apart, as ghosts, and PLAY commit them: the first
+about 1.9 s after the throw, a two-checker play committed by about 2.9 s, a
+double's four by 3.9 s, or later if the think is slower. All of it stays well
+inside the 12 s free delay (asserted in
 `bot_room_test.exs`). Pacing never outlives its position: each action goes
 to the room process that started the think, by pid, and only if the room's
 step count is still the bot's own last one (`GameServer.bot_action/4`); a
@@ -78,6 +80,27 @@ resignation, a timeout, the other player or a rehydrate moves it on and the
 rest is dropped, not refused. The waits are a `receive` on a monitor of the
 room in the task, never a sleep in the room, so a room that stops wakes the
 task at once.
+
+## Live updates
+
+Every change to a room is one PubSub broadcast on `game:<id>`,
+`{:game_state_updated, state, events, %{by: seat | nil, id: ref}}`, and each
+seat's channel (`OskolWeb.GameChannel`) projects it for its own seat and pushes
+an `update`. `by` is the seat whose action made the change (nil for the room's
+own: a start, a clock, a seat coming or going). A seat's own actions, and the
+room's, go at once. Somebody else's come in bursts -- a mover staging and
+undoing, Sage stepping through a turn -- so the first of a burst goes at once
+and anything else within `watch_coalesce_ms` (120 ms, `config :oskol`) of the
+last one pushed waits for the end of that window and goes as one update: the
+newest state with every event in between, in order. A fast mover costs a
+watcher at most one update a window; Sage's 500 ms steps are never held. The
+channel hears each broadcast twice (its own subscription, taken before the
+join reply so nothing slips between, and the one Phoenix takes for the
+channel's topic) and drops the second copy by `id`.
+
+What the opponent sees of the mover's staging (ghosts) is the projection's,
+so a reload, a reconnect or a rehydrate mid-turn shows the ghosts as they
+stand: the staged moves are in the log like any other action.
 
 ## Persistence
 

@@ -157,9 +157,19 @@ The client only ever decodes these:
 
 Actions in: `{"name": "<action>", "params": {...}}`. Legal actions may
 be enumerated (backgammon sends one `move` schema per legal move) or
-described with bounds. Hidden information is resolved by the `scene`
+described with bounds. What each viewer sees is resolved by the `scene`
 projection per viewer: in backgammon the mover stages moves (`move`, `undo`)
-that only their own scene shows, and commits them with `play`.
+and commits them with `play`. The mover's scene is their staging; everyone
+else's (the opponent, a spectator) keeps the committed board in its zones and
+carries the staging as a separate layer, `data.ghosts` (`arrive`: a ghost per
+checker the staging puts somewhere new, with its id, colour and zone;
+`leave`: how many of a colour it takes off a zone), present only while
+something is staged. The dice show what the staging has used to everyone.
+Nothing is committed, graded or logged differently: a ghost is drawn, never
+tapped, and the committed position, legality and the record move only on
+`play`. Live, each stage and undo reaches the other seats through the room's
+ordinary broadcast; the channel coalesces a burst of somebody else's actions
+(see [rooms.md](rooms.md#live-updates)).
 
 ### Time controls
 Fixed presets live in `gamekit/clock.presets()`: Fischer, Bronstein,

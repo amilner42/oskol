@@ -18,7 +18,9 @@ Every game is its seed plus its action log, and the suite leans on that.
   them) plus named positions with the expected sequences spelled out.
 - `test/backgammon/properties_test.gleam`: staged-turn invariants over random
   positions (undo is an exact inverse, a legal first move never strands a
-  die, pip accounting, commit) and a no-leak property over random games.
+  die, pip accounting, commit) and, over random games, that staging is a
+  layer: a watcher's committed board never moves, and its ghosts laid on it
+  give exactly the mover's board.
 - Conformance (`test/backgammon/engine_test.gleam`): seeded playouts to
   game over with the game's invariants, replay determinism, malformed
   actions rejected. Random play excludes `resign` (`conformance.Options`).
@@ -281,7 +283,14 @@ node playwright/test-sage-pacing/test.js        # a single game against Sage, it
                                                # ANALYSIS_STUB_PORT); every frame of Sage's turn
                                                # recorded: its dice land (and the tumble is over)
                                                # and its think dot stays lit before any checker of
-                                               # its moves; prints the turn's timing
+                                               # its moves; at least one frame shows Sage's
+                                               # staging as ghosts before its play; prints the
+                                               # turn's timing
+node playwright/test-ghost-opponent/test.js     # two browsers (1440x900 mover, 390x844 watcher):
+                                               # two staged moves are two ghosts on the other
+                                               # board within a second, no shift, no taps; undo
+                                               # takes one back; a reload mid-turn keeps it; PLAY
+                                               # leaves the mover's position and no ghosts
 node playwright/test-puzzle/test.js             # a puzzle from a link: setup.exs arranges a game,
                                                # grades it against a Req.Test engine in its own VM
                                                # (real legal plays, the played one a mistake) and

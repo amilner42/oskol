@@ -269,7 +269,7 @@ defmodule Oskol.Game.BotRoomTest do
 
     defp listen(seen) do
       receive do
-        {:game_state_updated, state, events} when events != [] ->
+        {:game_state_updated, state, events, _by} when events != [] ->
           at = GameKit.now()
 
           kinds =

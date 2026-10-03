@@ -84,8 +84,8 @@ defmodule Oskol.PersistenceTest do
     mover = mover(state.instance, [p1, p2])
     waiting = if mover == p1, do: p2, else: p1
 
-    assert_receive {:game_state_updated, _started, []}
-    assert_receive {:game_state_updated, %{instance: instance}, _events}, 14_000
+    assert_receive {:game_state_updated, _started, [], _by}
+    assert_receive {:game_state_updated, %{instance: instance}, _events, _by}, 14_000
     assert Oskol.GameKit.finished?(instance)
 
     assert [%{kind: "expire", player_id: nil, payload: nil}] = action_rows(game_id)

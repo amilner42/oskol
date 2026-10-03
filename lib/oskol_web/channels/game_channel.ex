@@ -52,7 +52,13 @@ defmodule OskolWeb.GameChannel do
            ) do
         {:ok, player_id, state} ->
           Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
-          socket = socket |> assign(:game_id, game_id) |> assign(:player_id, player_id)
+
+          socket =
+            socket
+            |> assign(:game_id, game_id)
+            |> assign(:player_id, player_id)
+            |> assign(:heard, nil)
+
           {:ok, %{payload: payload(state, player_id, [])}, socket}
 
         {:error, reason} ->
@@ -94,9 +100,61 @@ defmodule OskolWeb.GameChannel do
     end
   end
 
+  # Somebody else's actions come in bursts -- a mover staging checkers, which
+  # this seat sees as ghosts, or Sage stepping through a turn -- and each one
+  # is a whole update. The first of a burst goes at once; anything else
+  # within `coalesce_ms` of the last of them pushed waits for the end of that
+  # window and goes as one update: the newest state with every event in
+  # between, so nothing the client draws from is lost and a fast mover costs
+  # the watcher at most one update a window. This seat's own actions, and
+  # changes the room made itself (a join, a clock), never wait, and take
+  # anything waiting with them.
+  #
+  # The channel hears each broadcast twice -- once through the subscription
+  # `join_room` takes, once through the one Phoenix takes for the channel's
+  # own topic -- and the second copy, straight after the first, is dropped.
   @impl true
-  def handle_info({:game_state_updated, %GameServerState{} = state, events}, socket) do
-    push(socket, "update", %{payload: payload(state, socket.assigns.player_id, events)})
+  def handle_info({:game_state_updated, _state, _events, %{id: id}}, socket)
+      when id == socket.assigns.heard do
+    {:noreply, socket}
+  end
+
+  def handle_info({:game_state_updated, %GameServerState{} = state, events, meta}, socket) do
+    socket = assign(socket, :heard, meta.id)
+    others? = meta.by != nil and meta.by != socket.assigns.player_id
+    waiting = socket.assigns[:waiting]
+
+    socket =
+      cond do
+        not others? ->
+          push_update(socket, state, earlier_events(waiting) ++ events)
+
+        waiting != nil ->
+          assign(socket, :waiting, {state, earlier_events(waiting) ++ events})
+
+        true ->
+          case window_left(socket) do
+            0 ->
+              socket
+              |> push_update(state, events)
+              |> assign(:burst_at, now_ms())
+
+            ms ->
+              Process.send_after(self(), :flush_update, ms)
+              assign(socket, :waiting, {state, events})
+          end
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_info(:flush_update, socket) do
+    socket =
+      case socket.assigns[:waiting] do
+        {state, events} -> socket |> push_update(state, events) |> assign(:burst_at, now_ms())
+        nil -> socket
+      end
+
     {:noreply, socket}
   end
 
@@ -136,6 +194,27 @@ defmodule OskolWeb.GameChannel do
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}
+
+  defp push_update(socket, %GameServerState{} = state, events) do
+    push(socket, "update", %{payload: payload(state, socket.assigns.player_id, events)})
+    assign(socket, :waiting, nil)
+  end
+
+  defp earlier_events({_older, events}), do: events
+  defp earlier_events(nil), do: []
+
+  # How long until somebody else's next update may go: none of theirs pushed
+  # yet, or the last of them `coalesce_ms` ago or more, is now.
+  defp window_left(socket) do
+    case socket.assigns[:burst_at] do
+      nil -> 0
+      at -> max(0, at + coalesce_ms() - now_ms())
+    end
+  end
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
+
+  defp coalesce_ms, do: Application.get_env(:oskol, :watch_coalesce_ms, 120)
 
   @doc "The message a client sees for the current room state."
   def payload(%GameServerState{instance: nil} = state, player_id, _events) do

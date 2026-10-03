@@ -1,8 +1,8 @@
 /**
  * Sage's turn, paced so a person can follow it: its dice tumble and land,
- * Sage thinks (the dot by its name), and only then do its checkers move.
- * Staging is the mover's alone, so the person sees Sage's play land whole
- * when it commits; the server spaces the staged moves all the same.
+ * Sage thinks (the dot by its name), and only then do its checkers move,
+ * one by one: each move Sage stages reaches the person as a ghost (the
+ * scene's staging layer) before its PLAY commits the lot.
  *
  * The pacing is the server's (`Oskol.Game.Bot`, `config :oskol, :bot`), so
  * this watches what every browser sees: a guest plays a single game against
@@ -101,6 +101,7 @@ async function startFrames(page) {
         dice: diceMoving(),
         board: board(),
         thinking: document.querySelector('.bar-dot.thinking') !== null,
+        ghosts: document.querySelectorAll('.checker.ghost').length,
       });
       requestAnimationFrame(tick);
     };
@@ -193,6 +194,13 @@ async function main() {
     if (!between.length || !between.every((f) => f.thinking)) {
       throw new Error("Sage's think dot was not lit between its dice landing and its play");
     }
+    // Sage's staging is seen as it happens: at least one frame between its
+    // roll and its play shows a staged checker as a ghost, and the play
+    // takes every ghost away.
+    const staged = measured.frames.filter((f) => f.ghosts > 0);
+    if (!staged.length) throw new Error("the person never saw one of Sage's staged moves before its play");
+    if (measured.frames[measured.frames.length - 1].ghosts !== 0) throw new Error("Sage's ghosts outlived its play");
+    log(`saw Sage's staging for ${Math.round(staged[staged.length - 1].t - staged[0].t)} ms, up to ${Math.max(...staged.map((f) => f.ghosts))} ghost(s)`);
     if (errors.length) throw new Error(errors.join('\n'));
     log('SAGE PACING OK');
   } finally {

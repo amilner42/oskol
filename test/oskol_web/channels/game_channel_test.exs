@@ -103,6 +103,48 @@ defmodule OskolWeb.GameChannelTest do
     assert_push "error", %{message: "Nothing to undo"}
   end
 
+  test "the watcher sees staging as ghosts, and a burst of it arrives coalesced" do
+    %{game_id: game_id, state: state, mover: mover, waiting: waiting, waiting_guest: wt} =
+      started()
+
+    {_, _watcher_socket} = join_room(game_id, wt)
+    flush_updates()
+    action = legal_move(state.instance, mover)
+    undo = simple("undo")
+
+    # Five actions as fast as the room takes them: stage, undo, stage, undo,
+    # stage.
+    for a <- [action, undo, action, undo, action] do
+      {:ok, _, _} = move(game_id, mover, a)
+    end
+
+    # The first at once, the other four as one, carrying all their events in
+    # order and the newest scene: one move staged, one ghost over the
+    # committed board
+    assert [first, rest] = collect_updates(500)
+    assert first.player_id == waiting and rest.player_id == waiting
+    assert kinds(first) == ["move_staged"]
+    assert kinds(rest) == ["move_undone", "move_staged", "move_undone", "move_staged"]
+    assert %{"arrive" => [_ghost], "leave" => [_]} = rest.update["scene"]["data"]["ghosts"]
+    assert Enum.map(rest.update["legal"], & &1["name"]) == ["resign"]
+  end
+
+  test "a seat's own actions are never held back" do
+    %{game_id: game_id, state: state, mover: mover, mover_guest: mt} = started()
+    {_, _mover_socket} = join_room(game_id, mt)
+    flush_updates()
+    action = legal_move(state.instance, mover)
+
+    for a <- [action, simple("undo"), action] do
+      {:ok, _, _} = move(game_id, mover, a)
+    end
+
+    updates = collect_updates(300)
+    assert Enum.map(updates, &kinds/1) == [["move_staged"], ["move_undone"], ["move_staged"]]
+    # The mover's own scene never carries ghosts: the staging is their board
+    refute Map.has_key?(List.last(updates).update["scene"]["data"], "ghosts")
+  end
+
   test "malformed actions are refused at the channel" do
     %{game_id: game_id, g1: g1} = started()
     {_, socket} = join_room(game_id, g1)
@@ -236,6 +278,18 @@ defmodule OskolWeb.GameChannelTest do
     # The seat is still live: the takeover must not have marked it away.
     assert Game.get_server_state(game_id).connections[p1].connected
   end
+
+  # Every update pushed until `quiet` ms pass without one, oldest first.
+  defp collect_updates(quiet, acc \\ []) do
+    receive do
+      %Phoenix.Socket.Message{event: "update", payload: %{payload: payload}} ->
+        collect_updates(quiet, [payload | acc])
+    after
+      quiet -> Enum.reverse(acc)
+    end
+  end
+
+  defp kinds(payload), do: Enum.map(payload.update["events"], & &1["kind"])
 
   defp flush_updates do
     receive do
