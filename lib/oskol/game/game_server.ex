@@ -155,6 +155,21 @@ defmodule Oskol.Game.GameServer do
   end
 
   @doc """
+  A bot seat's action, sent to the very room process that started its think
+  (a pid, never the name: a room rehydrated under the same name is a
+  different room, with a think of its own), and applied only if nothing has
+  happened there since step `at`. `{:error, :moved_on}` otherwise -- a
+  resignation, a timeout or the other player got there first, and the rest
+  of what the bot decided was decided on a board that no longer exists.
+  """
+  def bot_action(room, player_id, action, at) when is_pid(room) and is_map(action) do
+    GenServer.call(room, {:bot_action, player_id, action, at})
+  end
+
+  @doc "The state of the room process `room`, by pid. See `bot_action/4`."
+  def state_of(room) when is_pid(room), do: GenServer.call(room, :get_state)
+
+  @doc """
   A browser signed in: every seat here it held as a guest, and that no
   account owns yet, is that account's now and moves to the browser's fresh
   guest id with it.
@@ -525,6 +540,14 @@ defmodule Oskol.Game.GameServer do
 
       {:error, reason} ->
         {:reply, {:error, reason}, state, @timeout}
+    end
+  end
+
+  def handle_call({:bot_action, player_id, action, at}, from, %GameServerState{} = state) do
+    if state.action_count == at do
+      handle_call({:player_action, player_id, action}, from, state)
+    else
+      {:reply, {:error, :moved_on}, state, @timeout}
     end
   end
 

@@ -35,7 +35,7 @@
 import backgammon/analysis.{type Position}
 import backgammon/board.{type Board, type Color, type Move, Bar, Off, Point}
 import backgammon/state.{type GameState}
-import gamekit/game
+import gamekit/game.{type BotAction, BotAction}
 import gleam/dict
 import gleam/dynamic/decode.{type Decoder}
 import gleam/int
@@ -62,7 +62,7 @@ pub fn decide(
   // must never become is a resignation. The platform decides how long to go
   // on asking (`Oskol.Game.Bot`).
   _attempts: Int,
-) -> Result(List(Json), String) {
+) -> Result(List(BotAction), String) {
   use color <- result.try(state.color_of(s, player_id))
 
   case s.resign_offer {
@@ -71,14 +71,14 @@ pub fn decide(
     // win would be worth right now.
     Some(state.ResignOffer(_, stakes)) ->
       case state.must_answer_resign(s, player_id) {
-        True -> Ok([answer_resign(s, color, stakes)])
+        True -> Ok([beat(answer_resign(s, color, stakes))])
         False -> Ok([])
       }
     None ->
       case s.phase {
         state.BetweenGames(_, _) ->
           case state.can_ready(s, player_id) {
-            True -> Ok([simple("ready")])
+            True -> Ok([step(simple("ready"))])
             False -> Ok([])
           }
         state.Doubled(by) if by != color -> answer_double(s, color, ask)
@@ -115,11 +115,11 @@ fn roll_or_double(
   player_id: String,
   color: Color,
   ask: game.Ask,
-) -> Result(List(Json), String) {
+) -> Result(List(BotAction), String) {
   let position = analysis.position(s, color)
 
   case state.can_double(s, player_id) && analysis.engine_can_double(position) {
-    False -> Ok([simple("roll")])
+    False -> Ok([settle(simple("roll"))])
     True -> {
       use answered <- result.try(ask(
         route,
@@ -127,8 +127,8 @@ fn roll_or_double(
       ))
       use cube <- result.try(cube_call(answered))
       case cube {
-        Some(#(True, _)) -> Ok([simple("double")])
-        _ -> Ok([simple("roll")])
+        Some(#(True, _)) -> Ok([beat(simple("double"))])
+        _ -> Ok([settle(simple("roll"))])
       }
     }
   }
@@ -140,18 +140,18 @@ fn answer_double(
   s: GameState,
   color: Color,
   ask: game.Ask,
-) -> Result(List(Json), String) {
+) -> Result(List(BotAction), String) {
   let doubler = board.opponent(color)
   let position = analysis.position(s, doubler)
 
   use answered <- result.try(ask(route, body(s, doubler, position, None, None)))
   use cube <- result.try(cube_call(answered))
   case cube {
-    Some(#(_, False)) -> Ok([simple("drop")])
+    Some(#(_, False)) -> Ok([beat(simple("drop"))])
     // Either the engine says take, or it would not grade this double at all
     // (a dead cube, which Oskol lets a player offer and the engine does
     // not). Dropping one of those would hand over points for nothing.
-    _ -> Ok([simple("take")])
+    _ -> Ok([beat(simple("take"))])
   }
 }
 
@@ -161,11 +161,11 @@ fn play_turn(
   s: GameState,
   color: Color,
   ask: game.Ask,
-) -> Result(List(Json), String) {
+) -> Result(List(BotAction), String) {
   let dice = state.turn_dice(s)
 
   case state.no_moves(s), board.sequences(s.turn_board, color, dice) {
-    True, _ | _, [] -> Ok([simple("play")])
+    True, _ | _, [] -> Ok([step(simple("play"))])
     False, [fallback, ..] as sequences -> {
       use answered <- result.try(ask(
         route,
@@ -186,13 +186,19 @@ fn play_turn(
       }
       // Anything staged is a think whose actions only half landed; the
       // sequence below is worked out from the board the turn opened on, so
-      // the staging has to come off first.
+      // the staging has to come off first. Every one is a step: the checkers
+      // are staged one at a time, at the platform's gap, and the dice that
+      // came before them were a `Settle`, so the first waits for them to
+      // land. (Staging is the mover's alone -- `projection` shows everyone
+      // else the board the turn began on -- so a watcher sees the gaps as
+      // Sage still thinking, and the play land whole when it commits.)
       Ok(
         list.flatten([
           list.repeat(simple("undo"), list.length(s.staged)),
           list.map(chosen, move_action),
           [simple("play")],
-        ]),
+        ])
+        |> list.map(step),
       )
     }
   }
@@ -229,6 +235,24 @@ fn played(turn_board: Board, color: Color, sequence: List(Move)) -> Board {
 /// the human is offered the game: accept and it is theirs, decline and Sage
 /// keeps trying.
 // ---------- Actions ----------
+
+// How each action is paced for whoever is watching (`game.Pace`); the
+// milliseconds are the platform's. The roll is a `Settle`, because the dice
+// tumble on every screen and Sage's checkers must not move under them. A
+// cube action or an answer to a resignation is a `Beat`, so it is seen
+// coming rather than found already made. Everything else is a `Step`.
+
+fn step(action: Json) -> BotAction {
+  BotAction(action, game.Step)
+}
+
+fn beat(action: Json) -> BotAction {
+  BotAction(action, game.Beat)
+}
+
+fn settle(action: Json) -> BotAction {
+  BotAction(action, game.Settle)
+}
 
 fn simple(name: String) -> Json {
   action(name, [])

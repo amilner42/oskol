@@ -119,11 +119,29 @@ config :tailwind,
 # before asking an engine that did not answer again; the game gives up
 # after the last rung and offers the human the game rather than a board
 # that never moves.
+#
+# The paces are how a bot's turn looks to whoever is watching, applied on the
+# server so every browser sees the same rhythm (`Oskol.Game.Bot`, Pacing).
+# The game says what kind of moment each action is; these say how long. At
+# 3-ply Sage answered before its own dice had landed on the screen.
+#   settle_ms -- after a roll, nothing more until this long has passed: the
+#     tumble is 0.95 s and the two dice a double earns land at 1.2 s
+#     (`.die.rolling`, `.die.earned` in app.css), then a moment to read
+#     them. The engine thinks in the meantime.
+#   gap_ms -- between one bot action and the next: checker by checker.
+#   beat_ms -- a double, a take or a drop is never sooner than this after
+#     what prompted it, so it is seen coming.
+# A doubles turn is settle + 5 gaps = 3.6 s of pacing, a cube action adds a
+# beat, and the 12 s free delay a turn gets is charged for all of it: the
+# bot room test keeps the sum under half of that.
 config :oskol, :bot,
   move_level: "3ply",
   cube_level: "3ply",
   retry_ms: [5_000, 20_000, 60_000],
-  ask_timeout_ms: :timer.seconds(30)
+  ask_timeout_ms: :timer.seconds(30),
+  settle_ms: 1_600,
+  gap_ms: 400,
+  beat_ms: 800
 
 # Configures Elixir's Logger
 config :logger, :default_formatter,

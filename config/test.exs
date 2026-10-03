@@ -63,7 +63,12 @@ config :oskol, :bot,
   retry_ms: [10, 20, 30],
   # Few enough that a test watching an engine stay down is over in a moment.
   stop_trying_after: 5,
-  ask_timeout_ms: 1_000
+  ask_timeout_ms: 1_000,
+  # No pacing: a bot plays as fast as the fake engine answers, so the suite
+  # stays fast. The test of the pacing itself sets its own small numbers.
+  settle_ms: 0,
+  gap_ms: 0,
+  beat_ms: 0
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

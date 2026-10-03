@@ -61,7 +61,7 @@ pub opaque type Instance {
     /// match). Nobody once it is over or a clock ran out.
     to_act: fn() -> List(PlayerId),
     /// A bot seat's decision (`Game.bot`), with the engine as a closure.
-    bot: fn(PlayerId, game.Ask, Int) -> Result(List(json.Json), String),
+    bot: fn(PlayerId, game.Ask, Int) -> Result(List(game.BotAction), String),
   )
 }
 
@@ -403,13 +403,14 @@ pub fn to_act(instance: Instance) -> List(PlayerId) {
 }
 
 /// What a bot seat should do now, as raw actions in the order they are to be
-/// taken. `attempts` is how many asks have already failed for this decision.
+/// taken, each with its pace. `attempts` is how many asks have already
+/// failed for this decision.
 pub fn bot(
   instance: Instance,
   player_id: PlayerId,
   ask: game.Ask,
   attempts: Int,
-) -> Result(List(json.Json), String) {
+) -> Result(List(game.BotAction), String) {
   instance.bot(player_id, ask, attempts)
 }
 

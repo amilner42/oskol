@@ -17,6 +17,38 @@ defmodule Oskol.Game.Bot do
   The one thing this module puts into a request is how deep to search
   (`config :oskol, :bot`), because that is an operator's knob -- turn it down
   and every bot on the site thinks faster -- and not a rule of any game.
+
+  ## Pacing
+
+  An engine that answers in a quarter of a second would otherwise have the
+  bot's whole turn on the table before anybody saw its dice land. So the
+  task plays what was decided at a pace a watcher can follow, here on the
+  server, where every browser and spectator sees the same rhythm and the
+  client stays dumb. The game says what kind of moment each action is
+  (`gamekit/game.Pace`, carried on its `bot` answer); this module owns the
+  milliseconds, as three knobs:
+
+    * `settle_ms` -- after a `:settle` action (backgammon's roll: dice in
+      the air on every screen), nothing more from the bot until this long
+      has passed. The next decision is thought about in the meantime, so a
+      think shorter than this costs the watcher nothing.
+    * `gap_ms` -- between one bot action and the next (a checker moved,
+      then the next).
+    * `beat_ms` -- a `:beat` action (a double, a take, an answer to a
+      resignation) is never applied sooner than this after the change that
+      prompted it, so it is seen coming instead of found already made.
+
+  A turn is therefore one task from the first action to the last: decide,
+  play, and while it is still the bot's turn and nobody else has moved,
+  decide again -- a roll and the play that follows it are two decisions,
+  and the second must know when the first landed.
+
+  Pacing never outlives the position it was for. Each action goes to the
+  room process that started the think (by pid: a rehydrated room under the
+  same name is somebody else's), and only if nothing has happened there
+  since the bot's own last step; a resignation, a timeout or a closed room
+  drops whatever was still waiting. The waits are in the task, never in the
+  room, and a room that goes down wakes the task at once.
   """
   require Logger
 
@@ -33,7 +65,11 @@ defmodule Oskol.Game.Bot do
     # Then the last rung over and over, until this many asks have failed --
     # about half an hour, and the room goes idle before that anyway.
     stop_trying_after: 40,
-    ask_timeout_ms: 30_000
+    ask_timeout_ms: 30_000,
+    # Pacing (see the moduledoc). Zero is "as fast as the engine answers".
+    settle_ms: 1_600,
+    gap_ms: 400,
+    beat_ms: 800
   ]
 
   @doc """
@@ -42,9 +78,10 @@ defmodule Oskol.Game.Bot do
   to broadcast: a seat with a think in flight is what the pulsing dot beside
   Sage's name is drawn from.
 
-  A seat keeps its entry until the task has applied everything it decided, so
-  the broadcast that follows the bot's own first action cannot start a second
-  think on the same turn.
+  A seat keeps its entry until the task has played its turn through -- every
+  decision, at its pace -- so the broadcast that follows the bot's own first
+  action cannot start a second think on the same turn, and the dot stays lit
+  from the roll to the last checker.
   """
   @spec think(GameServerState.t()) :: GameServerState.t()
   def think(%GameServerState{instance: nil} = state), do: state
@@ -103,42 +140,78 @@ defmodule Oskol.Game.Bot do
   # ---------- The think itself ----------
 
   defp start(%GameServerState{} = state, player_id) do
+    room = self()
     game_id = state.game_id
+    at = state.action_count
 
     task =
       Task.Supervisor.async_nolink(Oskol.Game.BotSupervisor, fn ->
-        run(game_id, player_id, 0)
+        turn(room, game_id, player_id, at)
       end)
 
     %GameServerState{
       state
-      | bot_thinking: Map.put(state.bot_thinking, player_id, {task.ref, state.action_count})
+      | bot_thinking: Map.put(state.bot_thinking, player_id, {task.ref, at})
     }
   end
 
-  # One decision, and the actions it came to. A think that comes back empty is
-  # tried again after a pause; the game is told how many have failed and
-  # answers in its own words once that is too many, which is why the ladder
-  # runs out here without this module deciding anything.
-  defp run(game_id, player_id, attempt) do
-    with {:ok, instance} <- turn_of(game_id, player_id),
-         {:ok, actions} <- GameKit.think(instance, player_id, ask(), attempt) do
-      play(game_id, player_id, actions)
+  # The bot's turn, from where the room left it to where the bot hands it
+  # back. `at` is the room's step count as the bot last saw it, and anything
+  # else having moved the room on since is the end of this turn: the room
+  # thinks afresh once the task is done. `since` and `last` are when the
+  # bot's previous action landed and what kind of moment it was, which is
+  # all the pacing needs to know.
+  defp turn(room, game_id, player_id, at) do
+    run(
+      %{
+        room: room,
+        watch: Process.monitor(room),
+        game_id: game_id,
+        player_id: player_id,
+        at: at,
+        since: GameKit.now(),
+        last: nil,
+        played: false
+      },
+      0
+    )
+  end
+
+  # One decision, and the actions it came to; then, while the turn is still
+  # ours, the next. A think that comes back empty is tried again after a
+  # pause; the game is told how many have failed and answers in its own words
+  # once that is too many, which is why the ladder runs out here without this
+  # module deciding anything.
+  defp run(turn, attempt) do
+    with {:ok, instance} <- turn_of(turn),
+         {:ok, [_ | _] = decided} <-
+           GameKit.think(instance, turn.player_id, ask(), attempt) do
+      case play(turn, decided) do
+        {:ok, turn} -> run(turn, 0)
+        {:stop, outcome, turn} -> outcome(turn, outcome)
+      end
     else
       :not_our_turn ->
-        :nothing
+        outcome(turn, :nothing)
+
+      {:ok, []} ->
+        outcome(turn, :nothing)
 
       {:error, reason} ->
         Logger.warning(
-          "Bot seat #{player_id} in game #{game_id} got nothing from the engine (attempt #{attempt + 1}): #{reason}"
+          "Bot seat #{turn.player_id} in game #{turn.game_id} got nothing from the engine (attempt #{attempt + 1}): #{reason}"
         )
 
         case pause_after(attempt) do
-          :stop -> :nothing
-          pause -> retry(game_id, player_id, attempt, pause)
+          :stop -> outcome(turn, :nothing)
+          pause -> retry(turn, attempt, pause)
         end
     end
   end
+
+  # A turn that played anything played, whatever stopped it after.
+  defp outcome(%{played: true}, :nothing), do: :played
+  defp outcome(_turn, outcome), do: outcome
 
   # The ladder, and then its last rung over and over.
   #
@@ -161,19 +234,23 @@ defmodule Oskol.Game.Bot do
     end
   end
 
-  defp retry(game_id, player_id, attempt, pause) do
-    Process.sleep(pause)
-    run(game_id, player_id, attempt + 1)
+  defp retry(turn, attempt, pause) do
+    case wait_until(turn, GameKit.now() + pause) do
+      :ok -> run(turn, attempt + 1)
+      :gone -> outcome(turn, :nothing)
+    end
   end
 
   # The room's own answer to whose turn it is, read afresh: a retry an entire
-  # minute later must not think about a position the game has left behind.
-  defp turn_of(game_id, player_id) do
-    state = GameServer.get_state(game_id)
+  # minute later must not think about a position the game has left behind,
+  # and nor must the next decision of a turn somebody else has moved on.
+  defp turn_of(turn) do
+    state = GameServer.state_of(turn.room)
 
     cond do
       state.instance == nil -> :not_our_turn
-      player_id in GameKit.to_act(state.instance) -> {:ok, state.instance}
+      state.action_count != turn.at -> :not_our_turn
+      turn.player_id in GameKit.to_act(state.instance) -> {:ok, state.instance}
       true -> :not_our_turn
     end
   catch
@@ -182,27 +259,73 @@ defmodule Oskol.Game.Bot do
     :exit, _ -> :not_our_turn
   end
 
-  # In order, and no further than the first refusal: the rest was decided on a
-  # board that no longer exists.
-  defp play(_game_id, _player_id, []), do: :nothing
+  # In order, each at its pace, and no further than the first refusal: the
+  # rest was decided on a board that no longer exists. A room that moved on
+  # while the bot waited is not a refusal, only the end of the turn.
+  defp play(turn, decided) do
+    Enum.reduce_while(decided, {:ok, turn}, fn {action, pace}, {:ok, turn} ->
+      with :ok <- wait_until(turn, turn.since + hold(turn.last, pace)),
+           {:ok, state, _events} <-
+             GameServer.bot_action(turn.room, turn.player_id, action, turn.at) do
+        {:cont,
+         {:ok,
+          %{
+            turn
+            | at: state.action_count,
+              since: GameKit.now(),
+              last: pace,
+              played: true
+          }}}
+      else
+        :gone ->
+          {:halt, {:stop, :nothing, turn}}
 
-  defp play(game_id, player_id, actions) do
-    Enum.reduce_while(actions, :played, fn action, _so_far ->
-      case GameServer.player_action(game_id, player_id, action) do
-        {:ok, _state, _events} ->
-          {:cont, :played}
+        {:error, :moved_on} ->
+          {:halt, {:stop, :nothing, turn}}
 
         {:error, reason} ->
           Logger.warning(
-            "Bot seat #{player_id} in game #{game_id} could not play #{inspect(action)}: #{inspect(reason)}"
+            "Bot seat #{turn.player_id} in game #{turn.game_id} could not play #{inspect(action)}: #{inspect(reason)}"
           )
 
-          {:halt, :rejected}
+          {:halt, {:stop, :rejected, turn}}
       end
     end)
   catch
     # The room went away under us (idle, or a deploy). Nothing to report to.
-    :exit, _ -> :nothing
+    :exit, _ -> {:stop, :nothing, turn}
+  end
+
+  # How long after the bot's previous action (or, for its first, after the
+  # change that started the think) this one may land.
+  defp hold(last, pace) do
+    after_last =
+      case last do
+        nil -> 0
+        :settle -> config(:settle_ms)
+        _ -> config(:gap_ms)
+      end
+
+    own = if pace == :beat, do: config(:beat_ms), else: 0
+    max(after_last, own)
+  end
+
+  # Wait in the task until `deadline` (monotonic ms), or until the room goes
+  # down, whichever is first: a stopped room is no reason to sleep on.
+  defp wait_until(turn, deadline) do
+    case deadline - GameKit.now() do
+      ms when ms > 0 ->
+        watch = turn.watch
+
+        receive do
+          {:DOWN, ^watch, :process, _pid, _reason} -> :gone
+        after
+          ms -> :ok
+        end
+
+      _ ->
+        :ok
+    end
   end
 
   # ---------- The engine ----------

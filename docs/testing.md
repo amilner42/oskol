@@ -270,6 +270,12 @@ node playwright/test-backgammon-replay/test.js  # the replay of a finished match
                                                # dice, cube, score in the new tab); the match
                                                # is searched for one with all of those; the
                                                # analysis is stubbed unless REPLAY_REAL=1
+node playwright/test-sage-pacing/test.js        # a single game against Sage, its engine a stand-in
+                                               # that answers at once (engine.exs, on
+                                               # ANALYSIS_STUB_PORT); every frame of Sage's turn
+                                               # recorded: its dice land (and the tumble is over)
+                                               # and its think dot stays lit before any checker of
+                                               # its moves; prints the turn's timing
 node playwright/test-puzzle/test.js             # a puzzle from a link: setup.exs arranges a game,
                                                # grades it against a Req.Test engine in its own VM
                                                # (real legal plays, the played one a mistake) and
