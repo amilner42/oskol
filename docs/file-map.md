@@ -217,7 +217,7 @@ assets/src/Ui/LiveGames.elm      one row per game you can pick back up, drawn th
 assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it
                                  (END THIS GAME, for a room nobody joined);
                                  asks /puzzles?game=n for each game /ratings reports
-                                 graded (a seat only) and feeds both result cards'
+                                 graded (a seat only) and feeds the game-over card's
                                  PRACTICE THIS GAME'S N MISTAKES and save offer
 assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again, with the
                                  engine's analysis (polls /reviews while any is pending):
@@ -348,10 +348,18 @@ assets/src/Games/Backgammon/View.elm  the backgammon board (and the two
                                  `#bg-focus-toggle` between them: expanded
                                  (focus mode, the default) gives the board the
                                  whole screen, the site's bar included, and
-                                 draws only the clock, the score, the tray, the
-                                 band and the practice door between games, on
-                                 the board's own rails; compressed is the
-                                 layout a sideways phone always had.
+                                 draws only the clock, the score, the tray and
+                                 the band, on the board's own rails;
+                                 compressed is the layout a sideways phone
+                                 always had. Between games the band is one row
+                                 in every layout, at the height it has in play
+                                 (`is-between` in app.css): the result
+                                 ("SAGE WINS +2") in the left half, NEXT (the
+                                 legal `ready`; greyed once pressed, a dot in
+                                 its corner when a human opponent pressed
+                                 first) and END (the legal `close`, unlimited
+                                 only) in the right. Practice, replay and the
+                                 save offer are the game-over card's.
                                  `model.expanded` is the state; `Page.Play`
                                  keeps the choice in this browser's
                                  localStorage (`backgammon_landscape`) and the
@@ -406,6 +414,9 @@ assets/src/Ui/SaveToSet.elm      SAVE's sheet, from the analysis board and a puz
 assets/src/Ui/SignIn.elm         signing in, the one component every entry embeds:
                                  email -> "Check your email" + six digits -> the win
 assets/src/Api/Auth.elm          /papi/auth/* and /papi/me for the client
+playwright/test-between-games/   the card between games at six screens, the board's
+                                 boxes held from play to the next game (setup.exs:
+                                 unlimited rooms against Sage, their first game over)
 playwright/test-accounts/test.js the whole sign-in flow in three browsers
 playwright/test-home/test.js     the signed-in home end to end (setup.exs makes the
                                  account and its graded games)

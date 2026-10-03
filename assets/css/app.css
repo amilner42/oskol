@@ -1016,6 +1016,53 @@ a.q-card:hover, a.q-card:focus-visible {
 /* `.bg-point.source` is a hook for interaction and tests; it paints
    nothing, so legal play still reads from the dice and position. */
 .bg-band { min-height: var(--bg-band-h); }
+/* A half's band takes whatever height the row gives it, so when one half's
+   band is taller the other half's grows with it and the bottom points of
+   the two halves stay level. */
+.bg-half > .bg-band { flex: 1 0 auto; }
+/* Between games the band is one row at its usual height in every layout:
+   the result in the left half, NEXT and END in the right. Nothing in it
+   wraps or grows, so the board keeps every pixel it had during the game
+   and the halves never part. */
+.bg-page.is-between .bg-band {
+  height: var(--bg-band-h);
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  padding-block: 0;
+  overflow: hidden;
+}
+.bg-game-result {
+  column-gap: 0.6em;
+  font-size: 9px;
+  line-height: 1.4;
+  color: var(--bg-accent);
+  padding: 0 0.25rem;
+}
+.bg-band .bg-between-btn {
+  position: relative;
+  flex: none;
+  font-size: 8px;
+  line-height: 1;
+  padding: 0.4rem 0.5rem;
+}
+/* A human opponent who has pressed NEXT first: a dot in the corner of
+   mine, which takes no room of its own. */
+.bg-ready-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: #ffd23f;
+  box-shadow: 0 0 0 1px var(--ink);
+}
+/* Pressed, NEXT waits greyed where it was until the other player's. */
+.bg-band .bg-between-btn:disabled { background: #d9d9dd; color: #8a8a94; box-shadow: 0 3px 0 0 #a9a9b2; }
+@media (min-width: 640px) {
+  .bg-game-result { font-size: 12px; }
+  .bg-band .bg-between-btn { font-size: 9px; padding: 0.5rem 0.65rem; }
+}
 .checker {
   width: 84%;
   aspect-ratio: 1;
@@ -1688,13 +1735,8 @@ a.bg-match-door:hover { background: var(--paper-2); }
   /* The band is short and its halves are fixed: what it says wraps inside
      itself rather than pushing the points around. */
   .bg-page .bg-band .pixel { line-height: 1.25; }
-  /* Between games the band holds the result card -- the result, REPLAY,
-     PRACTICE THIS GAME'S N MISTAKES and the save offer -- and the height
-     formula above gives it that room by taking it from the points. */
-  .bg-page.is-between { --bg-band-h: 7rem; }
-  .bg-page.is-between .bg-game-result { gap: 0; }
-  .bg-page.is-between .bg-game-result .btn-arcade { font-size: 6px; padding: 0.3rem 0.4rem; }
-  .bg-page.is-between .bg-game-result .bg-save-offer { font-size: 9px; }
+  .bg-page .bg-game-result { font-size: 9px; line-height: 1.3; }
+  .bg-page .bg-band .bg-between-btn { font-size: 7px; padding: 0.35rem 0.45rem; }
   .bg-page #bg-no-moves { font-size: 7px; min-width: 0; }
   .bg-page .bg-band .btn-arcade { padding: 0.3rem 0.45rem; }
   /* four dice (doubles) and a message have to share one half-band */
@@ -1959,21 +2001,8 @@ a.bg-match-door:hover { background: var(--paper-2); }
   .bg-page.is-expanded .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }
   .bg-page.is-expanded .bg-band .die .grid > div > div { width: calc(var(--die-size) * 0.15); height: calc(var(--die-size) * 0.15); }
 
-  /* Between games the band holds the result card and READY. In focus mode
-     the card is cut to two things: who won and by how much, and the door
-     into this game's mistakes. The score line under the headline is
-     already on both plates, and REPLAY and the offer to save the game are
-     two more things to read in a mode whose whole point is that there is
-     nothing to read -- both are still in compressed mode, one tap away,
-     and on the game-over card, which is a sheet over the screen either
-     way. PRACTICE THIS GAME'S N MISTAKES stays because a game just
-     finished is the moment it exists for, and losing it on the layout a
-     turned phone gets by default would quietly cost the thing this site
-     is for. */
-  .bg-page.is-expanded.is-between { --bg-band-h: 4rem; }
-  .bg-page.is-expanded .bg-game-result { gap: 3px; font-size: 8px; }
-  .bg-page.is-expanded .bg-game-result > *:not(:first-child) { display: none; }
-  .bg-page.is-expanded .bg-game-result > #practice-game { display: inline-block; font-size: 7px; padding: 0.3rem 0.45rem; }
+  .bg-page.is-expanded .bg-game-result { font-size: 9px; line-height: 1.3; }
+  .bg-page.is-expanded .bg-band .bg-between-btn { font-size: 7px; padding: 0.35rem 0.45rem; }
 }
 
 /* Backgammon on a desktop screen: the table takes the window. Below `lg`
@@ -2014,9 +2043,6 @@ a.bg-match-door:hover { background: var(--paper-2); }
     grid-template-rows: auto minmax(0, 1fr);
     justify-content: center;
   }
-  /* Between games the band holds the result card (see the landscape
-     layout); the height formula gives it the room. */
-  .bg-page.is-between { --bg-band-h: 6.5rem; }
   /* The slab alone, centred. */
   .bg-page .bg-main {
     width: 100%;

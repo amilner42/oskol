@@ -240,8 +240,14 @@ node playwright/test-clock-tiers/test.js        # the clock tiers at four sizes:
                                                # menu and the line under it per format with every
                                                # box held, the friend dialog, PLAY's dialog (it
                                                # makes its own account), the lobby and the invite
-node playwright/test-puzzles-cards/test.js      # PRACTICE THIS GAME'S N MISTAKES from both result
-                                               # cards (setup.exs arranges and grades the games)
+node playwright/test-puzzles-cards/test.js      # PRACTICE THIS GAME'S N MISTAKES from the game-over
+                                               # card, none between games (setup.exs arranges and
+                                               # grades the games)
+node playwright/test-between-games/test.js      # the card between games: one row (result, NEXT,
+                                               # END) in a band of fixed height at six screens,
+                                               # unlimited and a match v Sage and two people (the
+                                               # ready dot), the board's boxes held from play to
+                                               # the next game (setup.exs: unlimited v Sage)
 node playwright/test-landing-screenshot/test.js # Playwright itself works: one landing screenshot
 node playwright/review-themes/test.js           # every board theme, shot on a phone; the pick
                                                # survives a reload
@@ -402,7 +408,7 @@ node playwright/review-pages/test.js            # screenshots of the guest home,
                                                # (desktop + phone)
 node playwright/review-close/test.js            # screenshots of the two ways a room is ended:
                                                # the x on a LIVE GAMES row, END THIS GAME in
-                                               # the lobby, END SESSION beside READY between
+                                               # the lobby, END beside NEXT between
                                                # games, and the card a level session ends on
                                                # (three widths; it arranges the rooms itself)
 node playwright/review-games/test.js            # screenshots of games in play (desktop + phone)

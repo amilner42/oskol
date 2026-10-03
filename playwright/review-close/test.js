@@ -1,7 +1,7 @@
 /**
  * Screenshots of the two ways a room that will not end itself is ended: the
- * ✕ on a LIVE GAMES row, END THIS GAME in the lobby, and END SESSION beside
- * READY between the games of unlimited play (plus the card a level session
+ * ✕ on a LIVE GAMES row, END THIS GAME in the lobby, and END beside NEXT
+ * between the games of unlimited play (plus the card a level session
  * ends on). Run with the server up:
  *   node playwright/review-close/test.js
  */
@@ -62,7 +62,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await b.waitForSelector('#bg-action-accept_resign');
     await b.click('#bg-action-accept_resign');
 
-    // Between games of unlimited play: READY, and END SESSION beside it.
+    // Between games of unlimited play: NEXT, and END beside it.
     await a.waitForSelector('#bg-action-close');
     await sleep(900);
     await a.screenshot({ path: `${OUT}/${name}-04-between-games.png` });

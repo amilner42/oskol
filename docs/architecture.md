@@ -18,8 +18,8 @@ the dice stand for both players under "no legal moves" until the mover
 passes, and every time control gives each turn its first 12 seconds free.
 Between the games of a match (or of unlimited play) the finished game's
 position stays up, nobody is on the clock, and the next game starts when
-both players have pressed READY. Unlimited play has no finish line of its
-own, so beside READY either player may END SESSION: the score stands and
+both players have pressed NEXT. Unlimited play has no finish line of its
+own, so beside NEXT either player may END the session: the score stands and
 whoever is ahead has won. A match ends when somebody reaches the target and
 is never closable, and a game on the board is left by resigning. Every game can be played with an optional
 time control.

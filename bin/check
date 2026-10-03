@@ -177,6 +177,11 @@ if [[ "$mode" == "--browser" ]]; then
   # Arranges its own room (a seed that dances, replayed into the dev
   # database) and opens it, so it also covers rehydrating mid-dance.
   node playwright/test-backgammon-dance/test.js
+  # The card between games, one row in a band of fixed height, at six
+  # screens: unlimited and a match against Sage, two people in unlimited
+  # (the ready dot), the board's boxes held from play to the next game. It
+  # arranges its unlimited rooms against Sage (setup.exs).
+  node playwright/test-between-games/test.js
   # A finished match played again, with its analysis stubbed in the browser;
   # it arranges its own room (setup.exs) the same way.
   node playwright/test-backgammon-replay/test.js
@@ -202,9 +207,10 @@ if [[ "$mode" == "--browser" ]]; then
   # The practice home: PUZZLES on the menu, a stranger's TRY ONE, a guest's
   # and an account's counts and a run from PRACTICE.
   node playwright/test-puzzles-hub/test.js
-  # PRACTICE THIS GAME'S N MISTAKES from the result cards: it arranges an
-  # unlimited session and a single game (setup.exs), a guest runs one and
-  # is asked to sign in, an account runs the other.
+  # PRACTICE THIS GAME'S N MISTAKES from the game-over card, and none on
+  # the card between games: it arranges an unlimited session and a single
+  # game (setup.exs); a guest runs the game's mistakes and is asked to sign
+  # in, then runs them again as an account.
   node playwright/test-puzzles-cards/test.js
   # The analysis board, all four parts: a position set up by mouse and by
   # finger, every setting in the strip, the id in and out; ANALYZE against
