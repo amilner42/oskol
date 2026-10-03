@@ -180,7 +180,7 @@ fn cube_question(kind: Kind) -> Question {
     kind: kind,
     board: analysis.encode(hit_board(), White),
     dice: None,
-    cube_value: 1,
+    cube_value: 2,
     cube_owner: puzzles.Mover,
     away_mover: 3,
     away_opponent: 5,
@@ -506,7 +506,7 @@ pub fn a_double_puzzle_has_no_dice_and_no_tree_test() {
   let ctx = ctx_with([stored("d1", cube_question(Double), cube_answer())])
   let assert Ok(body) = handler.puzzle_json(ctx, "d1")
   assert text_at(body, ["kind"]) == "double"
-  assert text_at(body, ["prompt"]) == "White to play. Double?"
+  assert text_at(body, ["prompt"]) == "White to play. Redouble to 4?"
   assert is_null(body, "tree")
   assert is_null(body, "question") == False
   assert decode.run(
@@ -524,7 +524,7 @@ pub fn a_take_puzzle_is_shown_from_the_responders_side_test() {
   let ctx = ctx_with([stored("t1", cube_question(Take), cube_answer())])
   let assert Ok(body) = handler.puzzle_json(ctx, "t1")
   assert text_at(body, ["kind"]) == "take"
-  assert text_at(body, ["prompt"]) == "White is doubled. Take?"
+  assert text_at(body, ["prompt"]) == "Black redoubles to 4. Take?"
   // The doubler held the cube; from the responder's side the opponent does.
   assert text_at(body, ["question", "cube", "owner"]) == "opponent"
   // And the away scores swap with the sides.
@@ -584,10 +584,10 @@ pub fn the_head_is_the_question_and_the_score_test() {
     == "Match play, 3 away against 5. Cube centered. A backgammon puzzle: play it on the board."
   let assert Ok(handler.Head(take_title, take_description)) =
     handler.head(ctx, "t1", "")
-  assert take_title == "White is doubled. Take?"
+  assert take_title == "Black redoubles to 4. Take?"
   assert string.starts_with(
     take_description,
-    "Match play, 5 away against 3. Cube at 1, Black's.",
+    "Match play, 5 away against 3. Cube at 2, Black's, redoubled to 4.",
   )
   assert handler.head(ctx, "nope", "")
     == Error(error.NotFound(handler.not_found_message))
@@ -622,6 +622,116 @@ pub fn a_money_game_says_so_in_the_head_test() {
     handler.describe(puzzles.Question(..q, crawford: True)),
     "Match play, 3 away against 5, Crawford. Cube centered.",
   )
+}
+
+// ---------- The stakes of a cube question ----------
+//
+// A cube question is stored with the cube before the offer; the page says
+// what the offer is (twice it), and whether it is a first double or a
+// redouble. The description's cube line never reads as those stakes.
+
+fn cube_at(kind: Kind, value: Int, owner: puzzles.Owner) -> Question {
+  Question(..cube_question(kind), cube_value: value, cube_owner: owner)
+}
+
+/// What the page asks and what the head describes, from the side asked.
+fn asked(q: Question) -> #(String, String) {
+  let shown = handler.shown(q)
+  #(
+    handler.prompt(shown),
+    handler.describe(shown)
+      |> string.replace(" A backgammon puzzle: play it on the board.", ""),
+  )
+}
+
+pub fn a_first_double_names_the_cube_it_turns_to_test() {
+  assert asked(cube_at(Double, 1, puzzles.Centered))
+    == #(
+      "White to play. Double to 2?",
+      "Match play, 3 away against 5. Cube centered.",
+    )
+}
+
+pub fn a_redouble_names_the_cube_it_turns_to_test() {
+  assert asked(cube_at(Double, 2, puzzles.Mover))
+    == #(
+      "White to play. Redouble to 4?",
+      "Match play, 3 away against 5. Cube at 2, White's.",
+    )
+  assert asked(cube_at(Double, 8, puzzles.Mover)).0
+    == "White to play. Redouble to 16?"
+}
+
+pub fn a_take_of_a_first_double_says_the_cube_was_centered_test() {
+  assert asked(cube_at(Take, 1, puzzles.Centered))
+    == #(
+      "Black doubles to 2. Take?",
+      "Match play, 5 away against 3. Cube centered, doubled to 2.",
+    )
+}
+
+/// The puzzle the bug was found on (V726KF1J): Black owns the cube at 2
+/// and turns it to 4. The cube line is the cube before, and says what was
+/// done to it, so it cannot read as the stakes.
+pub fn a_take_of_a_redouble_says_the_cube_was_redoubled_test() {
+  let q =
+    Question(..cube_at(Take, 2, puzzles.Mover), away_mover: 3, away_opponent: 3)
+  assert asked(q)
+    == #(
+      "Black redoubles to 4. Take?",
+      "Match play, 3 away against 3. Cube at 2, Black's, redoubled to 4.",
+    )
+  // The stored question asks the same thing: the sentence does not depend
+  // on which side it is read from.
+  assert handler.prompt(q) == "Black redoubles to 4. Take?"
+}
+
+pub fn money_play_names_the_stakes_too_test() {
+  let money = fn(kind, value, owner) {
+    Question(
+      ..cube_at(kind, value, owner),
+      away_mover: 0,
+      away_opponent: 0,
+      jacoby: True,
+    )
+  }
+  assert asked(money(Double, 1, puzzles.Centered))
+    == #("White to play. Double to 2?", "Unlimited play. Cube centered.")
+  assert asked(money(Take, 4, puzzles.Mover))
+    == #(
+      "Black redoubles to 8. Take?",
+      "Unlimited play. Cube at 4, Black's, redoubled to 8.",
+    )
+}
+
+/// The game after Crawford: the trailer doubles at the first chance, so a
+/// cube question there is a first double, and the score says nothing of
+/// Crawford any more. A 2-away player's opponent redoubling is still named
+/// as a redouble.
+pub fn cube_questions_after_crawford_name_the_stakes_test() {
+  let post_crawford =
+    Question(
+      ..cube_at(Double, 1, puzzles.Centered),
+      away_mover: 4,
+      away_opponent: 1,
+    )
+  assert asked(post_crawford)
+    == #(
+      "White to play. Double to 2?",
+      "Match play, 4 away against 1. Cube centered.",
+    )
+  assert asked(Question(..post_crawford, kind: Take))
+    == #(
+      "Black doubles to 2. Take?",
+      "Match play, 1 away against 4. Cube centered, doubled to 2.",
+    )
+  let two_away =
+    Question(..cube_at(Take, 2, puzzles.Mover), away_mover: 2, away_opponent: 4)
+  assert asked(two_away)
+    == #(
+      "Black redoubles to 4. Take?",
+      "Match play, 4 away against 2. Cube at 2, Black's, redoubled to 4.",
+    )
 }
 
 /// A tree is worked out once and kept, because it is a pure function of a
@@ -1643,7 +1753,7 @@ pub fn a_games_puzzles_are_the_seats_own_test() {
   assert ids
     == [
       #("a1", "move", "White to play 6-4. What's your play?", False),
-      #("c1", "take", "White is doubled. Take?", False),
+      #("c1", "take", "Black redoubles to 4. Take?", False),
     ]
   // The other seat sees their own, and only theirs.
   let assert Ok(theirs) =

@@ -295,6 +295,21 @@ Oskol.Repo.insert!(%Oskol.Puzzles.Puzzle{
   evaluated_by: %{}
 })
 
+# A take of a redouble, from the fixtures: the doubler owns the cube at 2
+# and turns it to 4. The smoke checks the page names those stakes, draws
+# the cube on offer and is answered in the board's band.
+{:stored, _, take_kind, take_question, take_answer} = :oskol@puzzles@fixture.stored_sample("take")
+take_id = :crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower)
+
+Oskol.Repo.insert!(%Oskol.Puzzles.Puzzle{
+  id: take_id,
+  key: "smoke-" <> take_id,
+  kind: take_kind,
+  question: Jason.decode!(take_question),
+  answer: Jason.decode!(take_answer),
+  evaluated_by: %{}
+})
+
 IO.puts(
   Jason.encode!(%{
     game_id: game_id,
@@ -304,6 +319,7 @@ IO.puts(
       %{id: p1, name: "Alice", guest: g1, puzzle: first_of.(p1)},
       %{id: p2, name: "Bob", guest: g2, puzzle: first_of.(p2)}
     ],
-    cube: cube_id
+    cube: cube_id,
+    take: take_id
   })
 )

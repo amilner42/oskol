@@ -111,12 +111,12 @@ async function stageATurn(page) {
   if (!(await page.locator('#bg-action-play').count())) throw new Error(`PLAY is not offered once the roll is played at ${page.url()}`);
 }
 
-/** Answer whatever question is on the page: a cube question is five
- * bands (the middle one will do), a checker play is staged and PLAYed. */
+/** Answer whatever question is on the page: a cube question is answered
+ * in the board's band (DOUBLE or TAKE will do), a checker play is staged and PLAYed. */
 async function answer(page) {
-  await page.waitForSelector('#pz-bands, #bg-action-play, [data-move-source]', { timeout: 10000 });
-  if (await page.locator('#pz-bands').count()) {
-    await page.click('#pz-band-1');
+  await page.waitForSelector('#pz-board #bg-action-double, #pz-board #bg-action-take, #bg-action-play, [data-move-source]', { timeout: 10000 });
+  if (await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').count()) {
+    await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').first().click();
     return;
   }
   await stageATurn(page);

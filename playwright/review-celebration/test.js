@@ -120,9 +120,9 @@ async function playBest(page) {
 }
 
 async function playAny(page) {
-  await page.waitForSelector('#pz-bands, #bg-action-play, .bg-point.source, [data-move-source]', { timeout: 15000 });
-  if (await page.locator('#pz-bands').count()) {
-    await page.locator('#pz-bands .pz-band').first().click();
+  await page.waitForSelector('#pz-board #bg-action-double, #pz-board #bg-action-take, #bg-action-play, .bg-point.source, [data-move-source]', { timeout: 15000 });
+  if (await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').count()) {
+    await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').first().click();
   } else {
     await stageATurn(page);
     await page.click('#bg-action-play');

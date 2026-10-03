@@ -84,11 +84,15 @@ arrive at any of them cold, and moving between them afterwards is a
   picture's own words), the board's picture as og:image, nothing else; an
   id nobody stored is a 404. Not in the sitemap: too many. There is one
   prompt, `oskol/puzzles.prompt` ("White to play 6-4. What's your play?",
-  "White to play. Double?", "White is doubled. Take?"): the wire, the head,
-  the page and the picture all read it. `/puzzles/<id>?s=<token>` is a
+  "White to play. Double to 2?", "White to play. Redouble to 4?", "Black
+  doubles to 2. Take?", "Black redoubles to 4. Take?"): the wire, the head,
+  the page and the picture all read it. A take's description says what was
+  done to the cube it gives ("Cube at 2, Black's, redoubled to 4.", "Cube
+  centered, doubled to 2."). `/puzzles/<id>?s=<token>` is a
   **story link** (`handlers/shares`): the same page, whose head says
   "Arie got this wrong. What's your play?" (the sharer's name, then the
-  prompt's question: "Double?", "Take?") and whose reveal, after the
+  prompt's question: "Double to 2?", "Redouble to 4?"; a take's whole
+  prompt, "Black redoubles to 4. Take?") and whose reveal, after the
   reader's own attempt, adds "Arie played 24/23 13/11 (a bad move) and
   lost 2 points." The canonical stays the clean URL; the picture ignores
   `?s=`; a token nobody minted, or minted for another puzzle, is ignored

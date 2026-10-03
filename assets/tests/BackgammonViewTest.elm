@@ -858,6 +858,38 @@ suite =
                             , attribute (Html.Attributes.title "Doubling cube: centered, either player may double")
                             ]
                         )
+             , test "a double on offer is turned to the new value and pushed to the one who answers it" <|
+                \_ ->
+                    let
+                        offeredBy from c =
+                            { c
+                                | scene =
+                                    withData "cube"
+                                        (E.object
+                                            [ ( "enabled", E.bool True )
+                                            , ( "value", E.int 2 )
+                                            , ( "owner", E.string from )
+                                            , ( "pending_from", E.string from )
+                                            , ( "crawford", E.bool False )
+                                            ]
+                                        )
+                                        c.scene
+                            }
+
+                        rowCube row q =
+                            q |> Query.find [ classes [ "bg-bar-row", row ] ] |> Query.findAll [ class "cube" ]
+                    in
+                    Expect.all
+                        [ -- Bob redoubles to 4: the cube is on my side, at 4, on offer
+                          \_ -> on (offeredBy "p2") (rowCube "mine" >> Query.first >> Query.has [ class "pending", text "4" ])
+                        , \_ -> on (offeredBy "p2") (rowCube "theirs" >> Query.count (Expect.equal 0))
+                        , \_ -> on (offeredBy "p2") (rowCube "centre" >> Query.count (Expect.equal 0))
+                        , \_ -> on (offeredBy "p2") (Query.has [ class "cube", attribute (Html.Attributes.title "Doubling cube: a double to 4 is on offer") ])
+
+                        -- my own offer goes across to Bob
+                        , \_ -> on (offeredBy "p1") (rowCube "theirs" >> Query.first >> Query.has [ class "pending", text "4" ])
+                        ]
+                        ()
              , test "both players connected: two lit dots, no wording" <|
                 \_ ->
                     on (\c -> { c | away = Just [] })

@@ -231,9 +231,9 @@ pub fn the_head_words_for_a_move_and_the_cube_test() {
   assert handler.headline("Arie", question(Move))
     == "Arie got this wrong. What's your play?"
   assert handler.headline("Arie", question(Double))
-    == "Arie got this wrong. Double?"
+    == "Arie got this wrong. Double to 2?"
   assert handler.headline("arie1", question(Take))
-    == "arie1 got this wrong. Take?"
+    == "arie1 got this wrong. Black doubles to 2. Take?"
 }
 
 pub fn the_story_line_test() {

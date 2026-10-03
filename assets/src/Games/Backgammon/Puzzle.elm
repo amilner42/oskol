@@ -6,7 +6,7 @@ module Games.Backgammon.Puzzle exposing
     , nodeAt, played, snapshot, pips, pipsAgainst
     , Reveal, Verdict(..), Candidate, CubeReveal, Schedule, Memory, Story, Why
     , revealDecoder, candidateDecoder, cubeRevealDecoder, scheduleDecoder, memoryDecoder, whyDecoder, storyDecoder, verdictName
-    , asReplayCandidate, gradeOf, optimalOf, bands, answers
+    , asReplayCandidate, gradeOf, optimalOf, bands
     )
 
 {-| A puzzle as the server sends it, and the board it is played on.
@@ -53,7 +53,7 @@ too, and only there.
 
 @docs Reveal, Verdict, Candidate, CubeReveal, Schedule, Memory, Story, Why
 @docs revealDecoder, candidateDecoder, cubeRevealDecoder, scheduleDecoder, memoryDecoder, whyDecoder, storyDecoder, verdictName
-@docs asReplayCandidate, gradeOf, optimalOf, bands, answers
+@docs asReplayCandidate, gradeOf, optimalOf, bands
 
 -}
 
@@ -879,19 +879,6 @@ optimalOf kind cube =
 
         _ ->
             Replay.cubeCall cube.noDouble cube.doubleTake cube.doublePass
-
-
-{-| The two answers a player gives, as at the table: the aggressive one is
-positive. The engine's verdict is finer (`bands`); the answer is a side.
--}
-answers : String -> List ( Int, String )
-answers kind =
-    case kind of
-        "take" ->
-            [ ( 1, "Take" ), ( -1, "Pass" ) ]
-
-        _ ->
-            [ ( 1, "Double" ), ( -1, "No double" ) ]
 
 
 {-| The five answers to a cube question, worst for the cube first (-2 to

@@ -27,6 +27,11 @@
  *     clean link (step 1) told no story.
  *  5. Phones: 390x844, 320x568 and 844x390: nothing scrolls sideways, the
  *     board fits, and upright it is the table's own size.
+ *  6. A take of a redouble at 390x844, 1440x900, 320x568 and 844x390: the
+ *     heading says "Black redoubles to 4. Take?", the cube is on offer at 4
+ *     on White's side, TAKE (CUBE TO 4) and DROP are the board's band, and
+ *     nothing moves from the first frame through answering (screenshots in
+ *     $SHOTS_DIR, else the system's temp dir under oskol-test-puzzle).
  *
  * Run with the dev server up (/dev routes on):
  *   node playwright/test-puzzle/test.js
@@ -410,6 +415,89 @@ async function run(browser, setup, errors) {
   }
 }
 
+/** Where each part of the page sits, rounded: what must not move. */
+async function boxes(page) {
+  return page.evaluate(() => {
+    const at = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)].join(',');
+    };
+    return {
+      heading: at('#pz-prompt'),
+      score: at('#pz-score'),
+      board: at('#pz-board'),
+      take: at('#pz-board #bg-action-take'),
+      drop: at('#pz-board #bg-action-drop'),
+      cube: at('#pz-board .cube'),
+      controls: at('.pz-controls'),
+      // the column beside or under the board: where it starts (the reveal is
+      // longer than the note it replaces, and may grow down)
+      side: (at('.pz-page .rp-side') || '').split(',').slice(0, 2).join(','),
+    };
+  });
+}
+
+function sameBoxes(what, before, after) {
+  for (const k of Object.keys(before)) {
+    must(before[k] === after[k], `${what}: ${k} holds still (${before[k]} -> ${after[k]})`);
+  }
+}
+
+/** 6. A take of a redouble (the doubler owns the cube at 2 and turns it to
+ * 4): the heading names the stakes, the score line names the cube before
+ * them, the cube is drawn on offer -- turned to 4, on the taker's side --
+ * and the answer is the table's own TAKE / DROP in the board's band. Nothing
+ * moves between the page settling, asking and answering. */
+async function takePuzzle(browser, setup) {
+  const shots = process.env.SHOTS_DIR || require('path').join(require('os').tmpdir(), 'oskol-test-puzzle');
+  require('fs').mkdirSync(shots, { recursive: true });
+  const url = `${BASE}/puzzles/${setup.take}`;
+  for (const size of [{ w: 390, h: 844 }, { w: 1440, h: 900 }, { w: 320, h: 568 }, { w: 844, h: 390 }]) {
+    const what = `take ${size.w}x${size.h}`;
+    const context = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: 2 });
+    await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    try {
+      const page = await context.newPage();
+      await page.goto(url);
+      await page.waitForSelector('#pz-prompt');
+      // The heading's slot from the first frame it is drawn in.
+      const first = await boxes(page);
+      await page.waitForSelector('#pz-board #bg-action-take');
+      await sleep(400);
+      const asked = await boxes(page);
+      must(first.heading === asked.heading && first.score === asked.score, `${what}: the heading is where it settles from its first frame (${first.heading})`);
+
+      must((await page.textContent('#pz-prompt')).trim() === 'Black redoubles to 4. Take?', `${what}: the heading names the redouble to 4`);
+      must((await page.textContent('#pz-score')).includes("cube 2, Black's, redoubled to 4"), `${what}: the score line names the cube before the offer`);
+      must((await page.title()).startsWith('Black redoubles to 4. Take?'), `${what}: the tab title asks the same`);
+      const cube = page.locator('#pz-board .bg-bar-row.mine .cube.pending');
+      must((await cube.count()) === 1 && (await cube.textContent()).trim() === '4', `${what}: the cube is on offer at 4, on White's side`);
+      must((await page.textContent('#bg-action-take')).trim() === 'TAKE (CUBE TO 4)', `${what}: TAKE says the cube it takes`);
+      must((await page.textContent('#bg-action-drop')).trim() === 'DROP', `${what}: DROP beside it`);
+      must(!(await page.locator('#pz-bands').count()), `${what}: no row of answers under the board`);
+      await noSideways(page, what);
+      await page.screenshot({ path: `${shots}/take-${size.w}x${size.h}-asked.png` });
+
+      await page.click('#pz-board #bg-action-drop');
+      await page.waitForSelector('#pz-reveal');
+      await sleep(400);
+      sameBoxes(what, asked, await boxes(page));
+      must(await page.isVisible('#pz-actions #pz-share'), `${what}: SHARE in the held row`);
+      const look = await page.evaluate(() => ['#bg-action-take', '#bg-action-drop'].map((s) => {
+        const st = getComputedStyle(document.querySelector(s));
+        return { opacity: Number(st.opacity), events: st.pointerEvents };
+      }));
+      must(look[0].opacity < 0.5 && look[1].opacity === 1, `${what}: DROP stays in the band, TAKE fades`);
+      must(look.every((l) => l.events === 'none'), `${what}: neither answers a tap again`);
+      await page.screenshot({ path: `${shots}/take-${size.w}x${size.h}-revealed.png` });
+    } finally {
+      await context.close();
+    }
+  }
+}
+
 (async () => {
   const setup = arrange();
   log(`room ${setup.game_id}: ${setup.puzzles} puzzles; opening ${setup.players[0].puzzle.id}`);
@@ -417,6 +505,7 @@ async function run(browser, setup, errors) {
   const errors = [];
   try {
     await run(browser, setup, errors);
+    await takePuzzle(browser, setup);
   } finally {
     await browser.close();
   }

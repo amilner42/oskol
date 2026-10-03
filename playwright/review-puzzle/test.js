@@ -80,11 +80,11 @@ async function stageATurn(page) {
       }
 
       await page.goto(`${BASE}/puzzles/${setup.cube}`);
-      await page.waitForSelector('#pz-bands');
+      await page.waitForSelector('#pz-board #bg-action-double, #pz-board #bg-action-take');
       await page.waitForTimeout(300);
       await page.screenshot({ path: `${OUT}/cube-${size.name}.png` });
-      await page.click('#pz-band-1');
-      await page.waitForSelector('#pz-scale');
+      await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').first().click();
+      await page.waitForSelector('#pz-reveal');
       await page.waitForTimeout(300);
       await page.screenshot({ path: `${OUT}/cube-reveal-${size.name}.png`, fullPage: size.name !== 'landscape' });
 

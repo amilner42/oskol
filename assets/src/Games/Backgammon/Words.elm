@@ -4,8 +4,10 @@ module Games.Backgammon.Words exposing
     , bestInWords
     , candidateInWords
     , chanceCells
+    , cubeBefore
     , cubeChances
     , cubeLine
+    , cubeQuestion
     , cubeVerdict
     , doubleInWords
     , doubleWhy
@@ -95,6 +97,61 @@ standing who win =
 
     else
         who ++ " is well ahead here"
+
+
+{-| A cube question as it is asked, naming its stakes: "White to play.
+Double to 2?", "White to play. Redouble to 4?", "Black doubles to 2.
+Take?", "Black redoubles to 4. Take?". The twin of Gleam's
+`oskol/puzzles.prompt`, which writes the puzzle page's heading in these
+same words; this one is for a board in its real colours (the analysis
+board). `value` is the cube before the offer and `owned` whether anyone
+holds it -- only the doubler can -- so the offer is twice it, a redouble
+when owned.
+-}
+cubeQuestion : { take : Bool, asked : String, doubler : String, value : Int, owned : Bool } -> String
+cubeQuestion q =
+    let
+        to =
+            String.fromInt (q.value * 2)
+    in
+    case ( q.take, q.owned ) of
+        ( True, True ) ->
+            q.doubler ++ " redoubles to " ++ to ++ ". Take?"
+
+        ( True, False ) ->
+            q.doubler ++ " doubles to " ++ to ++ ". Take?"
+
+        ( False, True ) ->
+            q.asked ++ " to play. Redouble to " ++ to ++ "?"
+
+        ( False, False ) ->
+            q.asked ++ " to play. Double to " ++ to ++ "?"
+
+
+{-| The cube in the puzzle page's score line: "cube 2, Black's", "cube
+centered". On a take the cube given is the one before the double, so the
+line says what was done to it -- "cube 2, Black's, redoubled to 4", "cube
+centered, doubled to 2" -- and never reads as the stakes. The twin of the
+cube half of Gleam's `analysis/setup.situation`.
+-}
+cubeBefore : { take : Bool, value : Int, owner : Maybe String } -> String
+cubeBefore c =
+    let
+        to =
+            String.fromInt (c.value * 2)
+    in
+    case ( c.owner, c.take ) of
+        ( Just owner, False ) ->
+            "cube " ++ String.fromInt c.value ++ ", " ++ owner ++ "'s"
+
+        ( Just owner, True ) ->
+            "cube " ++ String.fromInt c.value ++ ", " ++ owner ++ "'s, redoubled to " ++ to
+
+        ( Nothing, False ) ->
+            "cube centered"
+
+        ( Nothing, True ) ->
+            "cube centered, doubled to " ++ to
 
 
 {-| The verdict on what was done with the cube, in the shape the move's

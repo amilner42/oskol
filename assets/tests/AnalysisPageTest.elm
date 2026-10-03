@@ -677,6 +677,21 @@ answering =
                 sendAll [ PickedTake, PressedAnalyze, GotAsk 1 (done "take") ] page
                     |> panel
                     |> Query.has [ class "rp-cube-eqs" ]
+        , test "a cube answer opens on what was asked, stakes and all, in the board's colours" <|
+            \_ ->
+                Expect.all
+                    [ \_ ->
+                        sendAll [ PickedDouble, PressedAnalyze, GotAsk 1 (done "double") ] page
+                            |> panel
+                            |> Query.find [ id "an-answer-ask" ]
+                            |> Query.has [ text "White to play. Double to 2?" ]
+                    , \_ ->
+                        sendAll [ PickedTake, PressedAnalyze, GotAsk 1 (done "take") ] page
+                            |> panel
+                            |> Query.find [ id "an-answer-ask" ]
+                            |> Query.has [ text "Black doubles to 2. Take?" ]
+                    ]
+                    ()
         , test "a candidate goes on the board, and the dice take it back" <|
             \_ ->
                 let
@@ -1208,6 +1223,34 @@ playingItOut =
                         [ send (PickedRoll ( 6, 1 )) >> platesOf >> Expect.equal [ "W 6-1" ]
                         , send (Walked 1) >> send (PickedTurn White) >> platesOf >> Expect.equal [ "W 5-2" ]
                         ]
+        , test "in PLAY a cube step is answered in the board's band, with the table's buttons" <|
+            \_ ->
+                let
+                    doubling =
+                        answered31 |> sendAll [ PressedPlayCandidate, PickedDouble ]
+
+                    doubled =
+                        send (Chose Setup.Doubled) doubling
+
+                    board =
+                        Analysis.view >> Query.fromHtml >> Query.find [ id "an-board" ]
+                in
+                Expect.all
+                    [ \_ -> board doubling |> Query.find [ id "bg-action-double" ] |> Event.simulate Event.click |> Event.expect (Chose Setup.Doubled)
+                    , \_ -> board doubling |> Query.find [ id "bg-action-roll" ] |> Event.simulate Event.click |> Event.expect (Chose Setup.NoDouble)
+                    , \_ -> board doubled |> Query.find [ id "bg-action-take" ] |> Event.simulate Event.click |> Event.expect (Chose Setup.Took)
+                    , \_ -> board doubled |> Query.find [ id "bg-action-drop" ] |> Event.simulate Event.click |> Event.expect (Chose Setup.Passed)
+
+                    -- the double on offer sits on the taker's side, at 2
+                    , \_ -> board doubled |> Query.find [ class "bg-bar-row", class "mine" ] |> Query.find [ class "cube" ] |> Query.has [ class "pending", text "2" ]
+
+                    -- the row over the board answers nothing itself
+                    , \_ -> Analysis.view doubling |> Query.fromHtml |> Query.findAll [ id "an-cube-yes" ] |> Query.count (Expect.equal 0)
+
+                    -- walking back to the double keeps the answer shown
+                    , \_ -> doubled |> send (Walked 1) |> board |> Query.has [ class "cube-chose-double" ]
+                    ]
+                    ()
         , test "PASS ends the line in its sentence, and nothing more is chosen" <|
             \_ ->
                 answered31
@@ -1216,7 +1259,7 @@ playingItOut =
                         [ Analysis.ending >> Expect.equal (Just "White passes. Black wins 1 point.")
                         , platesOf >> Expect.equal [ "W 3-1 · play 1", "B doubles", "W passes" ]
                         , Analysis.view >> Query.fromHtml >> Query.find [ id "an-line-end" ] >> Query.has [ text "White passes. Black wins 1 point." ]
-                        , Analysis.view >> Query.fromHtml >> Query.hasNot [ id "an-take" ]
+                        , Analysis.view >> Query.fromHtml >> Query.hasNot [ id "bg-action-take" ]
                         , send (Chose Setup.Took) >> platesOf >> Expect.equal [ "W 3-1 · play 1", "B doubles", "W passes" ]
                         ]
         , test "PLAY on the table commits the board its path reaches, as it reads" <|

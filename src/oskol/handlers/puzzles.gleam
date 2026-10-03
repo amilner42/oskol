@@ -315,6 +315,8 @@ pub fn head(ctx: Ctx, id: String, share: String) -> Result(Head, ApiError) {
 /// (`oskol/puzzles/picture`): no score is unlimited play, and one point
 /// each way is a single game -- a 1-point match and a single game are the
 /// same position, unless it is marked Crawford, which only a match is.
+/// A take's cube is the one before the double, said as such: "Cube at 2,
+/// Black's, redoubled to 4." -- the stakes are the prompt's to name.
 pub fn describe(q: Question) -> String {
   setup.situation(
     q.away_mover,
@@ -326,6 +328,7 @@ pub fn describe(q: Question) -> String {
       Opponent -> Some(board.Black)
       _ -> None
     },
+    q.kind == Take,
   )
   <> " A backgammon puzzle: play it on the board."
 }

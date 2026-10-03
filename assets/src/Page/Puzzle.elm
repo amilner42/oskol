@@ -2133,9 +2133,19 @@ viewPuzzle model puzzle =
                             }
                         )
 
-                -- A cube question: the position, nothing to tap.
+                -- A cube question: the position, answered in the board's
+                -- own band with the table's buttons. They stay once
+                -- answered, the one not chosen dimmed, so nothing moves.
                 ( Nothing, Nothing, _ ) ->
-                    Board.viewStill NoOp (still model puzzle puzzle.question.board [])
+                    Html.map (Maybe.map pickedCube >> Maybe.withDefault NoOp)
+                        (Board.viewCubeAsk
+                            { still = still model puzzle puzzle.question.board []
+                            , take = puzzle.kind == "take"
+                            }
+                        )
+
+        chosen =
+            chosenCube puzzle.kind model.band
     in
     [ viewHead
     , viewProgress model
@@ -2153,6 +2163,8 @@ viewPuzzle model puzzle =
                     , ( "g-" ++ Maybe.withDefault "" yoursGrade, proposed == Nothing && yoursGrade /= Nothing )
                     , ( "dice-played", reveal /= Nothing && not model.before )
                     , ( "is-revealed", reveal /= Nothing )
+                    , ( "cube-locked", model.attempt == Sending || reveal /= Nothing )
+                    , ( "cube-chose-" ++ Maybe.withDefault "" chosen, chosen /= Nothing )
                     ]
                 , id "pz-board"
                 ]
@@ -2199,10 +2211,10 @@ viewPuzzle model puzzle =
                                         "Play the roll on the board, then press PLAY."
 
                                     "take" ->
-                                        "White has been doubled. Take, or pass?"
+                                        "Take, or drop? Answer on the board."
 
                                     _ ->
-                                        "Would you turn the cube? Double, or not?"
+                                        "Double, or roll? Answer on the board."
                                 )
                             ]
                         ]
@@ -2263,9 +2275,50 @@ still model puzzle position landed =
     , mover = Just mover.id
     , dice = puzzle.question.dice
     , landed = landed
-    , offer = Nothing
+
+    -- A take is asked with the double on offer: the cube turned to the new
+    -- value and pushed across to White, who has to answer it.
+    , offer =
+        if puzzle.kind == "take" then
+            Just opponent.id
+
+        else
+            Nothing
     , accounts = Nothing
     }
+
+
+{-| The band's answer as the band a cube attempt sends: the table's TAKE
+and DOUBLE are the +1 side, DROP and ROLL (no double) the -1.
+-}
+pickedCube : String -> Msg
+pickedCube action =
+    if action == "take" || action == "double" then
+        PickedBand 1
+
+    else
+        PickedBand -1
+
+
+{-| The table's action a cube answer was, for the band to keep it shown.
+-}
+chosenCube : String -> Maybe Int -> Maybe String
+chosenCube kind band =
+    case ( kind, band ) of
+        ( "take", Just 1 ) ->
+            Just "take"
+
+        ( "take", Just _ ) ->
+            Just "drop"
+
+        ( "double", Just 1 ) ->
+            Just "double"
+
+        ( "double", Just _ ) ->
+            Just "roll"
+
+        _ ->
+            Nothing
 
 
 {-| The score and the cube in one line under the question: what the head
@@ -2307,22 +2360,29 @@ scoreLine puzzle =
                                )
 
         cube =
-            case q.cube.owner of
-                "mover" ->
-                    "cube " ++ String.fromInt q.cube.value ++ ", White's"
+            Words.cubeBefore
+                { take = puzzle.kind == "take"
+                , value = q.cube.value
+                , owner =
+                    case q.cube.owner of
+                        "mover" ->
+                            Just "White"
 
-                "opponent" ->
-                    "cube " ++ String.fromInt q.cube.value ++ ", Black's"
+                        "opponent" ->
+                            Just "Black"
 
-                _ ->
-                    "cube centered"
+                        _ ->
+                            Nothing
+                }
     in
     score ++ " · " ++ cube
 
 
-{-| Under the board: on a cube question, the two answers; after the
-reveal, SHARE and NEXT. A checker play's UNDO and PLAY are the board's
-own, in its centre band, exactly as at the table.
+{-| Under the board, after the reveal: SHARE and NEXT. Every answer is the
+board's own, in its centre band, exactly as at the table: a checker
+play's UNDO and PLAY, a cube question's DOUBLE and ROLL or TAKE and DROP.
+The row's height is held before the reveal (`.pz-controls`), so the
+answer arriving moves nothing under it.
 -}
 viewControls : Model -> Puzzle -> Html Msg
 viewControls model puzzle =
@@ -2335,50 +2395,43 @@ viewControls model puzzle =
                 _ ->
                     False
 
-        sending =
-            model.attempt == Sending
+        shown name =
+            if revealed then
+                id name
+
+            else
+                class ""
     in
     div [ class "rp-controls-wrap pz-controls flex flex-col items-center gap-2" ]
-        [ if puzzle.kind /= "move" && not revealed then
-            div [ class "pz-bands pz-answers", id "pz-bands" ]
-                (Puzzle.answers puzzle.kind
-                    |> List.map
-                        (\( band, label ) ->
-                            button
-                                [ classList [ ( "pz-band", True ), ( "is-on", model.band == Just band ) ]
-                                , id ("pz-band-" ++ bandId band)
-                                , attribute "data-band" (String.fromInt band)
-                                , disabled sending
-                                , onClick (PickedBand band)
-                                ]
-                                [ text label ]
-                        )
-                )
+        [ div
+            (if revealed then
+                [ class "pz-actions", id "pz-actions" ]
 
-          else
-            text ""
-        , if revealed then
-            div [ class "pz-actions", id "pz-actions" ]
+             else
+                -- held: the row as it will be, unseen and untouchable,
+                -- with no ids until it is the real one
+                [ class "pz-actions is-held", attribute "aria-hidden" "true", attribute "inert" "" ]
+            )
                 -- One SHARE. For the player whose own mistake this was (the
                 -- memory line said "you") it shares the link with their
                 -- story, which is the one worth sending; for everyone else
                 -- the clean link. The server refuses a story to anyone else
                 -- anyway.
                 ((if Maybe.map .who model.memory == Just "you" then
-                    button [ class "q-btn plain pz-action pz-act-share", id "pz-share-story", onClick ShareStory ]
+                    button [ class "q-btn plain pz-action pz-act-share", shown "pz-share-story", onClick ShareStory ]
                         [ span [ class "hero-link w-4 h-4", attribute "aria-hidden" "true" ] []
                         , text (Maybe.withDefault "SHARE" model.storyLabel)
                         ]
 
                   else
-                    button [ class "q-btn plain pz-action pz-act-share", id "pz-share", onClick Share ]
+                    button [ class "q-btn plain pz-action pz-act-share", shown "pz-share", onClick Share ]
                         [ span [ class "hero-link w-4 h-4", attribute "aria-hidden" "true" ] []
                         , text (Maybe.withDefault "SHARE" model.shareLabel)
                         ]
                  )
                     -- Into a set of your own (the sheet the analysis board
                     -- opens too).
-                    :: button [ class "q-btn plain pz-action pz-act-save", id "pz-save", onClick PressedSave ]
+                    :: button [ class "q-btn plain pz-action pz-act-save", shown "pz-save", onClick PressedSave ]
                         [ span [ class "hero-bookmark w-4 h-4", attribute "aria-hidden" "true" ] []
                         , text "SAVE"
                         ]
@@ -2388,7 +2441,7 @@ viewControls model puzzle =
                     -- row on a 320 phone.
                     :: a
                         [ class "q-btn plain pz-action pz-act-analysis"
-                        , id "pz-analysis"
+                        , shown "pz-analysis"
                         , href (Route.href (Route.analysisPuzzle puzzle.id))
                         , target "_blank"
                         , rel "noopener"
@@ -2408,7 +2461,7 @@ viewControls model puzzle =
                     :: (if model.hasNext || model.celebration /= Nothing then
                             [ button
                                 [ classList [ ( "q-btn pz-action", True ), ( "is-busy", model.leaving ) ]
-                                , id "pz-next"
+                                , shown "pz-next"
                                 , attribute "aria-busy"
                                     (if model.leaving then
                                         "true"
@@ -2425,7 +2478,7 @@ viewControls model puzzle =
                             []
                        )
                     ++ (if model.inRun then
-                            [ button [ class "q-btn plain pz-action", id "pz-done", onClick PressedDone ]
+                            [ button [ class "q-btn plain pz-action", shown "pz-done", onClick PressedDone ]
                                 [ text "I'M DONE" ]
                             ]
 
@@ -2433,19 +2486,7 @@ viewControls model puzzle =
                             []
                        )
                 )
-
-          else
-            text ""
         ]
-
-
-bandId : Int -> String
-bandId band =
-    if band < 0 then
-        "minus" ++ String.fromInt (abs band)
-
-    else
-        String.fromInt band
 
 
 

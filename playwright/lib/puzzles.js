@@ -63,9 +63,9 @@ async function playRun(page, { onReveal = async () => {}, onCelebration = async 
         was, { timeout: 15000 });
       continue;
     }
-    if (await page.locator('#pz-bands').count()) {
-      // a cube question: any band answers it
-      await page.locator('#pz-bands .pz-band').first().click();
+    if (await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').count()) {
+      // a cube question, answered in the board's band: DOUBLE or TAKE will do
+      await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').first().click();
     } else {
       await stageATurn(page);
       await page.click('#bg-action-play');

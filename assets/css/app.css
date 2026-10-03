@@ -2047,6 +2047,16 @@ a.bg-match-door:hover { background: var(--paper-2); }
 }
 .bg-still .bg-stack { border-radius: 12px; box-shadow: 0 10px 26px rgba(40, 24, 12, 0.32); }
 .bg-still .player-bar { padding: 4px 8px; }
+/* A take asked on a still board (a cube puzzle, the analysis board in
+   PLAY): the table's TAKE (CUBE TO n) and DROP, one over the other in the
+   left half, sized to the half so neither wraps or spills and the band
+   keeps its height. */
+.bg-still .bg-band:has(> #bg-action-take) { row-gap: 4px; }
+.bg-still .bg-band #bg-action-take,
+.bg-still .bg-band #bg-action-drop {
+  white-space: nowrap; padding: 0.25rem 0.5rem; line-height: 1.25;
+  font-size: clamp(6px, calc((var(--bg-pw) * 6 - 24px) / 16), 9px);
+}
 @media (max-width: 639px) {
   .bg-still .bg-band .dice-row { --dice-gap: 0.4rem; }
   .bg-still .bg-band .die { --die-size: clamp(1.4rem, calc(var(--bg-pw) * 1.2), 2.3rem); }
@@ -2147,21 +2157,17 @@ a.bg-match-door:hover { background: var(--paper-2); }
 .pz-page .rp-note { max-height: none; }
 .pz-note-quiet { color: var(--pencil); }
 .pz-note-quiet .rp-words { color: var(--pencil); font-style: italic; }
-/* The five answers to a cube question, in one row; after the reveal the
-   same row is the scale, the engine's band inked. */
-.pz-bands { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; width: 100%; max-width: 32rem; }
-.pz-bands.pz-answers { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-width: 22rem; }
-.pz-answers .pz-band { min-height: 3rem; font-size: 12px; }
-.pz-band {
-  display: flex; align-items: center; justify-content: center; text-align: center;
-  min-height: 2.6rem; padding: 4px 2px; border: 2px solid var(--ink); border-radius: 4px;
-  background: #fff; color: var(--ink); font-size: 10.5px; font-weight: 700; line-height: 1.15;
-  box-shadow: 2px 2px 0 0 var(--ink); transition: transform 0.08s, box-shadow 0.08s;
-}
-button.pz-band { cursor: pointer; }
-button.pz-band:not(:disabled):hover { background: var(--paper-2); }
-button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shadow: none; }
-.pz-band.is-on { background: var(--highlighter); }
+/* A cube question is answered in the board's band with the table's own
+   buttons (`View.viewCubeAsk`). Once an answer is in they stay where they
+   are, so nothing moves: the one not chosen fades (`.cube-chose-*`), and
+   once the answer is sent neither answers a tap again (`.cube-locked`).
+   The analysis board in PLAY answers the same way, and may change its
+   mind. */
+.cube-locked .bg-band .btn-arcade { pointer-events: none; }
+.cube-chose-take #bg-action-drop,
+.cube-chose-drop #bg-action-take,
+.cube-chose-double #bg-action-roll,
+.cube-chose-roll #bg-action-double { opacity: 0.35; }
 /* The verdict, in the grades' colours: right is the best move's green,
    close the doubtful yellow, a miss the very-bad red, unranked pencil. */
 .pz-verdict { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 2px solid var(--ink); }
@@ -2372,6 +2378,9 @@ button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shado
 /* Under the board after the reveal: SHARE, and NEXT when there is one. */
 .pz-controls { padding-top: 0.4rem; }
 .pz-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+/* Before the answer the row is drawn and held, unseen: its height is there
+   from the first frame, so the reveal arriving moves nothing under it. */
+.pz-actions.is-held { visibility: hidden; }
 .pz-action { gap: 6px; padding: 7px 14px; font-family: "Press Start 2P", monospace; font-size: 8px; }
 /* SHARE, SAVE and ANALYSIS: one row at every width, each a fixed box, so
    SHARE's "Copied" / "Copy failed" moves nothing beside it. */
@@ -2723,6 +2732,10 @@ a.rp-match-row:hover { color: var(--ink); }
   .bg-still .bg-band .die { --die-size: 1.5rem; box-shadow: 2px 2px 0 0 var(--bg-checker-edge); }
   .bg-still .bg-band .die .grid { width: 1.15rem; height: 1.15rem; }
   .bg-still .bg-band .die .grid > div > div { width: 4px; height: 4px; }
+  /* TAKE (CUBE TO n) over DROP still fits the short band, one per row. */
+  .bg-still .bg-band:has(> #bg-action-take) { flex-wrap: wrap; align-content: center; row-gap: 2px; }
+  .bg-still .bg-band #bg-action-take,
+  .bg-still .bg-band #bg-action-drop { padding: 0.15rem 0.4rem; }
 }
 
 /* The same phone sideways with one panel: the column beside the board
@@ -2810,7 +2823,6 @@ a.rp-match-row:hover { color: var(--ink); }
   .pz-page .rp-side { grid-row: 5; overflow-y: auto; min-height: 0; }
   .pz-page .rp-note { max-height: none; }
   .pz-prompt { font-size: 14px; }
-  .pz-band { min-height: 2.2rem; font-size: 9.5px; }
   /* The strip keeps its tiles at full size: they are what a run is for. */
   /* The end of a run is a card, not a board and its column: one column,
      the card under the header, the page as tall as the card needs. */
@@ -3976,6 +3988,9 @@ fieldset.an-strip, fieldset.an-quick-row { margin: 0; padding: 0; border: 0; min
 .an-panel-hint { margin: 0; padding: 10px 12px; font-size: 13px; line-height: 1.4; color: var(--pencil); border: 1.5px dashed color-mix(in oklab, var(--ink) 30%, transparent); border-radius: 8px; }
 .an-answer.rp-note { min-height: 0; max-height: none; overflow: visible; padding: 8px 10px 10px; }
 .an-answer .rp-words:first-child { margin-top: 0; }
+/* A cube answer opens on what was asked, stakes and all. */
+.an-answer-ask { margin: 0 0 4px; font-size: 14px; font-weight: 800; line-height: 1.25; }
+.an-answer-ask + .rp-words { margin-top: 0; }
 .an-answer .rp-cube { margin-top: 6px; }
 .an-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; height: 1.5em; margin-top: 8px; font-size: 12px; color: var(--pencil); }
 .an-depth { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
