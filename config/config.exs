@@ -62,7 +62,13 @@ config :oskol, :analysis_budget,
   guest_day: 30,
   user_hour: 30,
   user_day: 150,
-  global_day: 600
+  global_day: 600,
+  # A per-roll grid is answered in the request and costs about 0.2 s, so it is
+  # bounded by the minute rather than the day: 30 presses a minute a caller
+  # (a comparison of two boards is one press and one round trip), and 120 a
+  # minute between everybody, which is well under what the machine can answer.
+  rolls_minute: 30,
+  rolls_global_minute: 120
 
 # The line those asks wait in (`Oskol.Analysis.Asker`): two at once, twenty
 # waiting, a minute's pause after the engine fails.
@@ -72,6 +78,10 @@ config :oskol, Oskol.Analysis.Asker,
   waiting: 20,
   circuit_ms: 60_000,
   ask_timeout_ms: 60_000
+
+# Per-roll grids are not queued at all: they are answered inside the request,
+# so the timeout is seconds rather than a review's twenty minutes.
+config :oskol, Oskol.Analysis.Rolls, timeout_ms: 15_000
 
 # The puzzle deck's spaced repetition (the `retain` library): our repo, our
 # tables, no processes to start.

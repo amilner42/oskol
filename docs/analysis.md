@@ -249,10 +249,9 @@ Puzzles (`nav-analysis`).
   and only then is one ask reserved from every bucket (`allow_ask`),
   refused as a 429 that says whose budget and how long. The request is
   `analysis.position_request(turn, 1, jacoby)`: the engine's default depth
-  (4-ply), `all_results`, the top five, and `include_luck: false` (luck is
-  a cube evaluation per turn that nothing here reads). A game's own turns
-  keep `one_turn_request`, luck and all, so the review cache's bytes are
-  unchanged.
+  (4-ply), `all_results`, the top five, and `include_luck: false` and
+  `rolls: false` (either is a cube evaluation per turn that nothing here
+  reads). A game's own turns keep `one_turn_request`, luck and grid and all.
 - **The budgets** (`buckets`; numbers from `config :oskol, :analysis_budget`):
   a guest `analysis:guest:<id>:hour` 10 and `:day` 30; an account
   `analysis:user:<id>:hour` 30 and `:day` 150 (an account is charged as
@@ -295,6 +294,95 @@ Puzzles (`nav-analysis`).
   n_legal, levels}`; `best`, `top` and `cube` come from the same
   `answer_fields` an attempt's reveal is rendered with, so a page draws an
   analysis and an answered puzzle with one renderer.
+
+## Per-roll grids (`src/oskol/analysis/rolls.gleam`, `Oskol.Analysis.Rolls`)
+
+`POST /papi/analysis/rolls` answers how each of the 21 distinct rolls fares
+from a board -- the grid behind a temperature map -- and, given the boards one
+or two plays left, each play's grid and the difference between them (wire:
+`docs/api.md`). The research is the Aveline doc `bg-roll-breakdown`; what is
+settled there is not reopened here. Tests:
+`test/oskol/analysis/rolls_test.gleam` (the weights, what a cell is, the sign,
+on real grids), the same path in `test/oskol/analysis_handler_test.gleam`
+(what is asked, on which cube, from which side, and what it costs) and
+`test/oskol/analysis/rolls_test.exs` (the real call, the cache, the circuit).
+
+- **Answered in the request, not queued.** A grid is about 0.2 s of engine
+  time over the real path (measured 2026-10-02: 0.31-0.37 s for one board,
+  0.38-0.52 s for a batch of two, against the live engine through Fly and the
+  tailnet), so there is no job to join, nothing to poll and no second
+  endpoint. The asker's **circuit** still governs it -- a desktop asleep
+  behind a tailnet must be asked once and not once per keen player -- so
+  `asking` is read before anything is asked (open is a 503, a full line a
+  429), and a failure here opens it (`Asker.engine_failed/1`) exactly as a
+  failed ask does.
+- **3-ply, always** (`analysis.rolls_level`). At 4-ply the engine's per-roll
+  rows are corrupt rather than imprecise -- nondeterministic between runs,
+  about 0.09 low on ND, and they flip cube decisions -- and at 2-ply they are
+  the bare network with no lookahead. The engine refuses both with a 422
+  before any engine time; this constant is so nothing here asks. Only the
+  no-double rows are read: the double/take rows are on another scale once the
+  cube is owned or there is a match score.
+- **A cell is the roll's own equity** (the human's call, 2026-10-02, after
+  seeing the component): zero is an even position, and the page draws one
+  fixed ramp over every grid -- 0 neutral, +1 the darkest green, -1 the
+  darkest red, beyond that clamped. It was *luck* (the roll's equity minus the
+  position's own) until then, which centred each grid on itself; an absolute
+  scale reads the same everywhere instead, and the comparison grid uses the
+  same ramp on the difference. The rows' weighted mean **is** the headline
+  equity (verified against the live engine over twenty grids, worst
+  disagreement 7.8e-08), so the grid is the number above it decomposed.
+- **No band on the wire.** With a fixed ramp there is no decision left to
+  centralise: a band would quantise the very number the page interpolates, and
+  the one thing that must not drift between the replay, the analysis board and
+  the comparison is the ramp, which is colour and lives with the colour
+  (`docs/api.md` states it). It also means the engine's own 0.02-0.15 error
+  against a rollout moves a cell's colour imperceptibly rather than flipping a
+  bucket. A cell is **not a grade** either: `??` / `?` / `?!` measure a play
+  against the best play and the engine plays the best move for every roll, so
+  no cell holds a mistake; the only number here a grade could describe is a
+  difference grid's total, which is graded where plays are graded.
+- **What an absolute ramp costs, measured.** Over twenty live 3-ply grids a
+  single position's 21 rolls span a median 0.60 of the 2.0 ramp (worst 1.19,
+  and 0.0 in a decided position), and in 12 of the 20 -- 6 of the 14
+  non-decided -- *every* roll falls on one side of zero: a winning position
+  draws an all-green map whose rolls differ by a shade, which is the thing the
+  headline already says. The difference grid is the opposite: the real
+  comparison in the fixtures spans 1.39 of the ramp and uses it well. Worth
+  knowing before anyone concludes the component is broken.
+- **The sign is the hazard.** A candidate play's grid is taken on the board
+  that play left, read from the **opponent's** side, so good for them is bad
+  for the player who moved. `rolls.opposite` turns a position round (the
+  board through `puzzles.flip`, the cube's owner and the away scores with it)
+  and `rolls.diff` negates once more, so a difference cell is positive where
+  the second play does better for the mover. Both are held to positions whose
+  answer needs no engine: 6-6 is the best opening roll there is, and a play
+  that leaves the opponent on the bar with blots to shoot at is worse on
+  exactly the rolls that let them hit (and better on the ones they dance on).
+- **The cube a grid is taken on** (`setup.grid_position`): the setup's own for
+  a move and for a double -- a cube question is asked before the cube is
+  turned, so its grid is the pre-roll board -- and for a take what the take
+  left, twice the value owned by the taker, which is the engine's own rule for
+  everything after a take. A roll that plays nothing is **not** refused here,
+  unlike an ask: a grid is about all 21 rolls and not about the one that is set.
+- **Cached by the request's bytes** in `roll_grids` (`Oskol.Analysis.Rolls`),
+  as a turn's grade is in `turn_grades`: board, cube, match score and depth
+  are all in those bytes, a row is never rewritten, and the rows are swept
+  after a week. A board already stored costs **no engine time and no budget**,
+  which is why the lookup is its own capability (`cached_rolls`) and the ask
+  another (`ask_rolls`): the handler has to know a request is free before it
+  charges anybody.
+- **The budget** is the moves' shape rather than the asks': a caller's minute
+  (`rolls:user:<id>:minute` or `rolls:guest:<id>:minute`, 30) and everybody's
+  (`rolls:global:minute`, 120), from `config :oskol, :analysis_budget`. One
+  charge a request, whether it asks about one board or two, because a
+  comparison is one press; a charge for an ask the engine refused or never
+  answered is handed back.
+- **The replay reads its grids off the stored report** and spends no engine
+  time (`docs/reviews.md`): every review graded from now on carries a grid on
+  every turn, free, because the engine already computes it for luck. The 68
+  games reviewed before that have none and cannot be backfilled, so the
+  replay's ROLLS tab asks this endpoint for those on demand.
 
 ## The board (`assets/src/Page/Analysis.elm`)
 

@@ -36,6 +36,10 @@ lib/oskol/limiter.ex            the rate counters, sign-in mail's and the analys
 lib/oskol/analysis/asker.ex     the analysis board's line to the engine: jobs by
                                 puzzle key, two in flight, twenty waiting, the 60 s
                                 circuit, outcomes in ETS for ten minutes
+lib/oskol/analysis/rolls.ex     per-roll grids: one /backgammon/rolls or a /batch
+                                of two, answered in the request (0.2 s), kept in
+                                roll_grids under the request's sha256 and swept
+                                after a week
 lib/oskol/mail.ex               the one mail Oskol sends: the sign-in link and code
 lib/oskol/mailer.ex             Swoosh: Postmark in prod, /dev/mailbox in dev
 lib/oskol_web/plugs/guest_id.ex mints/renews the year-long guest cookie on every visit
@@ -85,8 +89,15 @@ lib/oskol/puzzles.ex            puzzles + puzzle_sources/attempts/shares/images 
                                 the one write, in one transaction with its marker
 src/oskol/analysis/setup.gleam  the position a player sets up on the analysis board:
                                 the shape and its wire, check's refusals, the puzzle
-                                question and engine turn it asks, flip, and the way
-                                back from a stored question
+                                question and engine turn it asks, the board and cube
+                                a per-roll grid is taken on, flip, and the way back
+                                from a stored question
+src/oskol/analysis/rolls.gleam  the per-roll grid: the type, the weights, the cells
+                                (each roll's own equity), the other side of a
+                                position and the difference between two plays --
+                                where the sign lives, and the one place it is
+                                decided. No colour: the ramp is fixed and the
+                                client's (docs/api.md)
 src/oskol/puzzles.gleam         a puzzle's stored shape: the question, its canonical
                                 key and id, the answer, the JSON of each column
 src/oskol/puzzles/extract.gleam which turns of a graded game are puzzles
@@ -94,7 +105,10 @@ src/oskol/handlers/analysis.gleam POST/GET /papi/analysis: the cache by key, the
                                 budgets, the refusals, and `store` (an engine answer
                                 kept as an "analysis" puzzle); POST
                                 /papi/analysis/moves, a set-up roll's legal plays
-                                (the puzzle tree, never the engine); its controller is
+                                (the puzzle tree, never the engine); POST
+                                /papi/analysis/rolls, a board's per-roll grid and two
+                                plays against each other, answered in the request;
+                                its controller is
                                 lib/oskol_web/controllers/api/analysis_controller.ex
 src/oskol/handlers/positions.gleam POST .../rooms/:id/positions: a replay step
                                 written as a puzzle from the game's stored record

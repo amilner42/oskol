@@ -206,12 +206,29 @@ pub type AskBudget {
     user_hour: Int,
     user_day: Int,
     global_day: Int,
+    /// A per-roll grid is 0.2 s of engine and is answered in the request, so
+    /// it is bounded by the minute as the move trees are, not by the day: one
+    /// caller's minute, then everybody's. Appended last, so every field
+    /// before keeps its place.
+    rolls_minute: Int,
+    rolls_global_minute: Int,
   )
 }
 
 /// A bucket that had no room: its key, and how long until it has.
 pub type Refused {
   Refused(key: String, retry_after_s: Int)
+}
+
+/// Why a grid could not be had.
+pub type RollsFailure {
+  /// The engine read the board and would not answer it (a 4xx): asking again
+  /// will not help, so the player is pointed back at the board.
+  RollsRefused(detail: String)
+  /// The engine itself is in trouble (a 5xx, a timeout, no connection). The
+  /// circuit is open for this long, as it is after a failed ask, so a
+  /// sleeping desktop is asked once and not once per keen player.
+  RollsUnreachable(retry_after_s: Int)
 }
 
 /// One position to put to the engine, as the asker (`Oskol.Analysis.Asker`)
@@ -364,6 +381,22 @@ pub type AnalysisCaps {
     /// not a whole match's (`stored`). Appended after `release_ask`, so
     /// every field before keeps its place.
     stored_one: fn(String, Int) -> Option(Stored),
+    /// The per-roll grids already stored for these engine request bodies, in
+    /// the order they were asked about: the engine's answer where that exact
+    /// board has been asked already, None where it has not. The bodies are
+    /// the key, hashed over the bytes Gleam built, exactly as a turn's grade
+    /// is keyed.
+    ///
+    /// A read and nothing else, because a grid already stored must cost no
+    /// engine time **and no budget**, and only the handler can know that
+    /// before it charges anybody.
+    cached_rolls: fn(List(String)) -> List(Option(String)),
+    /// Ask the engine for these grids, keep each answer under its own
+    /// request's key, and hand them back in the order asked. One
+    /// `POST /backgammon/rolls`, or a `/batch` of `rolls` items for more than
+    /// one, answered inside the request: a grid is about 0.2 s, so there is
+    /// no queue and nothing to poll. A stored grid is never rewritten.
+    ask_rolls: fn(List(String)) -> Result(List(String), RollsFailure),
   )
 }
 
@@ -400,5 +433,7 @@ pub fn stub() -> AnalysisCaps {
     allow_ask: fn(_) { panic as "stub analysis.allow_ask" },
     release_ask: fn(_) { panic as "stub analysis.release_ask" },
     stored_one: fn(_, _) { panic as "stub analysis.stored_one" },
+    cached_rolls: fn(_) { panic as "stub analysis.cached_rolls" },
+    ask_rolls: fn(_) { panic as "stub analysis.ask_rolls" },
   )
 }

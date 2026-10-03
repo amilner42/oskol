@@ -20,6 +20,7 @@ import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import oskol/analysis/rolls.{type Rolls}
 import oskol/core/raw
 import oskol/puzzles
 
@@ -52,6 +53,11 @@ pub type TurnReview {
     cube: Option(CubeReview),
     move: Option(MoveReview),
     luck: Option(Float),
+    /// How each of the 21 rolls fares from the board this turn began on
+    /// (`oskol/analysis/rolls`), when the request asked for it (`rolls`).
+    /// `None` for every answer stored before it did, and for a turn the
+    /// engine sent none for.
+    rolls: Option(Rolls),
   )
 }
 
@@ -606,7 +612,15 @@ fn turn_decoder() -> Decoder(TurnReview) {
     None,
     decode.optional(decode.at(["luck"], number())),
   )
-  decode.success(TurnReview(index, player, cube, move, luck))
+  // Lax like the rest: an answer that carries no grid, or one whose grid a
+  // later engine writes differently, is a turn with no grid rather than a
+  // review that will not read.
+  use grid <- decode.optional_field(
+    "rolls",
+    None,
+    decode.one_of(rolls.decoder() |> decode.map(Some), [decode.success(None)]),
+  )
+  decode.success(TurnReview(index, player, cube, move, luck, grid))
 }
 
 fn cube_decoder() -> Decoder(CubeReview) {
@@ -975,6 +989,13 @@ fn turn_json(
     }),
     #("luck", case graded.luck {
       Some(luck) -> json.float(luck)
+      None -> json.null()
+    }),
+    // The mover's 36 rolls from the board this turn began on, as cells: the
+    // replay's ROLLS tab. Null on every turn stored before the engine was
+    // asked for them, which the tab asks for on demand instead.
+    #("rolls", case graded.rolls {
+      Some(grid) -> rolls.to_json(grid)
       None -> json.null()
     }),
   ])
