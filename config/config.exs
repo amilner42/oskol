@@ -110,16 +110,18 @@ config :tailwind,
   ]
 
 # Sage, the bot a player can sit down against. How deep it searches is the
-# knob worth having: 4-ply is what a review reads a game at, and a single
-# position at that depth is a couple of seconds and occasionally most of the
-# twelve a backgammon turn gets free. Turning it down makes every bot on the
-# site answer faster and play worse. The ladder is how long to wait before
-# asking an engine that did not answer again; the game gives up after the
-# last rung and offers the human the game rather than a board that never
-# moves.
+# knob worth having. Sage plays at 3-ply, one below the 4-ply a review reads
+# a game at: at 4-ply a player waited 8.7 s at the 95th percentile (1,068
+# turns over 14 days, 2026-10-03), most of the twelve a turn gets free, and
+# 3-ply is several times faster. It also makes Sage a little human -- its
+# own game's review, at 4-ply, now and then grades one of its plays as a
+# small mistake instead of always 0.0. The ladder is how long to wait
+# before asking an engine that did not answer again; the game gives up
+# after the last rung and offers the human the game rather than a board
+# that never moves.
 config :oskol, :bot,
-  move_level: "4ply",
-  cube_level: "4ply",
+  move_level: "3ply",
+  cube_level: "3ply",
   retry_ms: [5_000, 20_000, 60_000],
   ask_timeout_ms: :timer.seconds(30)
 

@@ -606,7 +606,7 @@ opponents =
                         , Query.find [ id "create-opponent-bot" ]
                             >> Query.has
                                 [ text "THE BOT"
-                                , text "Sage, 4-ply"
+                                , text "Sage, 3-ply"
                                 , attribute (Html.Attributes.attribute "aria-pressed" "false")
                                 ]
                         ]
