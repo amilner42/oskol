@@ -4274,3 +4274,194 @@ a.dk-go { text-decoration: none; }
 .dp-delete-row { display: flex; gap: 8px; margin-top: 10px; }
 .dp-delete-yes, .dp-delete-no { height: 40px; padding: 0 16px; font-size: 8px; border-radius: 10px; box-shadow: 2px 2px 0 0 var(--ink); }
 .dp-delete-yes { background: var(--red); }
+
+
+/* ---------- Ui.Rolls: the thirty-six rolls, as a map and as bars ----------
+   `assets/src/Ui/Rolls.elm`. GNU Backgammon's Temperature Map and the same
+   rolls as bars best-to-worst, with the MAP / BARS toggle and the two
+   switches GNU has. One component, three places (the replay's ROLLS tab,
+   the analysis board, two plays compared), as `.rp-top` is one table.
+
+   ONE FIXED RAMP, NOT BANDS. A cell is the roll's own equity: 0 is an even
+   game, +1 the far green end, -1 the far red end, clamped past either. The
+   scale never moves -- not re-centred on a position's average, not
+   normalised to the spread in front of it -- so a colour means the same
+   equity in the opening, in a bear-off, and in both halves of a
+   comparison. Elm sends one number per cell, `--rl-t` (the ramp position
+   as a percentage) and the mixing happens here, in oklab, so the colours
+   stay nameable tokens rather than literals in a view.
+
+   An earlier draft had seven discrete bands on the site's grade
+   boundaries. Both halves of that were wrong for this picture: the grade
+   boundaries measure what a player gave up, and no cell here contains a
+   mistake (the engine plays the best move for every roll); and coarseness
+   was a defence against drawing noise when the scale was a few tenths
+   wide. At +-1 the engine's worst error against a rollout (0.15) is a
+   fifteenth of the ramp, so interpolating reads the number rather than the
+   noise -- and a stepped scale would put a visible boundary through the
+   middle of a comparison that ought to come out flat.
+
+   WHY THE TOKENS ARE NOT THE BOARD'S. This drawing lives in the panel, and
+   the panel is outside every `.bg-theme-*` scope (the theme class is on
+   `.bg-still` and `.bg-page`, nowhere above them), so a `--bg-*` here
+   would resolve to the root walnut on all twelve boards and look wrong on
+   eleven. The scale is the notebook's own instead -- which also means its
+   meaning cannot drift when a player changes boards, and green keeps
+   meaning what `.g-best` means.
+
+   THE NUMBERS, measured rather than eyeballed (OKLab/OKLCH, the data-viz
+   validator):
+     - the two ends are matched in luminance (relative luminance 0.0685 and
+       0.0697, both about 8.8:1 against the white panel), so one crossing
+       point serves both arms and neither half of the scale is heavier than
+       the other.
+     - the text turns from black to white at 0.72 of the ramp. That is the
+       measured crossing, and the worst ink contrast anywhere on the
+       continuous scale is 4.54:1, there. Everywhere else is higher: 7.1:1
+       at +-0.49, 15.3:1 at +-0.1, 18.3:1 at zero. Pure black and white
+       rather than `--ink`: a two-ink switch over a light-to-dark ramp has
+       a hard ceiling on its worst case, and only black and white put that
+       ceiling (4.58:1) above the 4.5 a number this size wants. With
+       `--ink` the same ramp bottoms out at 3.9:1.
+     - the sign CANNOT be carried by hue: a green and a red of equal
+       lightness are a few units apart in OKLab under deuteranopia. Hence
+       the hatch on every negative cell -- the secondary encoding is not
+       decoration, it is the only thing telling a red-green reader which
+       half of the scale they are in.
+     - near zero the fill sits about 1.2:1 against the white panel, under
+       the 2:1 a floating mark wants, so every cell and every bar carries a
+       dark hairline and reads as a mark whatever its fill. */
+:root {
+  --rl-zero: #f3efe4;       /* an even game: the paper */
+  --rl-up-end: #00562e;     /* +1 and beyond */
+  --rl-down-end: #9b0000;   /* -1 and beyond */
+  --rl-ink-dark: #000;      /* under 0.72 of the ramp */
+  --rl-ink-light: #fff;     /* at or over it */
+  /* the hairline round every cell and every bar, and the weave that says
+     "this side of zero" without using a colour to say it */
+  --rl-edge: color-mix(in oklab, var(--ink) 22%, transparent);
+  --rl-weave: color-mix(in oklab, var(--ink) 13%, transparent);
+  /* a cell with no --rl-t of its own is a cell at zero */
+  --rl-t: 0%;
+}
+
+.rl { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+
+/* The switches: the panel's tab idiom (a flex row on an ink rule, the one
+   that is on inverted). One fixed-height row, and each label keeps its own
+   width, so pressing one moves nothing anywhere. */
+.rl-controls { flex: none; display: flex; align-items: stretch; gap: 6px; height: 26px; }
+.rl-tabs, .rl-switches { display: flex; flex: 1; min-width: 0; border: 2px solid var(--ink); }
+.rl-tab, .rl-switch {
+  flex: 1; min-width: 0; padding: 0 4px; background: #fff; color: var(--ink);
+  border: 0; cursor: pointer; white-space: nowrap; text-align: center;
+}
+.rl-tab + .rl-tab, .rl-switch + .rl-switch { border-left: 2px solid var(--ink); }
+.rl-tab.is-on, .rl-switch.is-on { background: var(--ink); color: var(--paper); }
+.rl-tab:focus-visible, .rl-switch:focus-visible { outline: 2px solid var(--pen); outline-offset: -2px; }
+
+/* Both drawings in one square box, so MAP and BARS take turns in the same
+   place instead of resizing the panel. The map is six equal cells each way,
+   which is what makes the box square in the first place. */
+.rl-draw { flex: none; width: 100%; aspect-ratio: 1; min-width: 0; }
+.rl-map {
+  width: 100%; height: 100%;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+  gap: 3px;
+}
+/* The dice sit in a corner and the value is centred in what is left under
+   them -- `padding-top` is the dice's own line, so the two can never meet
+   however small the cell gets, and the dice never wrap (a wrapped "6-5" is
+   two lines through the middle of the number). */
+.rl-cell {
+  position: relative; display: grid; place-items: center;
+  min-width: 0; padding: 11px 1px 1px; border: 0; border-radius: 3px; cursor: pointer;
+  background: var(--rl-zero); color: var(--rl-ink-dark);
+  box-shadow: inset 0 0 0 1px var(--rl-edge);
+}
+.rl-cell-dice {
+  position: absolute; top: 2px; left: 3px; right: 3px;
+  font-size: 8px; line-height: 1; opacity: 0.74; white-space: nowrap;
+}
+.rl-cell-value { font-size: 11px; font-weight: 700; line-height: 1; }
+/* The thrown roll, ringed in ink; the tapped one, ringed in pencil. Both
+   are box-shadows drawn inside the cell, so nothing shifts by a pixel. */
+.rl-cell.is-tapped { box-shadow: inset 0 0 0 2px var(--pencil); }
+.rl-cell.is-out { box-shadow: inset 0 0 0 3px var(--ink); }
+.rl-cell:focus-visible { outline: 2px solid var(--pen); outline-offset: 1px; z-index: 1; }
+
+/* The ramp. `--rl-t` is the cell's own distance along it, nothing else. */
+.rl-cell.is-up { background: color-mix(in oklab, var(--rl-up-end) var(--rl-t), var(--rl-zero)); }
+.rl-cell.is-down { background: color-mix(in oklab, var(--rl-down-end) var(--rl-t), var(--rl-zero)); }
+.rl-cell.is-lit { color: var(--rl-ink-light); }
+
+/* The weave on every cell below zero: the sign, for a reader for whom red
+   and green are one colour. Faint on purpose -- it has to read as a texture
+   under 8px type, not as stripes over it. */
+.rl-cell.is-down {
+  background-image: repeating-linear-gradient(
+    45deg, var(--rl-weave) 0 2px, transparent 2px 5px);
+}
+
+/* The bars, as `Ui.Charts` draws: a viewBox and nothing fixed in pixels, no
+   axes, the two ends labelled where they occur. The square box is the map's,
+   and so is the scale: a bar reaching the top is an equity of 1 and nothing
+   else. Every bar carries the hairline, which both separates it from its
+   neighbour and gives the palest fills something to read against. */
+.rl-bars { width: 100%; height: 100%; display: block; }
+/* Zero is the thing every bar is read against, so it is a real line and not
+   a hint: the box is 360 units wide and draws at about 300, so 1.6 units is
+   a bit over a pixel. */
+.rl-bars-zero { stroke: color-mix(in oklab, var(--ink) 55%, transparent); stroke-width: 1.6; }
+.rl-bars .rl-bar { stroke: var(--rl-edge); stroke-width: 1; fill: var(--rl-zero); }
+.rl-bars .rl-bar.is-up { fill: color-mix(in oklab, var(--rl-up-end) var(--rl-t), var(--rl-zero)); }
+.rl-bars .rl-bar.is-down { fill: color-mix(in oklab, var(--rl-down-end) var(--rl-t), var(--rl-zero)); }
+.rl-bars .rl-bar.is-out { stroke: var(--ink); stroke-width: 2.5; }
+.rl-bars-end { fill: var(--pencil); font-size: 13px; font-weight: 600; }
+/* The ends of the fixed scale, quiet enough to be read past: without them a
+   short bar could be a flat position or a big scale, and the empty half of
+   the box is emptiness rather than the rest of the ramp. */
+.rl-bars-reach {
+  stroke: color-mix(in oklab, var(--ink) 18%, transparent);
+  stroke-width: 1; stroke-dasharray: 3 4;
+}
+.rl-bars-reach-label { fill: var(--pencil); font-size: 11px; opacity: 0.75; }
+
+/* The depth, one line, always: the grid is 3-ply and the verdict above it
+   is 4-ply, and unlabelled the two read as a disagreement. With the cells
+   on the absolute scale this line is the plainest it can be -- the figure
+   it names is the weighted mean of the thirty-six numbers above it. */
+.rl-depth { flex: none; margin: 0; font-size: 11px; line-height: 1.4; color: var(--pencil); }
+/* The cell in words. Two lines of room whether or not there is anything to
+   say, and last in the column, because it is the one part whose height
+   depends on what it says -- a long notation wraps, and nothing a reader is
+   looking at sits under it. */
+.rl-saids { flex: none; min-height: 2.9em; display: flex; flex-direction: column; gap: 2px; }
+.rl-said {
+  margin: 0; display: flex; align-items: baseline; gap: 6px;
+  font-size: 12.5px; line-height: 1.35; color: var(--ink); overflow-wrap: anywhere;
+}
+.rl-said-tag { flex: none; font-size: 7px; color: var(--pencil); }
+.rl-said.is-none { color: var(--pencil); font-style: italic; }
+
+/* The smallest phone: a cell is about 45px, so the dice and the value step
+   down a point rather than the grid giving up a column. */
+@media (max-width: 359px) {
+  .rl-tab, .rl-switch { font-size: 7px; padding: 0 2px; }
+  .rl-cell-dice { font-size: 7px; top: 1px; left: 2px; }
+  .rl-cell-value { font-size: 10px; }
+  .rl-said { font-size: 12px; }
+}
+/* A phone held sideways: the panel is shorter than it is wide, so the square
+   is bounded by the height it has and centred in the column rather than
+   being as wide as it can be. The bound is 70svh and not less, because
+   below about 270px across a cell is under 43px and the dice and the value
+   no longer both fit in one -- which is the width 320 portrait gives it,
+   where they do. The panel scrolls for the rest, as the ticket has it. */
+@media (orientation: landscape) and (max-height: 600px) {
+  .rl-draw { width: min(100%, 70svh); margin-inline: auto; }
+  .rl-controls { height: 24px; }
+  .rl-saids { min-height: 2.8em; }
+}

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ROLLS review harness</title>
+<!-- The real bundle, as the site serves it: priv/static/assets/css/app.css
+     after `mix assets.build`, with the self-hosted fonts under /fonts.
+     test.js serves both from priv/static, so what is shot is the shipped
+     stylesheet and not a copy of it. -->
+<link rel="stylesheet" href="/assets/css/app.css">
+<style>
+  /* The harness's own furniture only: the screen and theme switches above
+     the panel, and the note standing in for the board. Nothing here styles
+     the component -- every `.rl-*` rule comes from app.css. */
+  html, body { margin: 0; background: #fbf9f3; }
+  .rl-harness-switch {
+    display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 0 6px;
+  }
+  .rl-harness-btn {
+    padding: 5px 6px; border: 2px solid var(--ink); background: #fff;
+    color: var(--ink); cursor: pointer; line-height: 1;
+  }
+  .rl-harness-btn.is-on { background: var(--ink); color: var(--paper); }
+  .rl-harness-note {
+    margin: 0; padding: 10px; border: 2px dashed var(--pencil);
+    color: var(--pencil); font-size: 11px; line-height: 1.4;
+  }
+  /* The harness has no board, so the page is as tall as it needs to be
+     rather than a viewport with a board in it. */
+  #harness.rp-page { height: auto; min-height: 100svh; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<!-- The fixture, served by test.js straight out of assets/tests/RollsTest.elm,
+     so the picture and the test are looking at the same numbers. -->
+<script src="/fixture.js"></script>
+<script src="/harness.js"></script>
+<script>
+  Elm.Harness.init({ node: document.getElementById('app'), flags: window.OPENING_JSON });
+</script>
+</body>
+</html>

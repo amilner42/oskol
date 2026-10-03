@@ -277,6 +277,21 @@ assets/src/Api/PracticeDecks.elm /papi/practice/decks and its :slug page, KEEP G
 assets/src/Ui/Charts.elm         the home's and the practice pages' pictures: the PR
                                  line, the ladder, the 30 days, the band bar, the
                                  mastery `grid`, today's `ring` and the rows' `miniRing`
+assets/src/Ui/Rolls.elm          a position's 36 rolls, two drawings: the 6x6
+                                 temperature map (GNU Backgammon's, each cell the roll's
+                                 own equity on one fixed ramp -- 0 level, +-1 the ends,
+                                 clamped -- the thrown roll ringed) and the same rolls as
+                                 bars best to worst, each as wide as its roll is likely,
+                                 on the same scale with zero the line; MAP / BARS and the
+                                 NUMBERS and MOVES switches; the tapped cell in words
+                                 under it. Pure, one component for the replay's ROLLS
+                                 tab, the analysis board and a comparison, as
+                                 Ui.Candidates is one table
+assets/src/Games/Backgammon/Rolls.elm  that grid on the wire: the decoder (21 rows, a
+                                 weight each, refused if it could not be drawn or would
+                                 draw a lie), the roll's equity per cell, the fixed
+                                 scale (`ramp`) and the sign with its dead zone, the
+                                 mirroring into 36 and the sort
 assets/src/Ui/Mistakes.elm       every word practice is said in (pinned in MistakesTest)
 assets/src/Ui/Tiers.elm          the home's practice section: one deck in front of you:
                                  the worst tier the player has made a mistake in, by
