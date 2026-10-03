@@ -212,6 +212,9 @@ defmodule Oskol.GameKit do
   defp pace("step"), do: :step
   defp pace("beat"), do: :beat
   defp pace("settle"), do: :settle
+  # A pace this platform does not know yet is played as a plain step rather
+  # than crashing the bot's turn.
+  defp pace(_unknown), do: :step
 
   @spec slug(instance) :: String.t()
   def slug(instance), do: :gamekit@host.slug(instance)

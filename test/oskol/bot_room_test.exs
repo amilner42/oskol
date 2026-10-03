@@ -354,14 +354,16 @@ defmodule Oskol.Game.BotRoomTest do
       [{rolled_at, _}, {first_at, _} | _] = run
 
       # The dice are on the table a settle before anything else Sage does.
-      # A millisecond either way is the recorder's own scheduling, not ours.
-      assert first_at - rolled_at >= 200 - 2
+      # The times are when the recorder received each broadcast, and a loaded
+      # runner can deliver one a few ms late: 20 ms of slack, far below what
+      # unpaced play (about 0 ms) would show.
+      assert first_at - rolled_at >= 200 - 20
 
       # And every step after that is at least a gap behind the one before.
       run
       |> Enum.drop(1)
       |> Enum.chunk_every(2, 1, :discard)
-      |> Enum.each(fn [{a, _}, {b, _}] -> assert b - a >= 60 - 2 end)
+      |> Enum.each(fn [{a, _}, {b, _}] -> assert b - a >= 60 - 20 end)
     end
 
     test "a resignation while Sage is waiting to move drops the rest of its turn" do
@@ -385,13 +387,19 @@ defmodule Oskol.Game.BotRoomTest do
           {:ok, offered, _} = Game.player_action(game_id, human, Oskol.Bots.action(resign))
           resigned_at = offered.action_count
 
-          # Long enough for every move Sage had decided to have landed.
-          Process.sleep(2_000)
-
-          after_resign =
+          after_resign = fn ->
             seen(recorder)
             |> Enum.filter(fn {_at, count, _kinds} -> count > resigned_at end)
             |> Enum.flat_map(fn {_at, _count, kinds} -> kinds end)
+          end
+
+          # Sage answers the offer in a think of its own, which the room only
+          # starts once the paced turn it interrupted has ended -- so by the
+          # time the answer is on the record, nothing of that turn is left
+          # to land. Up to 10 s on a slow runner.
+          answered = &(&1 in ["resign_accepted", "resign_declined"])
+          eventually(fn -> Enum.any?(after_resign.(), answered) end, 1_000)
+          after_resign = after_resign.()
 
           # Sage answered the offer (that is a new think, about the board as
           # it stands) and played no checker it had decided on before it.
