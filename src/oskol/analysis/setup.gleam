@@ -484,19 +484,32 @@ pub fn describe(setup: Setup) -> String {
       m.crawford,
     )
   }
-  situation(mine, theirs, crawford, setup.cube_value, setup.cube_owner)
+  situation(
+    mine,
+    theirs,
+    crawford,
+    setup.cube_value,
+    setup.cube_owner,
+    setup.ask == Take,
+  )
 }
 
 /// The words `describe` and the puzzle page (`handlers/puzzles.describe`)
 /// share: the score from the asked player's side, then the cube. No score
 /// is unlimited play, and one point each way is a single game unless it is
 /// marked Crawford, which only a match is.
+///
+/// `offered` is a take question: the cube given is the one before the
+/// double, so the line says what was done to it -- "Cube at 2, Black's,
+/// redoubled to 4." or "Cube centered, doubled to 2." -- and never reads
+/// as the stakes the player is answering.
 pub fn situation(
   away_mine: Int,
   away_theirs: Int,
   crawford: Bool,
   cube_value: Int,
   cube_owner: Option(Color),
+  offered: Bool,
 ) -> String {
   let score = case away_mine, away_theirs, crawford {
     0, 0, _ -> "Unlimited play"
@@ -511,10 +524,20 @@ pub fn situation(
         False -> ""
       }
   }
-  let cube = case cube_owner {
-    Some(owner) ->
+  let to = int.to_string(cube_value * 2)
+  let cube = case cube_owner, offered {
+    Some(owner), False ->
       "Cube at " <> int.to_string(cube_value) <> ", " <> name(owner) <> "'s."
-    None -> "Cube centered."
+    Some(owner), True ->
+      "Cube at "
+      <> int.to_string(cube_value)
+      <> ", "
+      <> name(owner)
+      <> "'s, redoubled to "
+      <> to
+      <> "."
+    None, False -> "Cube centered."
+    None, True -> "Cube centered, doubled to " <> to <> "."
   }
   score <> ". " <> cube
 }

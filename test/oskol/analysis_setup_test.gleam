@@ -424,6 +424,19 @@ pub fn describe_test() {
       ),
     )
     == "Match play, 5 away against 1, Crawford. Cube at 2, Black's."
+  // A take's cube is the one before the double: the line says what was
+  // done to it rather than read as the stakes.
+  assert setup.describe(
+      Setup(
+        ..match(7, 3, 5, False),
+        ask: setup.Take,
+        cube_value: 2,
+        cube_owner: Some(Black),
+      ),
+    )
+    == "Match play, 4 away against 2. Cube at 2, Black's, redoubled to 4."
+  assert setup.describe(Setup(..opening(), ask: setup.Take))
+    == "Unlimited play. Cube centered, doubled to 2."
 }
 
 // ---------- The wire ----------

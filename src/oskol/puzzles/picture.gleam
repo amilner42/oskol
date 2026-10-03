@@ -159,14 +159,14 @@ pub fn svg(q: Question) -> String {
     Move, Some(#(high, low)) -> Some(#(high, low))
     _, _ -> None
   }
-  document(
-    view.board,
-    dice,
-    q.cube_value,
-    view.cube_owner,
-    caption,
-    puzzles.prompt(q),
-  )
+  // A take is asked with the double on offer, and the cube is drawn the
+  // way the table draws a double on offer: turned to the new value and
+  // pushed across to the player who has to answer it, the solver.
+  let #(cube_value, cube_owner) = case q.kind {
+    Take -> #(puzzles.offered(q), Mover)
+    _ -> #(q.cube_value, view.cube_owner)
+  }
+  document(view.board, dice, cube_value, cube_owner, caption, puzzles.prompt(q))
 }
 
 /// The site's own picture, for a puzzle whose picture is not there (yet,

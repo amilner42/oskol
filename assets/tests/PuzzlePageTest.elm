@@ -19,6 +19,7 @@ import Api.Practice as Practice
 import Dict
 import Expect
 import Games.Backgammon.Puzzle as Puzzle exposing (Verdict(..))
+import Games.Backgammon.Words as Words
 import Html
 import Html.Attributes
 import Json.Decode as D
@@ -720,23 +721,117 @@ revealing =
 cube : Test
 cube =
     describe "a cube question"
-        [ test "the two answers, as at the table, in the side's words" <|
+        [ test "the words name the stakes as Gleam's prompt and situation do" <|
+            \_ ->
+                let
+                    ask take owned value =
+                        Words.cubeQuestion { take = take, asked = "White", doubler = "Black", value = value, owned = owned }
+                in
+                Expect.all
+                    [ \_ -> ask False False 1 |> Expect.equal "White to play. Double to 2?"
+                    , \_ -> ask False True 2 |> Expect.equal "White to play. Redouble to 4?"
+                    , \_ -> ask True False 1 |> Expect.equal "Black doubles to 2. Take?"
+                    , \_ -> ask True True 2 |> Expect.equal "Black redoubles to 4. Take?"
+                    , \_ -> Words.cubeBefore { take = True, value = 2, owner = Just "Black" } |> Expect.equal "cube 2, Black's, redoubled to 4"
+                    , \_ -> Words.cubeBefore { take = True, value = 1, owner = Nothing } |> Expect.equal "cube centered, doubled to 2"
+                    , \_ -> Words.cubeBefore { take = False, value = 4, owner = Just "White" } |> Expect.equal "cube 4, White's"
+                    ]
+                    ()
+        , test "the two answers are the table's, in the board's own band" <|
             \_ ->
                 Expect.all
                     [ \_ ->
                         rendered (page { hasNext = False } "double")
-                            |> Query.find [ id "pz-bands" ]
-                            |> Query.findAll [ tag "button" ]
-                            |> Query.count (Expect.equal 2)
+                            |> Query.find [ id "pz-board" ]
+                            |> Query.find [ id "bg-action-double" ]
+                            |> Query.has [ text "DOUBLE" ]
                     , \_ ->
                         rendered (page { hasNext = False } "double")
-                            |> Query.find [ id "pz-band-minus1" ]
-                            |> Query.has [ text "No double" ]
+                            |> Query.find [ id "pz-board" ]
+                            |> Query.find [ id "bg-action-roll" ]
+                            |> Query.has [ text "ROLL" ]
                     , \_ ->
                         rendered (page { hasNext = False } "take")
-                            |> Query.find [ id "pz-band-1" ]
-                            |> Query.has [ text "Take" ]
+                            |> Query.find [ id "pz-board" ]
+                            |> Query.find [ id "bg-action-take" ]
+                            |> Query.has [ text "TAKE (CUBE TO 4)" ]
+                    , \_ ->
+                        rendered (page { hasNext = False } "take")
+                            |> Query.find [ id "pz-board" ]
+                            |> Query.find [ id "bg-action-drop" ]
+                            |> Query.has [ text "DROP" ]
+
+                    -- nothing under the board answers any more
+                    , \_ -> rendered (page { hasNext = False } "double") |> hasNot [ id "pz-bands" ]
                     , \_ -> rendered (page { hasNext = False } "double") |> hasNot [ id "bg-action-play" ]
+                    ]
+                    ()
+        , test "a band answer is the side it sends" <|
+            \_ ->
+                let
+                    press kind action =
+                        rendered (page { hasNext = False } kind)
+                            |> Query.find [ id ("bg-action-" ++ action) ]
+                            |> Event.simulate Event.click
+                in
+                Expect.all
+                    [ \_ -> press "double" "double" |> Event.expect (PickedBand 1)
+                    , \_ -> press "double" "roll" |> Event.expect (PickedBand -1)
+                    , \_ -> press "take" "take" |> Event.expect (PickedBand 1)
+                    , \_ -> press "take" "drop" |> Event.expect (PickedBand -1)
+                    ]
+                    ()
+        , test "the heading names the stakes, and the score line the cube before them" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> rendered (page { hasNext = False } "take") |> Query.find [ id "pz-prompt" ] |> Query.has [ text "Black redoubles to 4. Take?" ]
+                    , \_ -> rendered (page { hasNext = False } "take") |> Query.find [ id "pz-score" ] |> Query.has [ text "cube 2, Black's, redoubled to 4" ]
+                    , \_ -> rendered (page { hasNext = False } "double") |> Query.find [ id "pz-prompt" ] |> Query.has [ text "White to play. Redouble to 4?" ]
+                    , \_ -> rendered (page { hasNext = False } "double") |> Query.find [ id "pz-score" ] |> Query.has [ text "cube 2, White's" ]
+                    ]
+                    ()
+        , test "a take's cube is on offer: turned to 4 and pushed to White's side" <|
+            \_ ->
+                let
+                    cubeIn kind row =
+                        rendered (page { hasNext = False } kind)
+                            |> Query.find [ id "pz-board" ]
+                            |> Query.find [ class "bg-bar-row", class row ]
+                            |> Query.findAll [ class "cube" ]
+                in
+                Expect.all
+                    [ \_ -> cubeIn "take" "mine" |> Query.first |> Query.has [ class "pending", text "4" ]
+                    , \_ -> cubeIn "take" "theirs" |> Query.count (Expect.equal 0)
+
+                    -- a double is asked before anything is offered: the
+                    -- cube stays with White, who owns it, at 2
+                    , \_ -> cubeIn "double" "mine" |> Query.first |> Query.has [ text "2" ]
+                    , \_ -> cubeIn "double" "mine" |> Query.first |> Query.hasNot [ class "pending" ]
+                    ]
+                    ()
+        , test "the answer stays in the band, the other faded, neither live" <|
+            \_ ->
+                let
+                    board =
+                        rendered (page { hasNext = False } "take" |> step (PickedBand -1) |> revealed (reveal "take_pass"))
+                            |> Query.find [ id "pz-board" ]
+                in
+                Expect.all
+                    [ \_ -> board |> Query.has [ class "cube-chose-drop", class "cube-locked" ]
+                    , \_ -> board |> Query.findAll [ id "bg-action-drop" ] |> Query.count (Expect.equal 1)
+                    , \_ -> board |> Query.findAll [ id "bg-action-take" ] |> Query.count (Expect.equal 1)
+                    ]
+                    ()
+        , test "the row under the board is held before the answer, with nothing in it to find" <|
+            \_ ->
+                let
+                    asking =
+                        rendered (page { hasNext = False } "double")
+                in
+                Expect.all
+                    [ \_ -> asking |> Query.has [ class "pz-actions", class "is-held" ]
+                    , \_ -> asking |> hasNot [ id "pz-actions" ]
+                    , \_ -> asking |> hasNot [ id "pz-share" ]
                     ]
                     ()
         , test "picking a band posts it with the key" <|

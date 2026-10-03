@@ -660,12 +660,44 @@ fn sorted(dice: #(Int, Int)) -> #(Int, Int) {
 /// doubled for a take (whose board a page flips). The solver is White
 /// whatever colour they had in the game, which is the whole of the
 /// orientation rule.
+///
+/// A cube question names its stakes: "White to play. Double to 2?",
+/// "White to play. Redouble to 4?", "Black doubles to 2. Take?", "Black
+/// redoubles to 4. Take?". The stored cube is the one before the offer
+/// (a take keeps the doubler's cube, `analysis/setup.extract`), so the
+/// offer is twice it, and a redouble is a cube somebody already owns --
+/// which can only be the doubler. That reads the same from the stored side
+/// and the shown one (`handlers/puzzles.shown` hands the cube over), so
+/// either may be passed in.
 pub fn prompt(q: Question) -> String {
   case q.kind {
     Move -> "White to play " <> roll(q.dice) <> ". " <> "What's your play?"
-    Double -> "White to play. Double?"
-    Take -> "White is doubled. Take?"
+    Double ->
+      case redouble(q) {
+        True -> "White to play. Redouble to " <> offered_value(q) <> "?"
+        False -> "White to play. Double to " <> offered_value(q) <> "?"
+      }
+    Take ->
+      case redouble(q) {
+        True -> "Black redoubles to " <> offered_value(q) <> ". Take?"
+        False -> "Black doubles to " <> offered_value(q) <> ". Take?"
+      }
   }
+}
+
+/// The cube a cube question offers: twice the cube as it stands.
+pub fn offered(q: Question) -> Int {
+  q.cube_value * 2
+}
+
+fn offered_value(q: Question) -> String {
+  int.to_string(offered(q))
+}
+
+/// A cube question's offer is a redouble: the doubler already owns the cube.
+/// Only the doubler can, so an owned cube is enough to say it.
+pub fn redouble(q: Question) -> Bool {
+  q.cube_owner != Centered
 }
 
 /// A roll as it is written: "6-4", and "3-3" for a double.

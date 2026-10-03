@@ -231,7 +231,8 @@ path builds one and nothing re-asks the engine to recover one.
   `on_conflict: :nothing` and reads back the token that stands, so two
   tabs pressing together get one link. The token is nothing but a token:
   `?s=` changes the head's title (`shares.headline`: "Arie got this wrong.
-  What's your play?" / "Double?" / "Take?") and puts `story` on the
+  What's your play?" / "Double to 2?" / "Redouble to 4?"; a take keeps the
+  whole prompt, "Arie got this wrong. Black redoubles to 4. Take?") and puts `story` on the
   reader's own attempt's answer (`shares.story_json`, with `line`: "Arie
   played 24/23 13/11 (a bad move) and lost 2 points." -- a cube source
   reads "didn't double" / "doubled" / "took" / "passed", "a bad
@@ -248,7 +249,10 @@ path builds one and nothing re-asks the engine to recover one.
   the solver's side exactly as `prompt` speaks (a take is `flip`ped, cube
   owner and scores with it): the board with the mover as White at the
   bottom, stacks with a count over five, bar and trays, the dice for a
-  move, the cube at its owner's side, the score line, the prompt. Text is
+  move, the cube at its owner's side (for a take, the double on offer:
+  turned to the new value on the solver's side), the score line, the
+  prompt. A picture stored before the prompt named its stakes keeps its
+  old words until it is drawn again. Text is
   SVG text in a system font stack; nothing loads. `Oskol.Puzzles.Pictures`
   rasterises it with `rsvg-convert` (`config :oskol, :rsvg`; the release
   image installs `librsvg2-bin` and `fonts-dejavu-core`; the SVG rides in
@@ -477,8 +481,24 @@ and `/mine` is asked only after the attempt, so a page open on a shared
 link can put nothing within reach. The board is the table's own
 (`Games/Backgammon/Puzzle.elm` on `View.viewPlay`; a lazy tree's levels
 are fetched as the path reaches them), UNDO and PLAY are its own band; a
-cube question is two buttons, as at the table (DOUBLE / NO DOUBLE, TAKE /
-PASS). The reveal opens on the verdict line (`#pz-verdict`): RIGHT ("That
+cube question is answered in the same band with the live table's own
+buttons and words (`View.viewCubeAsk`, `View.cubeAnswers`): DOUBLE / ROLL
+on roll (ROLL is no double), TAKE (CUBE TO 4) / DROP when doubled; TAKE and
+DOUBLE send band +1, DROP and ROLL -1. Nothing answers under the board.
+The question names its stakes (`oskol/puzzles.prompt`): "White to play.
+Double to 2?", "White to play. Redouble to 4?", "Black doubles to 2.
+Take?", "Black redoubles to 4. Take?" -- the stored cube is the one before
+the offer, so the offer is twice it, a redouble when the doubler already
+owns it. The score line under it (`Words.cubeBefore`, the twin of
+`analysis/setup.situation`'s cube) never reads as those stakes on a take:
+"cube 2, Black's, redoubled to 4", "cube centered, doubled to 2". A
+take's board draws the double on offer as the table does: the cube turned
+to the new value and pushed to the taker's side (`offer`, so
+`View.viewCube`'s pending slot); a double's cube stays where it is. Once
+answered the band keeps both buttons, the other faded (`.cube-chose-*`)
+and neither live (`.cube-locked`), and the row under the board (SHARE,
+SAVE, ANALYSIS, ANOTHER) is drawn and held unseen from the first frame
+(`.pz-actions.is-held`), so nothing moves when the reveal arrives. The reveal opens on the verdict line (`#pz-verdict`): RIGHT ("That
 is the play." / "Within 0.02 of the best. Not a mistake." / on a cube
 in band 0, "Too close to call: either answer is right."), or a miss by its
 band in the replay's mark and colour (?! DUBIOUS, ? BAD, ?? VERY BAD) with

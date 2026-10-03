@@ -269,9 +269,14 @@ node playwright/test-puzzle/test.js             # a puzzle from a link: setup.ex
                                                # line; NEVER asking without a post or a height
                                                # change; KNEW IT / SOONER posted on the tap, once,
                                                # and explained) play it;
-                                               # phones; the board is the table's size
+                                               # phones; the board is the table's size; a take of a
+                                               # redouble at 390x844, 1440x900, 320x568, 844x390:
+                                               # "Black redoubles to 4. Take?", the cube on offer
+                                               # at 4 on White's side, TAKE / DROP in the band,
+                                               # nothing moving through the answer (screenshots
+                                               # in $SHOTS_DIR or $TMPDIR/oskol-test-puzzle)
 node playwright/review-puzzle/test.js           # screenshots of the puzzle page: question, staged,
-                                               # reveal, a candidate, the cube scale (phone, small,
+                                               # reveal, a candidate, a cube question (phone, small,
                                                # landscape, desktop)
 node playwright/test-analysis/test.js           # the analysis board. Part 1, setting up: ☰ Analysis;
                                                # a desktop by left and right clicks, the x, the bar,

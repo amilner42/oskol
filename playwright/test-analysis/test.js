@@ -955,8 +955,8 @@ async function playItOut(browser, errors, tag, viewport) {
     }
     await press('#an-roll-double');
     await expectPlates(page, `${tag} double?`, ['W 3-1 · 8/5 6/5', /^B /, 'W double?']);
-    await press('#an-cube-yes');
-    await press('#an-pass');
+    await press('#an-board #bg-action-double');
+    await press('#an-board #bg-action-drop');
     await expectPlates(page, `${tag} passed`, ['W 3-1 · 8/5 6/5', /^B /, 'W doubles', 'B passes']);
     if ((await text(page, '#an-line-end')) !== 'Black passes. White wins 1 point.') throw new Error(`${tag}: the line ends "${await text(page, '#an-line-end')}"`);
     sameLine(`${tag} passed`, held, await lineBoxes(page));

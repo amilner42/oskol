@@ -223,10 +223,11 @@ defmodule OskolWeb.SpaControllerTest do
     } do
       id = a_puzzle("take")
       html = conn |> get(~p"/puzzles/#{id}") |> html_response(200)
-      assert html =~ ~s(>White is doubled. Take? · Oskol</title>)
-      # Stored as the doubler's (White's, at 2); shown to the one doubled,
+      assert html =~ ~s(>Black redoubles to 4. Take? · Oskol</title>)
+      # Stored as the doubler's (White's, at 2, redoubling to 4); shown to the one doubled,
       # whose opponent holds it, with the away scores swapped.
-      assert html =~ ~s(content="Match play, 5 away against 3. Cube at 2, Black&#39;s.)
+      assert html =~
+               ~s(content="Match play, 5 away against 3. Cube at 2, Black&#39;s, redoubled to 4.)
     end
 
     # A story link: a finished game with a source for the puzzle, and the

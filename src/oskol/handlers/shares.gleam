@@ -230,14 +230,19 @@ pub fn story_json(
 }
 
 /// What the tokened link unfurls as: "Arie got this wrong. What's your
-/// play?" -- the name, and the question the plain prompt ends on ("Double?",
-/// "Take?"), asked from the same side the prompt asks it.
+/// play?" -- the name, and the question the plain prompt ends on ("Double
+/// to 2?", "Redouble to 4?"), asked from the same side the prompt asks it.
+/// A take keeps the whole prompt ("Black redoubles to 4. Take?"): its
+/// first sentence is the offer, and "Take?" alone would not say the stakes.
 pub fn headline(name: String, question: Question) -> String {
   let prompt = puzzles.prompt(question)
-  let question_part =
-    string.split(prompt, ". ")
-    |> list.last
-    |> result.unwrap(prompt)
+  let question_part = case question.kind {
+    puzzles.Take -> prompt
+    _ ->
+      string.split(prompt, ". ")
+      |> list.last
+      |> result.unwrap(prompt)
+  }
   name <> " got this wrong. " <> question_part
 }
 

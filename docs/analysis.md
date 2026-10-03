@@ -111,7 +111,9 @@ storing a puzzle, sharing) goes through it. Pure; tests in
 - **`describe(setup)`** is the page's fixed line in the puzzle page's
   words, from `to_play`'s side and in real colours: "Match play, 5 away
   against 1, Crawford. Cube at 2, Black's." The words are `situation`,
-  which `handlers/puzzles.describe` now calls too.
+  which `handlers/puzzles.describe` now calls too. A take's cube is the
+  one before the double, said as such: "Cube at 2, Black's, redoubled to
+  4.", "Cube centered, doubled to 2."
 
 ## The setup in the client (`assets/src/Games/Backgammon/Setup.elm`)
 
@@ -666,9 +668,15 @@ come from the browser (`elm/random`), since it is a sandbox. Tests:
   for a roll not picked, beside PICK A ROLL (`#an-roll-pick`, the roll
   sheet) and, where the cube lets the player double and the step before
   was not this player's NO DOUBLE, DOUBLE? (`#an-roll-double`, the step
-  becomes the cube question); the table's hint, DOUBLE / NO DOUBLE (`#an-cube-yes`, `#an-cube-no`), TAKE / PASS
-  (`#an-take`, `#an-pass`), or the sentence the line ended in
-  (`#an-line-end`). Under a cube's answer PLAY IT OUT (`#an-play-out`)
+  becomes the cube question); the table's hint; for a cube step "Double,
+  or roll?" / "Take, or drop?", answered in the board's band with the
+  live table's buttons (`cubeBoard`, `View.viewCubeAsk`: DOUBLE / ROLL,
+  TAKE (CUBE TO n) / DROP; a double on offer drawn on the taker's side
+  at the new value; the step's answer kept shown, the other faded); or
+  the sentence the line ended in (`#an-line-end`). A cube answer's panel
+  opens on what was asked, with its stakes, in the board's colours
+  (`#an-answer-ask`, `Words.cubeQuestion`: "Black redoubles to 4.
+  Take?"). Under a cube's answer PLAY IT OUT (`#an-play-out`)
   puts the board in PLAY. Every choice puts the board in PLAY. In PLAY the
   player acting sits at the bottom in their own colour, as at a table:
   the table can only be played from the bottom, so for Black the tree's

@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, EditBoard, EditEvent(..), Model, Move, Msg(..), Out(..), PlayBoard, PlayOut(..), Presence(..), Roll, Save(..), Side, Snapshot, Step, StillBoard, TapContext, Turn, autoRoll, defaultTheme, init, noteEvents, presenceFlashMs, presenceOf, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewEdit, viewPlay, viewStill, viewStillTurn)
+module Games.Backgammon.View exposing (Ctx, CubeAsk, EditBoard, EditEvent(..), Model, Move, Msg(..), Out(..), PlayBoard, PlayOut(..), Presence(..), Roll, Save(..), Side, Snapshot, Step, StillBoard, TapContext, Turn, autoRoll, cubeAnswers, defaultTheme, init, noteEvents, presenceFlashMs, presenceOf, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewCubeAsk, viewEdit, viewPlay, viewStill, viewStillTurn)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -2678,8 +2678,9 @@ pipsOn value =
             [ 0, 2, 3, 5, 6, 8 ]
 
 
-{-| Where on the bar a cube belongs: the middle row while nobody owns it
-(and while an offer is pending), else the band end of its owner's row.
+{-| Where on the bar a cube belongs: the middle row while nobody owns it,
+else the band end of its owner's row -- and while an offer is pending, the
+band end of the row of the player who has to answer it.
 -}
 type CubeSlot
     = Centred
@@ -2689,10 +2690,12 @@ type CubeSlot
 
 {-| The doubling cube, in the bar's slot that is its home right now, or
 nothing if this is not that slot. The cube always shows -- 64 while
-centred, as tradition has it, its value once turned. A pending offer
-parks it in the middle, prominent, at the value on offer (a double is
-worth twice the cube; the engine turns it on the take). A cube-less
-format hangs no cube anywhere.
+centred, as tradition has it, its value once turned. A pending offer is
+drawn the way it is made at a real board: the doubler turns the cube to
+the value on offer (a double is worth twice the cube; the engine turns it
+on the take) and pushes it across to the other player, so it sits on the
+taker's side, prominent, until they answer. A cube-less format hangs no
+cube anywhere.
 -}
 viewCube : Board -> CubeSlot -> Html Msg
 viewCube board slot =
@@ -2712,8 +2715,11 @@ viewCube board slot =
         owner =
             cubeData (D.nullable D.string) "owner" Nothing
 
+        pendingFrom =
+            cubeData (D.nullable D.string) "pending_from" Nothing
+
         pending =
-            cubeData (D.nullable D.string) "pending_from" Nothing /= Nothing
+            pendingFrom /= Nothing
 
         shown =
             if pending then
@@ -2726,20 +2732,26 @@ viewCube board slot =
                 String.fromInt value
 
         home =
-            if pending then
-                Centred
+            case pendingFrom of
+                -- pushed across to the one who has to answer it
+                Just from ->
+                    if from == seatId ctx then
+                        Theirs
 
-            else
-                case owner of
-                    Just id ->
-                        if id == seatId ctx then
-                            Mine
+                    else
+                        Mine
 
-                        else
-                            Theirs
+                Nothing ->
+                    case owner of
+                        Just id ->
+                            if id == seatId ctx then
+                                Mine
 
-                    Nothing ->
-                        Centred
+                            else
+                                Theirs
+
+                        Nothing ->
+                            Centred
     in
     if enabled && home == slot then
         div
@@ -2749,7 +2761,7 @@ viewCube board slot =
             -- no bar tag repeats it. The title says it in words.
             , title
                 (if pending then
-                    "Doubling cube: a double is on offer"
+                    "Doubling cube: a double to " ++ shown ++ " is on offer"
 
                  else
                     case owner of
@@ -3272,6 +3284,64 @@ viewStillTurn noop s =
 viewStill : msg -> StillBoard -> Html msg
 viewStill noop s =
     Html.map (\_ -> noop) (slab s stillOnly)
+
+
+{-| A cube question on the table's own slab, answered where the table
+answers it: in the centre band, with the live game's own buttons and
+words. The player on roll is offered DOUBLE beside ROLL (ROLL is no
+double); the player doubled TAKE (CUBE TO n) beside DROP -- the labels
+`backgammon/engine.legal` gives them at the table (`cubeAnswers`). The
+still board says where the cube is: for a take, its `offer` puts it on the
+taker's side at the value on offer, as the table draws a pending double.
+
+What it hears back is the action's name: "double", "roll", "take" or
+"drop". The buttons stay once an answer is given, so the band does not
+move; the page dims the one not chosen (`.cube-chose-*` in app.css).
+
+-}
+type alias CubeAsk =
+    { still : StillBoard
+    , take : Bool -- the player at the bottom has been doubled; else they are on roll
+    }
+
+
+viewCubeAsk : CubeAsk -> Html (Maybe String)
+viewCubeAsk ask =
+    Html.map
+        (\msg ->
+            case msg of
+                Simple name ->
+                    Just name
+
+                _ ->
+                    Nothing
+        )
+        (slab ask.still
+            { stillOnly
+                | playable = True
+                , legal = cubeAnswers ask.take ask.still.position.cube.value
+            }
+        )
+
+
+{-| The table's answers to a cube decision, as `backgammon/engine.legal`
+labels them: on roll with the cube to turn, ROLL and DOUBLE; doubled, TAKE
+(with the value the cube is turned to) and DROP. `value` is the cube as it
+stands before the offer.
+-}
+cubeAnswers : Bool -> Int -> List Schema
+cubeAnswers take value =
+    let
+        action name label =
+            { name = name, label = label, params = [] }
+    in
+    if take then
+        [ action "take" ("Take (cube to " ++ String.fromInt (value * 2) ++ ")")
+        , action "drop" "Drop"
+        ]
+
+    else
+        [ action "roll" "Roll", action "double" "Double" ]
 
 
 {-| What a slab answers, beyond being a picture. A still board answers

@@ -510,7 +510,7 @@ pub fn a_puzzle_is_asked_in_its_own_words_test() {
     practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "")
 
   assert string.contains(body, "White to play 6-4. What's your play?")
-  assert string.contains(body, "White to play. Double?")
+  assert string.contains(body, "White to play. Double to 2?")
   assert string.contains(body, "\"kind\":\"move\"")
   assert string.contains(body, "\"kind\":\"double\"")
 }

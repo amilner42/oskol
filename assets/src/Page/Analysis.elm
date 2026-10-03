@@ -2104,6 +2104,7 @@ view model =
                         , ( "is-playing", model.mode == Play )
                         , ( "is-proposed", shown /= Nothing )
                         , ( "dice-played", shown /= Nothing )
+                        , ( "cube-chose-" ++ Maybe.withDefault "" (chosenCube model), model.mode == Play && chosenCube model /= Nothing )
                         ]
                     , id "an-board"
                     ]
@@ -2219,8 +2220,68 @@ viewBoard model =
         ( Play, Nothing, ( Move (Just roll), MovesIn m ) ) ->
             Html.map BoardOut (Puzzle.view (table model roll m.tree))
 
+        -- A cube step is answered in the board's band, as at the table and
+        -- on a cube puzzle: DOUBLE or ROLL on roll, TAKE or DROP doubled.
+        ( Play, Nothing, ( Double, _ ) ) ->
+            cubeBoard model False
+
+        ( Play, Nothing, ( Take, _ ) ) ->
+            cubeBoard model True
+
         ( Play, _, _ ) ->
             Board.viewStillTurn NoOp (still model)
+
+
+{-| A cube step in PLAY on the table's slab, its answers in the band; a
+step the line already ended at is a picture.
+-}
+cubeBoard : Model -> Bool -> Html Msg
+cubeBoard model take =
+    if endingHere model == Nothing then
+        Html.map
+            (\out ->
+                case out of
+                    Just "double" ->
+                        Chose Setup.Doubled
+
+                    Just "roll" ->
+                        Chose Setup.NoDouble
+
+                    Just "take" ->
+                        Chose Setup.Took
+
+                    Just "drop" ->
+                        Chose Setup.Passed
+
+                    _ ->
+                        NoOp
+            )
+            (Board.viewCubeAsk { still = still model, take = take })
+
+    else
+        Board.viewStillTurn NoOp (still model)
+
+
+{-| The table's action a cube step's answer was, for the band to keep it
+shown (`.cube-chose-*`).
+-}
+chosenCube : Model -> Maybe String
+chosenCube model =
+    case here model |> Maybe.andThen .chosen of
+        Just Setup.Doubled ->
+            Just "double"
+
+        Just Setup.NoDouble ->
+            Just "roll"
+
+        Just Setup.Took ->
+            Just "take"
+
+        Just Setup.Passed ->
+            Just "drop"
+
+        _ ->
+            Nothing
 
 
 {-| The roll on the puzzle page's table: the mover's seat in their own
@@ -2300,25 +2361,12 @@ viewModes model =
 
 {-| In PLAY, the row over the board (the brushes' own slot): what the step
 on the board asks for -- a roll (ROLL FOR ME), the checkers moved on the
-table, DOUBLE or NO DOUBLE, TAKE or PASS -- or the sentence the line
-ended in.
+table, a cube answer in the board's band (DOUBLE or ROLL, TAKE or DROP,
+`cubeBoard`) -- or the sentence the line ended in.
 -}
 viewPlayRow : Model -> Html Msg
 viewPlayRow model =
     let
-        chosen =
-            here model |> Maybe.andThen .chosen
-
-        act actId label msg on =
-            button
-                [ type_ "button"
-                , id actId
-                , classList [ ( "q-btn plain an-act pixel", True ), ( "is-on", on ) ]
-                , disabled (Setup.check model.setup /= Nothing)
-                , onClick msg
-                ]
-                [ text label ]
-
         -- a roll still to come: "Pick a roll" is what this row answers
         free actId label msg =
             button [ type_ "button", id actId, class "q-btn plain an-act pixel", onClick msg ] [ text label ]
@@ -2373,15 +2421,12 @@ viewPlayRow model =
                             )
                         ]
 
+                    -- The answers are the board's band's, as at the table.
                     Double ->
-                        [ act "an-cube-yes" "DOUBLE" (Chose Setup.Doubled) (chosen == Just Setup.Doubled)
-                        , act "an-cube-no" "NO DOUBLE" (Chose Setup.NoDouble) (chosen == Just Setup.NoDouble)
-                        ]
+                        [ hint "Double, or roll? Answer on the board" ]
 
                     Take ->
-                        [ act "an-take" "TAKE" (Chose Setup.Took) (chosen == Just Setup.Took)
-                        , act "an-pass" "PASS" (Chose Setup.Passed) (chosen == Just Setup.Passed)
-                        ]
+                        [ hint "Take, or drop? Answer on the board" ]
         )
 
 
@@ -3165,8 +3210,20 @@ viewAnswer model answer =
 
                         _ ->
                             Words.doubleWhy name otherName review
+
+                -- What was asked, with its stakes, in the board's colours:
+                -- "Black redoubles to 4. Take?"
+                asked =
+                    Words.cubeQuestion
+                        { take = answer.puzzle.kind == "take"
+                        , asked = name
+                        , doubler = otherName
+                        , value = model.setup.cubeValue
+                        , owned = model.setup.cubeOwner /= Nothing
+                        }
             in
-            [ Words.inWords words
+            [ Html.p [ class "an-answer-ask", id "an-answer-ask" ] [ text asked ]
+            , Words.inWords words
             , Words.cubeLine review
             , Words.cubeChances name review
             ]

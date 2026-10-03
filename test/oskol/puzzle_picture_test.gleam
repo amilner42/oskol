@@ -156,17 +156,17 @@ pub fn a_double_question_has_no_dice_and_a_centred_cube_in_the_middle_test() {
   assert count(svg, "class=\"pip\"") == 0
   assert string.contains(svg, "class=\"cube\" data-owner=\"center\"")
   assert attribute(svg, "cube-value") == "1"
-  assert attribute(svg, "prompt") == "White to play. Double?"
+  assert attribute(svg, "prompt") == "White to play. Double to 2?"
   // The board itself is the mover's, as for a move.
   assert checkers(svg, "white", "24") == 2
   assert checkers(svg, "black", "12") == 5
 }
 
 pub fn a_take_is_drawn_from_the_doubled_players_side_test() {
-  let q = Question(..a_question(Take), cube_owner: Centered)
+  let q = Question(..a_question(Take), cube_value: 1, cube_owner: Centered)
   let svg = picture.svg(q)
 
-  assert attribute(svg, "prompt") == "White is doubled. Take?"
+  assert attribute(svg, "prompt") == "Black doubles to 2. Take?"
   // The stored board is the doubler's; the solver is the other player, so
   // White is now what was Black, turned around: the seven-stack that was
   // the opponent's on their 12-point is White's on the 13-point.
@@ -182,21 +182,29 @@ pub fn a_take_is_drawn_from_the_doubled_players_side_test() {
   assert count(svg, "class=\"off-stick white\"") == 0
   // And the scores swap with the board.
   assert attribute(svg, "score") == "White 5 away · Black 3 away"
-  assert string.contains(svg, "class=\"cube\" data-owner=\"center\"")
+  // The double is on offer: the cube is turned to 2 and pushed across to
+  // the solver, the way the table draws a double waiting for its answer.
+  assert string.contains(svg, "class=\"cube\" data-owner=\"mover\"")
+  assert attribute(svg, "cube-value") == "2"
 }
 
-pub fn a_take_turns_an_owned_cube_around_too_test() {
+/// A redouble: the doubler owned the cube at 2, and it is offered at 4 on
+/// the solver's side, the question naming the same stakes.
+pub fn a_take_of_a_redouble_draws_the_cube_turned_to_the_offer_test() {
   let owned_by_doubler = Question(..a_question(Take), cube_owner: Mover)
-  assert string.contains(
-    picture.svg(owned_by_doubler),
-    "class=\"cube\" data-owner=\"opponent\"",
-  )
+  let svg = picture.svg(owned_by_doubler)
+  assert string.contains(svg, "class=\"cube\" data-owner=\"mover\"")
+  assert attribute(svg, "cube-value") == "4"
+  assert attribute(svg, "prompt") == "Black redoubles to 4. Take?"
+}
 
-  let owned_by_solver = Question(..a_question(Take), cube_owner: Opponent)
-  assert string.contains(
-    picture.svg(owned_by_solver),
-    "class=\"cube\" data-owner=\"mover\"",
-  )
+/// A double question is asked before anything is offered: the cube stays
+/// where it is, on the doubler's side when they own it.
+pub fn a_redouble_question_leaves_the_cube_with_its_owner_test() {
+  let svg = picture.svg(a_question(Double))
+  assert string.contains(svg, "class=\"cube\" data-owner=\"mover\"")
+  assert attribute(svg, "cube-value") == "2"
+  assert attribute(svg, "prompt") == "White to play. Redouble to 4?"
 }
 
 pub fn an_opponents_cube_sits_at_their_side_test() {

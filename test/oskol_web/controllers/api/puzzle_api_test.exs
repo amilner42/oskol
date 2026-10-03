@@ -133,7 +133,7 @@ defmodule OskolWeb.Api.PuzzleApiTest do
       assert %{
                "ok" => true,
                "kind" => "double",
-               "prompt" => "White to play. Double?",
+               "prompt" => "White to play. Redouble to 4?",
                "tree" => nil
              } = body
     end
