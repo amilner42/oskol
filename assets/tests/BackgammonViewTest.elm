@@ -557,92 +557,38 @@ suite =
                         Nothing ->
                             Expect.fail "no backgammon fixture"
              in
-             [ test "the card offers the game's mistakes to practice once they are counted, worded by the count" <|
+             [ test "the card is who won and by how much, and nothing else" <|
                 \_ ->
                     withFixture
                         (\u ->
                             let
-                                with count =
-                                    View.view
-                                        (let
-                                            c =
-                                                ctx "p1" (between [] { u | legal = [ ready ] }) View.init
-                                         in
-                                         { c | mistakes = \_ -> count }
-                                        )
-                                        |> Query.fromHtml
-                            in
-                            Expect.all
-                                [ \_ -> with (Just 6) |> Query.find [ id "practice-game" ] |> Query.has [ text "PRACTICE THIS GAME'S 6 MISTAKES" ]
-                                , \_ -> with (Just 1) |> Query.find [ id "practice-game" ] |> Query.has [ text "PRACTICE THIS GAME'S 1 MISTAKE" ]
-
-                                -- pressed, the page starts a run of that game's
-                                , \_ -> with (Just 6) |> Query.find [ id "practice-game" ] |> Event.simulate Event.click |> Event.expect (PracticeGame 1)
-
-                                -- none: said quietly, no button
-                                , \_ -> with (Just 0) |> Query.hasNot [ id "practice-game" ]
-                                , \_ -> with (Just 0) |> Query.find [ id "practice-none" ] |> Query.has [ text "No mistakes in this game" ]
-
-                                -- not counted yet (the analysis pending), or a spectator: nothing at all
-                                , \_ -> with Nothing |> Query.hasNot [ id "practice-game" ]
-                                , \_ -> with Nothing |> Query.hasNot [ id "practice-none" ]
-
-                                -- and READY is still where it was, whatever the card offers
-                                , \_ -> with (Just 6) |> Query.find [ id "bg-action-ready" ] |> Query.has [ text "READY" ]
-                                ]
-                                ()
-                        )
-             , test "the card makes the save offer between games too, in the same three states, without covering READY" <|
-                \_ ->
-                    withFixture
-                        (\u ->
-                            let
-                                with save =
-                                    View.view
-                                        (let
-                                            c =
-                                                ctx "p1" (between [] { u | legal = [ ready ] }) View.init
-                                         in
-                                         { c | save = save }
-                                        )
-                                        |> Query.fromHtml
-
-                                saving =
-                                    View.Saving (Tuple.first (Ui.SignIn.init { next = "/backgammon/123456", email = "" }))
-                            in
-                            Expect.all
-                                -- no offer unless the page makes one (signed in, or a spectator)
-                                [ \_ -> with View.NoSave |> Query.hasNot [ id "save-offer" ]
-                                , \_ -> with View.NoSave |> Query.hasNot [ id "bg-save-sheet" ]
-
-                                -- a guest's offer names what they have, and opens the sign-in
-                                , \_ -> with View.SaveOffered |> Query.find [ id "bg-game-result" ] |> Query.find [ id "save-offer" ] |> Query.has [ text "Save this game and your PR" ]
-                                , \_ -> with View.SaveOffered |> Query.find [ id "save-offer" ] |> Event.simulate Event.click |> Event.expect OpenedSave
-
-                                -- open, the sign-in is a sheet of its own, with the card and READY still in the band
-                                , \_ -> with saving |> Query.find [ id "bg-save-sheet" ] |> Query.has [ id "signin-email" ]
-                                , \_ -> with saving |> Query.find [ id "bg-game-result" ] |> Query.hasNot [ id "signin-email" ]
-                                , \_ -> with saving |> Query.find [ id "bg-action-ready" ] |> Query.has [ text "READY" ]
-                                , \_ -> with saving |> Query.find [ id "save-close" ] |> Event.simulate Event.click |> Event.expect ClosedSave
-                                ]
-                                ()
-                        )
-             , test "the band shows the result, the score and READY" <|
-                \_ ->
-                    withFixture
-                        (\u ->
-                            let
+                                -- a guest, with the game's mistakes counted: still none of it
                                 rendered =
-                                    render "p1" [ ready ] (between [] u)
+                                    View.view
+                                        (let
+                                            c =
+                                                ctx "p1" (between [] { u | legal = [ ready ] }) View.init
+                                         in
+                                         { c | mistakes = \_ -> Just 6, save = View.SaveOffered }
+                                        )
+                                        |> Query.fromHtml
+
+                                card =
+                                    rendered |> Query.find [ id "bg-game-result" ]
                             in
                             Expect.all
-                                [ \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "YOU WIN +2" ]
-                                , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "GAMMON · 0-0" ]
+                                [ \_ -> card |> Query.find [ class "bg-result-who" ] |> Query.has [ text "YOU" ]
+                                , \_ -> card |> Query.find [ class "bg-result-what" ] |> Query.has [ text "WIN +2" ]
 
-                                -- the game just played can be replayed from here
-                                , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.find [ class "bg-replay-link" ] |> Query.has [ text "REPLAY" ]
-                                , \_ -> rendered |> Query.find [ id "bg-action-ready" ] |> Query.has [ text "READY" ]
+                                -- no how, no score (the player bars carry it), no doors
+                                , \_ -> card |> Query.hasNot [ text "GAMMON" ]
+                                , \_ -> card |> Query.hasNot [ text "0-0" ]
+                                , \_ -> rendered |> Query.hasNot [ class "bg-replay-link" ]
+                                , \_ -> rendered |> Query.hasNot [ id "practice-game" ]
+                                , \_ -> rendered |> Query.hasNot [ id "practice-none" ]
+                                , \_ -> rendered |> Query.hasNot [ id "save-offer" ]
                                 , \_ -> rendered |> Query.hasNot [ id "bg-ready-status" ]
+                                , \_ -> rendered |> Query.find [ id "bg-action-ready" ] |> Query.has [ text "NEXT" ]
 
                                 -- the final position is only to look at
                                 , \_ -> rendered |> Query.hasNot [ id "dice-row" ]
@@ -650,7 +596,7 @@ suite =
                                 ]
                                 ()
                         )
-             , test "READY sends the ready action" <|
+             , test "NEXT sends the ready action" <|
                 \_ ->
                     withFixture
                         (\u ->
@@ -659,40 +605,75 @@ suite =
                                 |> Event.simulate Event.click
                                 |> Event.expect (Simple "ready")
                         )
-             , test "after pressing it, the player waits for the opponent" <|
+             , test "END is there only where the room offers close, and ends the session" <|
+                \_ ->
+                    withFixture
+                        (\u ->
+                            let
+                                close =
+                                    { name = "close", label = "End session", params = [] }
+
+                                unlimited =
+                                    render "p1" [ ready, close ] (between [] u)
+                            in
+                            Expect.all
+                                [ \_ -> unlimited |> Query.find [ id "bg-action-close" ] |> Query.has [ text "END", attribute (Html.Attributes.attribute "aria-label" "End the session") ]
+                                , \_ -> unlimited |> Query.find [ id "bg-action-close" ] |> Event.simulate Event.click |> Event.expect (Simple "close")
+
+                                -- a match: NEXT alone
+                                , \_ -> render "p1" [ ready ] (between [] u) |> Query.hasNot [ id "bg-action-close" ]
+                                ]
+                                ()
+                        )
+             , test "after pressing it, NEXT stays where it was, greyed, waiting for the opponent" <|
                 \_ ->
                     withFixture
                         (\u ->
                             let
                                 opponent =
-                                    Protocol.opponentOf "p1" u.scene |> Maybe.map (.name >> String.toUpper) |> Maybe.withDefault "?"
+                                    Protocol.opponentOf "p1" u.scene |> Maybe.map .name |> Maybe.withDefault "?"
 
                                 rendered =
                                     render "p1" [] (between [ "p1" ] u)
                             in
                             Expect.all
                                 [ \_ -> rendered |> Query.hasNot [ id "bg-action-ready" ]
-                                , \_ -> rendered |> Query.find [ id "bg-ready-status" ] |> Query.has [ text ("WAITING FOR " ++ opponent) ]
+                                , \_ -> rendered |> Query.find [ id "bg-next-waiting" ] |> Query.has [ text "NEXT", attribute (Html.Attributes.disabled True), attribute (Html.Attributes.title ("Waiting for " ++ opponent)) ]
+                                , \_ -> rendered |> Query.hasNot [ id "bg-ready-status" ]
                                 ]
                                 ()
                         )
-             , test "the other player sees that the opponent is ready, and still has READY" <|
+             , test "an opponent who is ready is a dot inside NEXT, not a line" <|
                 \_ ->
                     withFixture
                         (\u ->
                             let
-                                opponent =
-                                    Protocol.opponentOf "p2" u.scene |> Maybe.map (.name >> String.toUpper) |> Maybe.withDefault "?"
-
                                 rendered =
                                     render "p2" [ ready ] (between [ "p1" ] u)
                             in
                             Expect.all
-                                [ \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "ALICE WINS +2" ]
-                                , \_ -> rendered |> Query.has [ id "bg-action-ready" ]
-                                , \_ -> rendered |> Query.find [ id "bg-ready-status" ] |> Query.has [ text (opponent ++ " IS READY") ]
+                                [ \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "ALICE", text "WINS +2" ]
+                                , \_ -> rendered |> Query.find [ id "bg-action-ready" ] |> Query.find [ id "bg-ready-dot" ] |> Query.has [ attribute (Html.Attributes.attribute "aria-label" "They're ready") ]
+                                , \_ -> rendered |> Query.hasNot [ id "bg-ready-status" ]
+
+                                -- nobody ready yet: no dot
+                                , \_ -> render "p2" [ ready ] (between [] u) |> Query.hasNot [ id "bg-ready-dot" ]
                                 ]
                                 ()
+                        )
+             , test "Sage being ready is never drawn" <|
+                \_ ->
+                    withFixture
+                        (\u ->
+                            View.view
+                                (let
+                                    c =
+                                        ctx "p2" (between [ "p1" ] { u | legal = [ ready ] }) View.init
+                                 in
+                                 { c | bots = [ "p1" ] }
+                                )
+                                |> Query.fromHtml
+                                |> Query.hasNot [ id "bg-ready-dot" ]
                         )
              , test "every name in the band is the room's, not the one the game started with" <|
                 \_ ->
@@ -703,14 +684,12 @@ suite =
                                     View.view (seatNamed (ctx "p2" (between [ "p1" ] { u | legal = [ ready ] }) View.init)) |> Query.fromHtml
                             in
                             Expect.all
-                                [ \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "SEAT-P1 WINS +2" ]
-                                , \_ -> rendered |> Query.find [ id "bg-ready-status" ] |> Query.has [ text "SEAT-P1 IS READY" ]
-                                , \_ -> rendered |> Query.hasNot [ text "Alice" ]
-                                , \_ -> rendered |> Query.hasNot [ text "Bob" ]
+                                [ \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "SEAT-P1", text "WINS +2" ]
+                                , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.hasNot [ text "ALICE" ]
                                 ]
                                 ()
                         )
-             , test "a spectator reads who is ready and has nothing to press" <|
+             , test "a spectator reads the result and has nothing to press" <|
                 \_ ->
                     withFixture
                         (\u ->
@@ -723,8 +702,9 @@ suite =
                             in
                             Expect.all
                                 [ \_ -> rendered |> Query.hasNot [ id "bg-action-ready" ]
-                                , \_ -> rendered |> Query.find [ id "bg-ready-status" ] |> Query.has [ text "BOB IS READY" ]
-                                , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "ALICE WINS +2" ]
+                                , \_ -> rendered |> Query.hasNot [ id "bg-next-waiting" ]
+                                , \_ -> rendered |> Query.hasNot [ id "bg-ready-dot" ]
+                                , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "ALICE", text "WINS +2" ]
                                 ]
                                 ()
                         )
@@ -2346,11 +2326,11 @@ suite =
                             in
                             Expect.all
                                 [ -- live: the result, and no dice
-                                  \_ -> board View.init |> Query.has [ text "YOU WIN +2" ]
+                                  \_ -> board View.init |> Query.find [ id "bg-game-result" ] |> Query.has [ text "YOU", text "WIN +2" ]
 
-                                -- the past turn: its two dice, no result, no READY
+                                -- the past turn: its two dice, no result, no NEXT
                                 , \_ -> board viewing |> Query.findAll [ class "die" ] |> Query.count (Expect.equal 2)
-                                , \_ -> board viewing |> Query.hasNot [ text "YOU WIN" ]
+                                , \_ -> board viewing |> Query.hasNot [ text "WIN +2" ]
                                 , \_ -> board viewing |> Query.findAll [ id "bg-game-result" ] |> Query.count (Expect.equal 0)
                                 , \_ -> page viewing |> Query.find [ id "bg-scrub-live" ] |> Event.simulate Event.click |> Event.expect ViewLive
                                 ]

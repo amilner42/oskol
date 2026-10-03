@@ -1,9 +1,10 @@
 # Two finished backgammon rooms, graded against a stubbed engine, with their
-# mistakes written as puzzles: what the result cards' PRACTICE opens.
+# mistakes written as puzzles: what the game-over card's PRACTICE opens.
 #
 #  - `unlimited`: an unlimited session with two games played to the end,
 #    the second of them just over -- so its table shows the between-games
-#    card, nobody on the clock, READY not yet pressed.
+#    card (which offers no practice), nobody on the clock, NEXT not yet
+#    pressed.
 #  - `single`: one game played to the end -- the game-over card.
 #
 # The same two guests hold p1 and p2 in both, so a sign-in on one table

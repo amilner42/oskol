@@ -289,8 +289,8 @@ withSession session model =
             { model | session = session }
 
 
-{-| A result card's offer -- at game over and between the games of a
-match or of unlimited play alike -- to a guest in a seat: the game they
+{-| The game-over card's offer to a guest in a seat (the card between
+games makes none; it is the result and the way on): the game they
 just played and the PR it is about to earn them are theirs to keep. Open,
 it is the sign-in itself, until they CONTINUE from the win. Nothing for a
 spectator or a signed-in player.
@@ -431,9 +431,6 @@ update msg model =
                             SignIn.init { next = Route.href (Route.play model.gameSlug model.gameId), email = "" }
                     in
                     stay { updated | signIn = Just signIn } (Cmd.map SignInMsg cmd)
-
-                Backgammon.CloseSave ->
-                    stay { updated | signIn = Nothing } Cmd.none
 
                 Backgammon.ForSave signInMsg ->
                     update (SignInMsg signInMsg) updated

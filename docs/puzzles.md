@@ -168,9 +168,9 @@ path builds one and nothing re-asks the engine to recover one.
   and the chances, nothing more. `hold` is legacy: grading no longer produces
   it, cards keep their levels and the stored partial reviews stand, and a
   stored `hold` attempt still answers `hold` when its key is retried.
-- **Every finished game is the moment** (Aveline `decisions`, 2026-09-22). Both result cards at the table --
-  the game-over card and the between-games card of a match or of
-  unlimited play -- offer PRACTICE THIS GAME'S N MISTAKES
+- **Every finished game is the moment** (Aveline `decisions`, 2026-09-22;
+  narrowed 2026-10-03). The game-over card at the table offers PRACTICE
+  THIS GAME'S N MISTAKES
   (`practice-game`; "1 MISTAKE"; a quiet "No mistakes in this game" for
   none) once the game's review is done, and the replay's OVERVIEW has
   nothing to press: signed in, a line says the game's mistakes are in
@@ -179,14 +179,16 @@ path builds one and nothing re-asks the engine to recover one.
   `rp-deck-signin-open`). `Page/Play.elm`
   asks `/puzzles?game=n` for each game `/ratings` lists as graded, for a
   seat only (a spectator would be told 404), and the replay asks for the
-  game being read as it switches; the cards keep the ids and hand them
+  game being read as it switches; the card keeps the ids and hands them
   to Main as `StartRun`, the replay keeps the count. The puzzles are written a moment
   after the grade, so the endpoint answers 409 `puzzles_pending` until
   they are, and the page asks again (3 s apart, twenty times at most).
   The run ends on the puzzle page's own screen, a guest's sign-in going
-  back to the table (or the replay) it was pressed at. The between-games
-  card also makes the save offer, so unlimited play -- most games here --
-  asks a guest to sign in after every game, not only at a match's end.
+  back to the table (or the replay) it was pressed at. The card between
+  the games of a match or of unlimited play is only the result, NEXT and
+  END: no practice and no save offer there (2026-10-03, the human: too
+  many things on it); an earlier game's mistakes are in /puzzles and its
+  replay.
 - **One scheduled answer per opportunity.** A signed-in caller whose deck
   holds the puzzle writes a `puzzle_attempts` row first, keyed by the id the
   client minted; the ladder moves only when that row is new *and* the card is

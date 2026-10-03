@@ -97,7 +97,7 @@ hour-idle shutdown is therefore graceful.
 
 **A room that will not end itself is ended by a player.** Nothing prunes
 rooms, so a lobby a friend never opens and an unlimited session nobody
-presses READY in both sit in LIVE GAMES for ever. Two ways out, and they
+presses NEXT in both sit in LIVE GAMES for ever. Two ways out, and they
 are different shutdowns because a waiting room has no instance and a
 between-games room has one:
 
@@ -119,20 +119,20 @@ between-games room has one:
   backgammon action, legal between games and only in unlimited play
   (`state.can_close`; a match to a target ends when somebody reaches it, and
   a game in play is left by resigning). Either player, alone -- the
-  alternative is one of them never pressing READY, which strands the room
+  alternative is one of them never pressing NEXT, which strands the room
   anyway. The score stands and whoever is ahead has won; level on points is
   `Finished([])`, which is why `state.Phase.Finished` carries an
   `Option(Color)`. Because it is an action it is a step in the log, so a
-  room rebuilt from that log comes back over rather than offering READY, and
+  room rebuilt from that log comes back over rather than offering NEXT, and
   `persist_finish` writes `finished` with `games.winners` exactly as a
   match's last game does -- the home's recent list needs no new shape. The
   table draws it from the legal actions like every other button
-  (`bg-action-close`, beside READY): the client never reads a format.
+  (`bg-action-close`, END beside NEXT): the client never reads a format.
   Closing changes nothing about analysis: every game was graded as it ended.
   One consequence worth knowing: between the games of unlimited play both
   seats now have a legal action (`close`), so the snapshot's `to_act` --
   and LIVE GAMES' "Your move" -- names a player who has already pressed
-  READY. That is true: the room is waiting on them to do something.
+  NEXT. That is true: the room is waiting on them to do something.
 
 ## `games.state`
 

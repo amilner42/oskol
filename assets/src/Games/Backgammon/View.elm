@@ -27,8 +27,8 @@ so a big monitor gets a big board), and there are two of them, with
     full-height felt cannot use becomes the board's own rails -- and almost
     nothing else is drawn. What stays is what a turn cannot be played
     without: the clock, the score, the bear-off trays (on the rail beside
-    the home boards), the centre band, and PRACTICE THIS GAME'S N MISTAKES
-    on the card between games.
+    the home boards) and the centre band, which between games is the
+    result, NEXT and END, as it is in every layout.
   - **compressed**, which is the layout a sideways phone has always had:
     the whole table in a column beside the board. Everything focus mode
     puts away is here, one tap from it.
@@ -121,10 +121,9 @@ type Msg
     | ToggleMatch -- open or close the match panel
     | ViewTurn Int -- put this turn of the game on the board, read-only
     | ViewLive -- back to the live game
-    | OpenedSave -- a result card's "Save this game and your PR"
-    | ClosedSave -- the between-games sign-in sheet's close
+    | OpenedSave -- the game-over card's "Save this game and your PR"
     | SaveMsg Ui.SignIn.Msg
-    | PracticeGame Int -- a result card's PRACTICE THIS GAME'S N MISTAKES, by game number
+    | PracticeGame Int -- the game-over card's PRACTICE THIS GAME'S N MISTAKES, by game number
     | Edit String EditEvent -- a pointer on one of an editor board's places (`viewEdit`)
     | ToggleExpanded -- sideways on a phone: between focus mode and the fuller layout
     | Press String -- a cube button (by its action) went down: pointer or key
@@ -140,9 +139,8 @@ type Out
     | Send E.Value
     | SendMany (List E.Value)
     | WantRematch
-    | OpenSave -- open the sign-in on a result card
-    | CloseSave -- put the between-games sign-in sheet away
-    | ForSave Ui.SignIn.Msg -- the sign-in on a result card, for the page to run
+    | OpenSave -- open the sign-in on the game-over card
+    | ForSave Ui.SignIn.Msg -- the sign-in on the game-over card, for the page to run
     | Practice Int -- start a run of this finished game's mistakes (the page holds the ids)
     | ChoseLandscape Bool -- focus mode on or off: this browser's own, never the room's and never the server's
     | After Float Msg -- hand this back to `update` in so many ms (a cube button's hold)
@@ -262,10 +260,10 @@ autoRoll legal model =
         ( model, Nothing )
 
 
-{-| What a result card -- the game-over card, or the between-games card of
-a match or of unlimited play -- offers a guest: nothing (signed in, or a
+{-| What the game-over card offers a guest: nothing (signed in, or a
 spectator), the one line that opens the sign-in, or the sign-in itself,
-which the page runs.
+which the page runs. The card between games offers none of it: it is the
+result and the way on, nothing more.
 -}
 type Save
     = NoSave
@@ -278,9 +276,6 @@ update msg model =
     case msg of
         OpenedSave ->
             ( model, OpenSave )
-
-        ClosedSave ->
-            ( model, CloseSave )
 
         SaveMsg saveMsg ->
             ( model, ForSave saveMsg )
@@ -600,7 +595,7 @@ type alias Ctx =
     , gamePrs :
         Int
         -> List ( String, Float ) -- each player's PR in a finished game (by number), once graded; [] until then
-    , save : Save -- the sign-in a result card offers a guest
+    , save : Save -- the sign-in the game-over card offers a guest
     , accounts : Maybe (List String) -- the seats an account owns; Nothing where that is not known (no badge at all)
     , bots : List String -- the seats a bot plays, for the badge that says so
     , thinking : List String -- and the ones working a move out right now
@@ -766,9 +761,9 @@ view arrived =
     -- height, not by a fixed width: `.bg-page` in app.css derives every
     -- board dimension from `100dvh`, and the page becomes a column as wide
     -- as the board and its rail, so the header spans exactly that.
-    -- `is-between` while the between-games card is up: the layouts that
-    -- size the board from the screen's height (a phone on its side, a
-    -- desktop window) give the band the card's room, in app.css.
+    -- `is-between` while the between-games card is up: the band keeps its
+    -- height and holds the card in one row (app.css), so no layout gives
+    -- the board's height away between games.
     -- `is-expanded` is focus mode, and only a sideways phone reads it: the
     -- board takes the whole screen, the site's bar included, and everything
     -- but the clock, the score and the band goes (app.css again; this view
@@ -791,12 +786,6 @@ view arrived =
 
           else
             text ""
-        , case ( betweenGames live, live.save ) of
-            ( Just _, Saving signIn ) ->
-                viewSaveSheet signIn
-
-            _ ->
-                text ""
         , case ctx.finished of
             Just winners ->
                 viewGameOver live winners
@@ -2085,11 +2074,14 @@ viewRightBandInPlay board =
 -- BETWEEN GAMES
 --
 -- A game of a match (or of unlimited play) is over and the next one waits
--- until both players say READY. The finished game's final position stays on
--- the board -- nothing on it is legal, so nothing on it answers a tap -- and
--- the band says how the game went (left half) and who is ready (right half).
--- Everything here reads the scene's `between_games` and the `ready` schema;
--- the client decides nothing about it.
+-- until both players press NEXT. The finished game's final position stays
+-- on the board -- nothing on it is legal, so nothing on it answers a tap --
+-- and the band is one row at its usual height: who won and by how much
+-- (left half), NEXT and, in unlimited play, END (right half). Nothing else:
+-- the score is on the player bars, and the replay and the practice of the
+-- game are on the game-over card and in /puzzles. Everything here reads the
+-- scene's `between_games` and the legal `ready` and `close`; the client
+-- decides nothing about it.
 
 
 {-| How the game just played ended, and who has said they are ready for
@@ -2112,86 +2104,32 @@ betweenGames ctx =
         ctx.scene
 
 
-{-| The result of the game just played and the match score: who won, how
-many points, how, and the score as it now stands (the viewer's first; a
-spectator reads it in seat order).
+{-| Who won the game just played and what it was worth, and nothing else:
+SAGE WINS +2, or the viewer's own YOU WIN +1. One line where the half has
+the room; where it does not, the name sits over the rest, and a name too
+long even for that gives way to an ellipsis. The band never grows for it.
 -}
 viewGameResult : Ctx -> BetweenGames -> Html Msg
 viewGameResult ctx between =
     let
-        headline =
-            (if between.winner == ctx.playerId then
-                "YOU WIN"
+        ( who, verb ) =
+            if between.winner == ctx.playerId then
+                ( "YOU", "WIN" )
 
-             else
-                String.toUpper (ctx.nameOf between.winner) ++ " WINS"
-            )
-                ++ " +"
-                ++ String.fromInt between.points
-
-        how =
-            case between.kind of
-                "dropped" ->
-                    "DOUBLE DROPPED"
-
-                other ->
-                    String.toUpper other
-
-        scoreOf p =
-            String.fromInt (Protocol.counter "score" p)
-
-        seated =
-            List.any (\p -> p.id == ctx.playerId) ctx.scene.players
-
-        score =
-            case ( seated, seatOf ctx, Protocol.opponentOf (seatId ctx) ctx.scene ) of
-                ( True, Just me, Just them ) ->
-                    scoreOf me ++ "-" ++ scoreOf them
-
-                _ ->
-                    ctx.scene.players |> List.map scoreOf |> String.join "-"
-
-        gameNumber =
-            Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1
+            else
+                ( String.toUpper (ctx.nameOf between.winner), "WINS" )
     in
-    -- The card sits in the left half of the band, opposite READY, and
-    -- never grows into it: everything it offers is a line of its own
-    -- column, and the sign-in it opens is a sheet (`viewSaveSheet`).
     div
-        [ class "bg-game-result pixel text-[8px] sm:text-[9px] px-1 leading-relaxed text-center min-w-0 flex flex-col items-center gap-0.5 sm:gap-1"
+        [ class "bg-game-result pixel min-w-0 max-w-full flex flex-wrap items-center justify-center text-center"
         , Html.Attributes.id "bg-game-result"
         ]
-        [ span [ style "color" "var(--bg-accent)" ] [ text headline ]
-        , span [ style "color" "var(--pencil)" ] [ text (how ++ " · " ++ score) ]
-        , case ctx.replayHref gameNumber of
-            Just _ ->
-                replayLink ctx gameNumber "REPLAY"
-
-            Nothing ->
-                text ""
-        , viewPractice ctx gameNumber
-        , case ctx.save of
-            SaveOffered ->
-                button
-                    [ Html.Attributes.type_ "button"
-                    , Html.Attributes.id "save-offer"
-                    , class "signin-offer bg-save-offer font-sans text-[10px] sm:text-[12px] leading-snug"
-                    , onClick OpenedSave
-                    ]
-                    [ text "Save this game and your PR" ]
-
-            -- Open, the sign-in is a sheet over the board (`viewSaveSheet`):
-            -- the band has no room for a form, and READY stays where it is.
-            Saving _ ->
-                text ""
-
-            NoSave ->
-                text ""
+        [ span [ class "bg-result-who truncate max-w-full" ] [ text who ]
+        , span [ class "bg-result-what whitespace-nowrap" ] [ text (verb ++ " +" ++ String.fromInt between.points) ]
         ]
 
 
-{-| PRACTICE THIS GAME'S N MISTAKES: the door from a result card to a run
-of that game's mistakes, once the analysis is done and they are counted
+{-| PRACTICE THIS GAME'S N MISTAKES: the door from the game-over card to a
+run of that game's mistakes, once the analysis is done and they are counted
 (`Ctx.mistakes`). Nothing while the analysis is pending, nothing for a
 spectator; a game with none says so quietly.
 -}
@@ -2229,96 +2167,97 @@ practiceLabel count =
            )
 
 
-{-| The between-games sign-in, opened from the card's offer: a sheet over
-the board, closed by its ✕ or its backdrop, the same door the match panel
-uses. The card itself stays in the band with READY beside it; the sheet is
-only up while the player is signing in and one tap puts it away.
--}
-viewSaveSheet : Ui.SignIn.Model -> Html Msg
-viewSaveSheet signIn =
-    div [ class "fixed inset-0 z-40 flex items-end sm:items-center justify-center p-3", Html.Attributes.id "bg-save-sheet" ]
-        [ div [ class "absolute inset-0", style "background" "rgba(35, 36, 58, 0.55)", onClick ClosedSave ] []
-        , div [ class "bg-card bg-white relative w-full max-w-md p-5 sm:p-8 text-left max-h-full overflow-y-auto" ]
-            [ button
-                [ Html.Attributes.type_ "button"
-                , class "absolute top-2 right-2 pixel text-[10px] px-2 py-1"
-                , style "color" "var(--pencil)"
-                , Html.Attributes.id "save-close"
-                , title "Close"
-                , onClick ClosedSave
-                ]
-                [ text "✕" ]
-            , Html.map SaveMsg (Ui.SignIn.view signIn)
-            ]
-        ]
+{-| NEXT, and END where the room offers it; a spectator gets neither.
 
+NEXT is the legal `ready`. Pressed, it stays where it was, greyed, until the
+other player presses theirs, so nothing in the row moves. A human opponent
+who has pressed theirs first is a dot in NEXT's corner ("They're ready"),
+never a line of its own; Sage is ready the moment a game ends, so against
+it there is no dot.
 
-{-| READY for a player who has not pressed it (and, beside it, word that
-the opponent already has); once pressed, who is still to press it. A
-spectator reads who is ready.
-
-END SESSION sits beside it wherever the room offers it, and whether it does
-is the server's answer and nothing this page works out: unlimited play has
-no finish line, so between its games either player may say that was the
-last one, while a match ends when somebody reaches the target. The client
-reads `close` out of the legal actions like every other button here.
+END is the legal `close`, and whether it is there is the server's answer
+and nothing this page works out: unlimited play has no finish line, so
+between its games either player may say that was the last one, while a
+match ends when somebody reaches the target and offers only NEXT. END
+SESSION does not fit beside NEXT in a half of a phone's board, so the
+button says END everywhere and its label says the rest.
 
 -}
 viewReadyUp : Ctx -> BetweenGames -> List (Html Msg)
 viewReadyUp ctx between =
     let
-        status s =
-            span
-                [ class "pixel text-[8px] sm:text-[9px] px-1 leading-relaxed text-center"
-                , style "color" "var(--pencil)"
-                , Html.Attributes.id "bg-ready-status"
-                ]
-                [ text s ]
-
         seated =
             List.any (\p -> p.id == ctx.playerId) ctx.scene.players
 
         opponentName =
             Protocol.opponentOf (seatId ctx) ctx.scene
-                |> Maybe.map (.id >> ctx.nameOf >> String.toUpper)
-                |> Maybe.withDefault "OPPONENT"
+                |> Maybe.map (.id >> ctx.nameOf)
+                |> Maybe.withDefault "your opponent"
 
         theyAreReady =
-            List.any (\id -> id /= ctx.playerId) between.ready
+            List.any (\id -> id /= ctx.playerId && not (List.member id ctx.bots)) between.ready
 
-        -- Quiet and plain beside READY: ending the session is the exit, not
-        -- the thing the band is for.
-        endSession =
-            List.filterMap identity [ actionButton ctx "close" "plain" ]
+        plate variant attrs label =
+            button
+                (Html.Attributes.type_ "button"
+                    :: class ("bg-between-btn btn-arcade compact pixel " ++ variant)
+                    :: attrs
+                )
+                label
+
+        next =
+            if hasAction "ready" ctx.legal then
+                Just
+                    (plate "sky"
+                        [ Html.Attributes.id "bg-action-ready", onClick (Simple "ready") ]
+                        (text "NEXT"
+                            :: (if theyAreReady then
+                                    [ span
+                                        [ class "bg-ready-dot"
+                                        , Html.Attributes.id "bg-ready-dot"
+                                        , attribute "role" "img"
+                                        , attribute "aria-label" "They're ready"
+                                        , title "They're ready"
+                                        ]
+                                        []
+                                    ]
+
+                                else
+                                    []
+                               )
+                        )
+                    )
+
+            else if seated && List.member ctx.playerId between.ready then
+                Just
+                    (plate "sky"
+                        [ Html.Attributes.id "bg-next-waiting"
+                        , disabled True
+                        , title ("Waiting for " ++ opponentName)
+                        , attribute "aria-label" ("Waiting for " ++ opponentName)
+                        ]
+                        [ text "NEXT" ]
+                    )
+
+            else
+                Nothing
+
+        end =
+            if hasAction "close" ctx.legal then
+                Just
+                    (plate "plain"
+                        [ Html.Attributes.id "bg-action-close"
+                        , attribute "aria-label" "End the session"
+                        , title "End the session"
+                        , onClick (Simple "close")
+                        ]
+                        [ text "END" ]
+                    )
+
+            else
+                Nothing
     in
-    case actionButton ctx "ready" "sky" of
-        Just ready ->
-            (ready
-                :: (if theyAreReady then
-                        [ status (opponentName ++ " IS READY") ]
-
-                    else
-                        []
-                   )
-            )
-                ++ endSession
-
-        Nothing ->
-            (if seated && List.member ctx.playerId between.ready then
-                [ status ("WAITING FOR " ++ opponentName) ]
-
-             else if seated then
-                []
-
-             else
-                case between.ready of
-                    id :: _ ->
-                        [ status (String.toUpper (ctx.nameOf id) ++ " IS READY") ]
-
-                    [] ->
-                        [ status "NEXT GAME SOON" ]
-            )
-                ++ endSession
+    List.filterMap identity [ next, end ]
 
 
 {-| The roll on the board: the mover's dice in the mover's colour, and the
@@ -4185,27 +4124,6 @@ bearOffStep steps die =
 
         [] ->
             List.head off
-
-
-{-| The door to a finished game's replay page, for a seat (the page opens on
-its token). A link, so it is a page the browser can open in a tab; a tap
-on it opens the replay rather than the row it sits in.
--}
-replayLink : Ctx -> Int -> String -> Html Msg
-replayLink ctx number label =
-    case ctx.replayHref number of
-        Just href ->
-            Html.a
-                [ Html.Attributes.href href
-                , class "bg-replay-link pixel text-[7px] underline shrink-0"
-                , attribute "data-replay" (String.fromInt number)
-                , title ("Replay game " ++ String.fromInt number ++ ", with the engine's analysis")
-                , Html.Events.stopPropagationOn "click" (D.succeed ( Ignore, True ))
-                ]
-                [ text label ]
-
-        Nothing ->
-            text ""
 
 
 {-| The match panel: a column per player headed by their name, their
