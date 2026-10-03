@@ -65,7 +65,7 @@
 const playwright = require('playwright');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
-const { BASE, resultLine, seatedContext } = require('../lib/flows');
+const { BASE, hold, resultLine, seatedContext } = require('../lib/flows');
 const { stageATurn } = require('../lib/puzzles');
 
 const SHOTS = 'playwright/screenshots';
@@ -955,8 +955,13 @@ async function playItOut(browser, errors, tag, viewport) {
     }
     await press('#an-roll-double');
     await expectPlates(page, `${tag} double?`, ['W 3-1 · 8/5 6/5', /^B /, 'W double?']);
+    // DOUBLE and DROP are held, not tapped (a quick tap is nothing)
     await press('#an-board #bg-action-double');
-    await press('#an-board #bg-action-drop');
+    await expectPlates(page, `${tag} a tap on DOUBLE`, ['W 3-1 · 8/5 6/5', /^B /, 'W double?']);
+    await hold(page, '#an-board #bg-action-double', { touch });
+    await settle(page);
+    await hold(page, '#an-board #bg-action-drop', { touch });
+    await settle(page);
     await expectPlates(page, `${tag} passed`, ['W 3-1 · 8/5 6/5', /^B /, 'W doubles', 'B passes']);
     if ((await text(page, '#an-line-end')) !== 'Black passes. White wins 1 point.') throw new Error(`${tag}: the line ends "${await text(page, '#an-line-end')}"`);
     sameLine(`${tag} passed`, held, await lineBoxes(page));

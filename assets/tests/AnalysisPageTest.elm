@@ -19,6 +19,7 @@ import Games.Backgammon.View as Board
 import Games.Backgammon.Xgid as Xgid
 import Html.Attributes
 import Json.Decode as D
+import Json.Encode as E
 import Page.Analysis as Analysis exposing (Brush(..), Button(..), Msg(..), Target(..))
 import PuzzleApiFixtures
 import Route
@@ -1234,12 +1235,22 @@ playingItOut =
 
                     board =
                         Analysis.view >> Query.fromHtml >> Query.find [ id "an-board" ]
+
+                    held action model =
+                        sendAll [ CubeHold (Board.Press action), CubeHold (Board.Held (model.cubeHold.seq + 1)) ] model |> platesOf
                 in
                 Expect.all
-                    [ \_ -> board doubling |> Query.find [ id "bg-action-double" ] |> Event.simulate Event.click |> Event.expect (Chose Setup.Doubled)
-                    , \_ -> board doubling |> Query.find [ id "bg-action-roll" ] |> Event.simulate Event.click |> Event.expect (Chose Setup.NoDouble)
-                    , \_ -> board doubled |> Query.find [ id "bg-action-take" ] |> Event.simulate Event.click |> Event.expect (Chose Setup.Took)
-                    , \_ -> board doubled |> Query.find [ id "bg-action-drop" ] |> Event.simulate Event.click |> Event.expect (Chose Setup.Passed)
+                    [ \_ -> board doubling |> Query.find [ id "bg-action-double" ] |> Event.simulate (Event.custom "pointerdown" (E.object [ ( "button", E.int 0 ), ( "isPrimary", E.bool True ) ])) |> Event.expect (CubeHold (Board.Press "double"))
+                    , \_ -> board doubling |> Query.find [ id "bg-action-roll" ] |> Event.simulate Event.click |> Event.expect (CubeHold (Board.Simple "roll"))
+
+                    -- held full, each is the answer it names; ROLL is one at a tap
+                    , \_ -> held "double" doubling |> Expect.equal (Chose Setup.Doubled |> (\m -> send m doubling) |> platesOf)
+                    , \_ -> send (CubeHold (Board.Simple "roll")) doubling |> platesOf |> Expect.equal (send (Chose Setup.NoDouble) doubling |> platesOf)
+                    , \_ -> held "take" doubled |> Expect.equal (send (Chose Setup.Took) doubled |> platesOf)
+                    , \_ -> held "drop" doubled |> Expect.equal (send (Chose Setup.Passed) doubled |> platesOf)
+
+                    -- let go too soon: nothing is chosen
+                    , \_ -> sendAll [ CubeHold (Board.Press "take"), CubeHold (Board.Release "take"), CubeHold (Board.Held 1) ] doubled |> platesOf |> Expect.equal (platesOf doubled)
 
                     -- the double on offer sits on the taker's side, at 2
                     , \_ -> board doubled |> Query.find [ class "bg-bar-row", class "mine" ] |> Query.find [ class "cube" ] |> Query.has [ class "pending", text "2" ]

@@ -167,6 +167,10 @@ if [[ "$mode" == "--browser" ]]; then
   node playwright/test-spa-landing/test.js
   node playwright/test-backgammon-smoke/test.js
   node playwright/test-backgammon-board/test.js
+  # DOUBLE against Sage is held, not tapped: a quick tap, click or Enter
+  # does nothing, a hold offers the cube once; one word at every size. It
+  # arranges its own room (setup.exs); Sage's engine is never asked.
+  node playwright/test-cube-hold/test.js
   # A phone held sideways: the board fits the screen height exactly. It
   # arranges its own danced room too (as the dance smoke does).
   node playwright/test-backgammon-landscape/test.js

@@ -19,6 +19,7 @@ import Api.Practice as Practice
 import Dict
 import Expect
 import Games.Backgammon.Puzzle as Puzzle exposing (Verdict(..))
+import Games.Backgammon.View as Board
 import Games.Backgammon.Words as Words
 import Html
 import Html.Attributes
@@ -754,7 +755,7 @@ cube =
                         rendered (page { hasNext = False } "take")
                             |> Query.find [ id "pz-board" ]
                             |> Query.find [ id "bg-action-take" ]
-                            |> Query.has [ text "TAKE (CUBE TO 4)" ]
+                            |> Query.has [ text "TAKE" ]
                     , \_ ->
                         rendered (page { hasNext = False } "take")
                             |> Query.find [ id "pz-board" ]
@@ -766,19 +767,35 @@ cube =
                     , \_ -> rendered (page { hasNext = False } "double") |> hasNot [ id "bg-action-play" ]
                     ]
                     ()
-        , test "a band answer is the side it sends" <|
+        , test "a band answer is the side it sends: DOUBLE, TAKE and DROP once held, ROLL at a tap" <|
             \_ ->
                 let
-                    press kind action =
+                    button kind action =
                         rendered (page { hasNext = False } kind)
                             |> Query.find [ id ("bg-action-" ++ action) ]
-                            |> Event.simulate Event.click
+
+                    held kind action =
+                        page { hasNext = False } kind
+                            |> step (CubeHold (Board.Press action))
+                            |> step (CubeHold (Board.Held 1))
+                            |> .band
                 in
                 Expect.all
-                    [ \_ -> press "double" "double" |> Event.expect (PickedBand 1)
-                    , \_ -> press "double" "roll" |> Event.expect (PickedBand -1)
-                    , \_ -> press "take" "take" |> Event.expect (PickedBand 1)
-                    , \_ -> press "take" "drop" |> Event.expect (PickedBand -1)
+                    [ \_ -> button "double" "double" |> Event.simulate (Event.custom "pointerdown" (E.object [ ( "button", E.int 0 ), ( "isPrimary", E.bool True ) ])) |> Event.expect (CubeHold (Board.Press "double"))
+                    , \_ -> button "double" "roll" |> Event.simulate Event.click |> Event.expect (CubeHold (Board.Simple "roll"))
+                    , \_ -> held "double" "double" |> Expect.equal (Just 1)
+                    , \_ -> held "take" "take" |> Expect.equal (Just 1)
+                    , \_ -> held "take" "drop" |> Expect.equal (Just -1)
+                    , \_ -> page { hasNext = False } "double" |> step (CubeHold (Board.Simple "roll")) |> .band |> Expect.equal (Just -1)
+
+                    -- let go before the bar is full: nothing is sent
+                    , \_ ->
+                        page { hasNext = False } "take"
+                            |> step (CubeHold (Board.Press "take"))
+                            |> step (CubeHold (Board.Release "take"))
+                            |> step (CubeHold (Board.Held 1))
+                            |> .band
+                            |> Expect.equal Nothing
                     ]
                     ()
         , test "the heading names the stakes, and the score line the cube before them" <|

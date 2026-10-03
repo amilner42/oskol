@@ -6,9 +6,10 @@
  * 2. At the start both see one full-height bar with the cube fixture on
  *    it, in the middle, showing 64.
  * 3. The opening mover plays; the other player then has a real choice:
- *    ROLL on the right half of the board, DOUBLE on the left. They DOUBLE.
+ *    ROLL on the right half of the board, DOUBLE on the left. A click on
+ *    DOUBLE does nothing (the cube is held, not tapped); they hold it.
  * 4. The responder sees TAKE/DROP on the left half and the cube prominent
- *    at the offered value 2; they TAKE. The cube relocates: the taker's
+ *    at the offered value 2; they hold TAKE. The cube relocates: the taker's
  *    half of the bar on the taker's screen, the top half on the doubler's,
  *    still showing 2.
  * 5. The doubler's turn now rolls itself -- no ROLL button ever shows --
@@ -20,7 +21,7 @@
  */
 const playwright = require('playwright');
 const fs = require('fs');
-const { createGame, joinByLink } = require('../lib/flows');
+const { createGame, hold, joinByLink } = require('../lib/flows');
 
 const SHOTS = process.env.SHOTS_DIR || 'playwright/screenshots/test-backgammon-board';
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
@@ -139,7 +140,11 @@ async function main() {
     await assertHalf(second, 'button:has-text("ROLL")', 'right', name(second));
     await assertHalf(second, 'button:has-text("DOUBLE")', 'left', name(second));
     await second.screenshot({ path: `${SHOTS}/01-pre-roll-choice.png` });
+    // The cube is held, not tapped: a click is nothing, a hold doubles.
     await second.click('button:has-text("DOUBLE")');
+    await second.waitForTimeout(800);
+    if ((await second.locator('.cube.pending').count()) !== 0) throw new Error(`${name(second)}: a click on DOUBLE offered the cube`);
+    await hold(second, 'button:has-text("DOUBLE")');
     log(`${name(second)}: doubled`);
 
     // The responder: TAKE/DROP on the left, the cube prominent at 2.
@@ -153,7 +158,7 @@ async function main() {
     }
     await first.screenshot({ path: `${SHOTS}/02-double-offer-${name(first)}.png` });
     await second.screenshot({ path: `${SHOTS}/02-double-waiting-${name(second)}.png` });
-    await first.click('button:has-text("TAKE")');
+    await hold(first, 'button:has-text("TAKE")');
     log(`${name(first)}: took the double`);
 
     // The cube relocates: the taker's half of the bar on the taker's

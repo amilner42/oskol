@@ -159,6 +159,7 @@ type alias Model =
     , brush : Brush
     , press : Maybe Press -- a finger or a button down on a place of the board
     , presses : Int -- every press is numbered, so a long-press timer knows its own
+    , cubeHold : Board.Hold -- a cube button in PLAY being held down (`Board.stepHold`)
     , spent : Maybe String -- the place a finger's press was dropped from (a scroll, the browser taking it): its late right click is not a new one
     , rolling : Bool -- the sheet of the 21 rolls is open
     , lastRoll : Maybe ( Int, Int ) -- the roll ROLL goes back to after DOUBLE? or TAKE?
@@ -328,6 +329,7 @@ init session origin door =
             , brush = Paint White
             , press = Nothing
             , presses = 0
+            , cubeHold = Board.noHold
             , spent = Nothing
             , rolling = False
             , lastRoll = Nothing
@@ -1052,6 +1054,7 @@ type Msg
     | PickedMode Mode
     | PressedPlayCandidate
     | Chose Setup.Chosen
+    | CubeHold Board.Msg -- a cube button in PLAY: held, let go, or full
     | PressedRollForMe
     | RolledForMe ( Int, Int )
     | Walked Int
@@ -1495,6 +1498,29 @@ updateOne msg model =
 
                 Nothing ->
                     ( model, Cmd.none )
+
+        CubeHold boardMsg ->
+            let
+                ( hold, step ) =
+                    Board.stepHold boardMsg model.cubeHold
+
+                held =
+                    { model | cubeHold = hold }
+            in
+            case step of
+                Board.Commit action ->
+                    case cubeChoice action of
+                        Just chosen ->
+                            update (Chose chosen) held
+
+                        Nothing ->
+                            ( held, Cmd.none )
+
+                Board.Wait ms later ->
+                    ( held, Process.sleep ms |> Task.perform (\_ -> CubeHold later) )
+
+                Board.Idle ->
+                    ( held, Cmd.none )
 
         Chose chosen ->
             if complete model && endingHere model == Nothing then
@@ -2238,28 +2264,32 @@ step the line already ended at is a picture.
 cubeBoard : Model -> Bool -> Html Msg
 cubeBoard model take =
     if endingHere model == Nothing then
-        Html.map
-            (\out ->
-                case out of
-                    Just "double" ->
-                        Chose Setup.Doubled
-
-                    Just "roll" ->
-                        Chose Setup.NoDouble
-
-                    Just "take" ->
-                        Chose Setup.Took
-
-                    Just "drop" ->
-                        Chose Setup.Passed
-
-                    _ ->
-                        NoOp
-            )
-            (Board.viewCubeAsk { still = still model, take = take })
+        Html.map CubeHold (Board.viewCubeAsk { still = still model, take = take, hold = model.cubeHold })
 
     else
         Board.viewStillTurn NoOp (still model)
+
+
+{-| The answer a cube step's band button is (DOUBLE, TAKE and DROP once
+held, ROLL at a tap: `Board.stepHold`).
+-}
+cubeChoice : String -> Maybe Setup.Chosen
+cubeChoice action =
+    case action of
+        "double" ->
+            Just Setup.Doubled
+
+        "roll" ->
+            Just Setup.NoDouble
+
+        "take" ->
+            Just Setup.Took
+
+        "drop" ->
+            Just Setup.Passed
+
+        _ ->
+            Nothing
 
 
 {-| The table's action a cube step's answer was, for the band to keep it

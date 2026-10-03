@@ -483,7 +483,9 @@ link can put nothing within reach. The board is the table's own
 are fetched as the path reaches them), UNDO and PLAY are its own band; a
 cube question is answered in the same band with the live table's own
 buttons and words (`View.viewCubeAsk`, `View.cubeAnswers`): DOUBLE / ROLL
-on roll (ROLL is no double), TAKE (CUBE TO 4) / DROP when doubled; TAKE and
+on roll (ROLL is no double), TAKE / DROP when doubled, one word each (the
+cube on offer is drawn at 4); DOUBLE, TAKE and DROP are held, not tapped,
+as at the table (`View.stepHold`, the page keeping the `Hold`). TAKE and
 DOUBLE send band +1, DROP and ROLL -1. Nothing answers under the board.
 The question names its stakes (`oskol/puzzles.prompt`): "White to play.
 Double to 2?", "White to play. Redouble to 4?", "Black doubles to 2.

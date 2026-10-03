@@ -29,7 +29,8 @@
  *     board fits, and upright it is the table's own size.
  *  6. A take of a redouble at 390x844, 1440x900, 320x568 and 844x390: the
  *     heading says "Black redoubles to 4. Take?", the cube is on offer at 4
- *     on White's side, TAKE (CUBE TO 4) and DROP are the board's band, and
+ *     on White's side, TAKE and DROP (one word each, on one row) are the
+ *     board's band, a click or a quick Enter answers nothing, a hold does, and
  *     nothing moves from the first frame through answering (screenshots in
  *     $SHOTS_DIR, else the system's temp dir under oskol-test-puzzle).
  *
@@ -38,7 +39,7 @@
  */
 const playwright = require('playwright');
 const { execFileSync } = require('child_process');
-const { BASE, barItem, resultLine, seatedContext } = require('../lib/flows');
+const { BASE, barItem, hold, resultLine, seatedContext } = require('../lib/flows');
 
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -474,13 +475,32 @@ async function takePuzzle(browser, setup) {
       must((await page.title()).startsWith('Black redoubles to 4. Take?'), `${what}: the tab title asks the same`);
       const cube = page.locator('#pz-board .bg-bar-row.mine .cube.pending');
       must((await cube.count()) === 1 && (await cube.textContent()).trim() === '4', `${what}: the cube is on offer at 4, on White's side`);
-      must((await page.textContent('#bg-action-take')).trim() === 'TAKE (CUBE TO 4)', `${what}: TAKE says the cube it takes`);
+      // One word each (the cube on the board already says 4), side by side.
+      must((await page.textContent('#bg-action-take')).trim() === 'TAKE', `${what}: TAKE says one word`);
       must((await page.textContent('#bg-action-drop')).trim() === 'DROP', `${what}: DROP beside it`);
+      const [take, drop] = asked.take.split(',').map(Number).concat(asked.drop.split(',').map(Number)).reduce((acc, n, i) => { acc[Math.floor(i / 4)].push(n); return acc; }, [[], []]);
+      must(Math.abs(take[1] - drop[1]) <= 1 && take[0] + take[2] <= drop[0], `${what}: TAKE and DROP on one row (${asked.take} | ${asked.drop})`);
       must(!(await page.locator('#pz-bands').count()), `${what}: no row of answers under the board`);
       await noSideways(page, what);
       await page.screenshot({ path: `${shots}/take-${size.w}x${size.h}-asked.png` });
 
+      // The cube is held, not tapped: a click on DROP and a quick Enter are
+      // nothing. Then the answer is held: a finger on the phone, Enter held
+      // on the desktop, the mouse elsewhere.
       await page.click('#pz-board #bg-action-drop');
+      await page.focus('#pz-board #bg-action-drop');
+      await page.keyboard.press('Enter');
+      await sleep(700);
+      must(!(await page.locator('#pz-reveal').count()), `${what}: a click and a quick Enter on DROP answer nothing`);
+      sameBoxes(`${what} after a tap`, asked, await boxes(page));
+      if (size.w === 1440) {
+        await page.keyboard.down('Enter');
+        await sleep(600);
+        await page.keyboard.up('Enter');
+      } else {
+        await page.mouse.move(0, 0);
+        await hold(page, '#pz-board #bg-action-drop');
+      }
       await page.waitForSelector('#pz-reveal');
       await sleep(400);
       sameBoxes(what, asked, await boxes(page));

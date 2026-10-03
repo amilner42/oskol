@@ -42,7 +42,7 @@
  */
 const playwright = require('playwright');
 const { execFileSync } = require('child_process');
-const { BASE, resultLine, seatedContext } = require('../lib/flows');
+const { BASE, hold, resultLine, seatedContext } = require('../lib/flows');
 const { pressNext, playRun } = require('../lib/puzzles');
 
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
@@ -116,7 +116,7 @@ async function stageATurn(page) {
 async function answer(page) {
   await page.waitForSelector('#pz-board #bg-action-double, #pz-board #bg-action-take, #bg-action-play, [data-move-source]', { timeout: 10000 });
   if (await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').count()) {
-    await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').first().click();
+    await hold(page, '#pz-board #bg-action-double, #pz-board #bg-action-take');
     return;
   }
   await stageATurn(page);
