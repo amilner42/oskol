@@ -25,8 +25,8 @@ defmodule Oskol.Game.Bot do
   alias Oskol.GameKit
 
   @defaults [
-    move_level: "4ply",
-    cube_level: "4ply",
+    move_level: "3ply",
+    cube_level: "3ply",
     # The engine is a desktop in a house. A think that comes back empty is
     # tried again on this ladder, and the game gives up after the last rung.
     retry_ms: [5_000, 20_000, 60_000],

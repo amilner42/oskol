@@ -1680,7 +1680,7 @@ opponentPicker model =
         [ Html.span [ class "pixel q-eyebrow text-[8px] block mb-1.5" ] [ Html.text "OPPONENT" ]
         , Html.div [ class "grid grid-cols-2 gap-3" ]
             [ opponentTile model AFriend "create-opponent-friend" "A FRIEND" "send a link"
-            , opponentTile model TheBot "create-opponent-bot" "THE BOT" "Sage, 4-ply"
+            , opponentTile model TheBot "create-opponent-bot" "THE BOT" "Sage, 3-ply"
             ]
         ]
 
