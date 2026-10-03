@@ -724,7 +724,9 @@ a.q-card:hover, a.q-card:focus-visible {
 /* Backgammon: the table is one wooden slab. The opponent's identity bar,
    the board's frame and the viewer's bar are the same walnut; two light
    oak fields are recessed into it; the bar runs through the centre with
-   the cube on it, and each player's bear-off tray sits in their own bar. Points alternate walnut and tan; amber is the accent: the player
+   the cube on it, and each player's bear-off tray sits in their own bar
+   on a phone held upright, in a column at the end of the home boards
+   everywhere else. Points alternate walnut and tan; amber is the accent: the player
    to act, a picked checker, an offer.
 
    Every board dimension follows from one number, the point height
@@ -1052,9 +1054,10 @@ a.q-card:hover, a.q-card:focus-visible {
 /* A checker on the bar is the size of one on a point, not of the bar. */
 .bg-bar .checker { width: calc((var(--bg-pw) - 2px) * 0.84); } /* a point has 1px of side padding */
 .bg-bar .checker.black { border-color: var(--bg-checker-dark-ink); }
-/* The bear-off trays: one per player, in that player's identity bar,
-   three holders of five laid along it the way a real board keeps them,
-   turned on their side. The checkers borne off stack edge-on, filling
+/* The bear-off trays on a phone held upright, and on the still boards
+   (the replay, a puzzle, the analysis board) everywhere: one per player,
+   in that player's identity bar, three holders of five laid along it the
+   way a real board keeps them, turned on their side. The checkers borne off stack edge-on, filling
    the holders from the left; a stick is a fifth of a holder, so a full
    holder is full. The count reads after the holders. */
 .bg-tray {
@@ -1090,6 +1093,98 @@ a.q-card:hover, a.q-card:focus-visible {
   padding: 1px 4px; border-radius: 3px;
   background: rgba(0, 0, 0, 0.35); color: rgba(255, 255, 255, 0.8);
   pointer-events: none;
+}
+/* The bear-off trays as a real board keeps them (`viewTrayColumn`): one
+   column on the board's outer edge at the end of the home boards, in the
+   frame's wood beside the felt. Its rows are the bar's -- points, band,
+   points -- so its top half runs alongside the top home board and its
+   bottom half alongside the bottom one, each the tray of the player who
+   bears off there. A half is three bins of five, recessed compartments
+   with a strip of the frame's wood between them, the way a fancier board
+   divides its trays (and the way the strips keep three holders): room for
+   all fifteen from the start, so nothing grows as a game comes off. A
+   checker borne off is a sliver of its colour, edge-on, a fifth of its
+   bin, filling bin by bin from the outer end. The count is a small
+   plate in the band's row, between the halves, where no sliver reaches.
+
+   A phone held upright keeps the strips in the identity bars: across 390px
+   the column would cost every point a fifth of its width. Everywhere else
+   -- a phone on its side (both layouts), a tablet, a desktop -- the column
+   replaces the strips, and its width comes out of the frame and out of the
+   chrome the strips no longer need, never out of the points (the felt is
+   the size it was; the board is the column wider). */
+.bg-tray-col { display: none; }
+/* The column is a track of its own at the home boards' end: the last, or
+   the first on a board whose home boards are on the left (`tray-left`).
+   Every layout below that spells out the grid's tracks names both, so the
+   column is never pushed onto a row of its own. */
+.bg-grid.has-tray-col {
+  --bg-tray-r: auto;
+  grid-template-columns: var(--bg-tray-l,) minmax(0, 6fr) auto minmax(0, 6fr) var(--bg-tray-r,);
+}
+.bg-grid.has-tray-col.tray-left { --bg-tray-l: auto; --bg-tray-r: initial; }
+@media (min-width: 640px), (orientation: landscape) and (max-height: 600px) {
+  .bg-page {
+    /* a point is 0.21 of its height wide; the tray is most of a point */
+    --bg-tray-w: calc(var(--bg-pw) * 0.8);
+    --bg-tray-gap: 4px;
+    --off-pad: 2px;    /* inside a bin, round its five */
+    --off-gap: 1px;    /* between two checkers in a bin */
+    --off-divider: 3px; /* the wood between two bins */
+  }
+  .bg-page .player-bar .bg-tray { display: none; }
+  .bg-tray-col {
+    display: grid;
+    width: var(--bg-tray-w);
+    margin-left: var(--bg-tray-gap);
+    grid-template-rows: var(--bg-point-h) minmax(var(--bg-band-h), 1fr) var(--bg-point-h);
+  }
+  .bg-tray-col.left { order: -1; margin-left: 0; margin-right: var(--bg-tray-gap); }
+  /* A half is the three bins and the wood between them; a bin is five
+     equal rows, so a full bin is full. */
+  .bg-off {
+    position: relative;
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+    row-gap: var(--off-divider);
+    border-radius: 4px;
+  }
+  .off-bin {
+    grid-template-rows: repeat(5, minmax(0, 1fr));
+    row-gap: var(--off-gap);
+    padding: var(--off-pad);
+    border-radius: 3px;
+    background: var(--bg-slot);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45);
+  }
+  /* Where a checker bearing off is tapped to: a quiet ring, drawn outside
+     the slot so it costs no room, and a reach into the wood either side so
+     a thumb does not have to find a column a point wide. */
+  .bg-off.can-tap { outline: 2px solid color-mix(in oklab, var(--bg-accent) 75%, transparent); outline-offset: 1px; }
+  .bg-off.can-tap::after { content: ""; position: absolute; inset: -2px -8px; }
+  .off-sliver { border-radius: 2px; }
+  .off-sliver.white { background: var(--bg-checker-light); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.3); }
+  .off-sliver.black { background: var(--bg-checker-dark); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45); }
+  /* the last turn's own checkers off, ringed the way a landed checker is */
+  .off-sliver.just-moved { box-shadow: 0 0 0 1.5px #ffd23f; }
+  .bg-off-mid { padding: 3px 0; pointer-events: none; }
+  .off-plate {
+    font-size: 7px; line-height: 1;
+    min-width: calc(2ch + 4px); text-align: center;
+    padding: 2px 2px; border-radius: 3px;
+    background: rgba(0, 0, 0, 0.35); color: rgba(255, 255, 255, 0.85);
+  }
+}
+/* A tablet held upright is sized by its width: the column comes out of the
+   twelve points' share of it, shared by all twelve. On a big board the tray
+   stands apart from the felt by a full width of the frame's wood, so it
+   reads as a tray on the rail, the way a real board has it, and not as one
+   more strip of the home board; a sideways phone keeps it closer (7px, set
+   in its own layout below), where the rail is narrow and the board small. */
+@media (min-width: 640px) {
+  .bg-page {
+    --bg-tray-gap: var(--bg-frame-w);
+    --bg-pw: calc((var(--bg-slab-w) - 2 * var(--bg-frame-w) - var(--bg-bar-w) - var(--bg-tray-gap) - 2 * 6px - 10 * 0.25rem) / 12.8);
+  }
 }
 .die {
   --die-size: 2.5rem;
@@ -1184,7 +1279,13 @@ a.q-card:hover, a.q-card:focus-visible {
   100% { transform: none; }
 }
 /* A clock held by a delay: the number stops moving, so the seconds still
-   free are shown beside it and the frozen figure is dimmed. */
+   free are shown beside it and the frozen figure is dimmed. On the table's
+   clock (`viewClockChip`) the two are one line of text, "10:00 +8": the
+   time, a small gap, the seconds in the same face, lighter and a little
+   smaller, on the same baseline -- no plate of their own. The time keeps
+   the width of "59:59" and the seconds a slot as wide as "+12" whether or
+   not they show, so the chip is as wide as its longest case from the start
+   and nothing in it moves as the clock counts or the seconds come and go. */
 .delay-pip {
   border: 2px solid var(--bg-accent);
   color: var(--bg-accent);
@@ -1193,6 +1294,16 @@ a.q-card:hover, a.q-card:focus-visible {
   line-height: 1.4;
 }
 .held { opacity: 0.55; }
+.clock-chip {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.3em;
+  white-space: nowrap;
+}
+.clock-chip .clock-time { min-width: 5ch; text-align: right; }
+.clock-chip .clock-inc { min-width: 3ch; font-size: 0.85em; font-weight: 400; text-align: left; }
+.clock-chip .delay-pip { border: 0; background: none; padding: 0; color: inherit; font: inherit; line-height: inherit; opacity: 0.8; }
 /* The cube hangs on the bar: white, so it reads there, and sized by the
    bar -- as big as its column allows. */
 .cube {
@@ -1223,12 +1334,26 @@ a.q-card:hover, a.q-card:focus-visible {
 :is(.bg-page, .bg-still) .swatch.black { background: var(--bg-checker-dark); border-color: rgba(255, 255, 255, 0.75); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
 :is(.bg-page, .bg-still) .bar-turn { color: #fff; }
 :is(.bg-page, .bg-still) .bar-pips { color: rgba(255, 255, 255, 0.6); }
+/* On the table the pip count sits beside the tray strip and changes with
+   every checker: it keeps the width of a three-digit count ("167 PIPS",
+   which is where a game starts) and reads from the right, so a count
+   falling to two digits or one never pulls the strip beside it along. */
+.bg-page .bar-pips { display: inline-block; min-width: calc(8ch + 0.16em); text-align: right; }
 :is(.bg-page, .bg-still) .bar-pr { color: rgba(255, 255, 255, 0.6); }
 :is(.bg-page, .bg-still) .score-chip { border: 2px solid rgba(255, 255, 255, 0.55); background: transparent; color: #fff; padding: 2px 6px; }
 :is(.bg-page, .bg-still) .clock-chip { border: 2px solid rgba(255, 255, 255, 0.45); color: rgba(255, 255, 255, 0.85); background: transparent; padding: 1px 6px; }
-:is(.bg-page, .bg-still) .clock-chip.running { border-color: var(--bg-accent); color: var(--bg-accent); background: transparent; }
+/* The clock that is running is a lit chip: ink on the site's yellow, the
+   same on every board. The theme's accent on the bar's wood was the old
+   treatment, and on walnut it was yellow on brown at well under 4.5:1;
+   a chip that carries its own background reads the same against every one
+   of the twelve boards (ink on #ffd23f is 12:1), and it only repaints, so
+   nothing moves when the clock starts or stops. The time a delay holds is
+   dimmed less than elsewhere (0.72: still 5.7:1), and the free seconds
+   beside it at 0.8 (7.2:1). */
+:is(.bg-page, .bg-still) .clock-chip.running { border-color: #ffd23f; color: var(--ink); background: #ffd23f; }
+:is(.bg-page, .bg-still) .clock-chip.running .clock-time.held { opacity: 0.72; }
 :is(.bg-page, .bg-still) .clock-chip.expired { border-color: var(--red); color: var(--red); }
-:is(.bg-page, .bg-still) .delay-pip { border-color: var(--bg-accent); color: var(--bg-frame); background: var(--bg-accent); }
+
 /* The game-over card. */
 .bg-card { border-radius: 14px; box-shadow: 0 18px 40px rgba(40, 24, 12, 0.4); }
 
@@ -1315,6 +1440,12 @@ a.bg-match-door:hover { background: var(--paper-2); }
 .bg-scrub-btn:not(:disabled):hover { background: var(--paper-2); }
 .bg-scrub-btn:not(:disabled):active { transform: translate(2px, 2px); box-shadow: none; }
 .bg-scrub.stale #bg-scrub-live { animation: blink 1s steps(2, end) infinite; color: var(--red); }
+/* Focus mode's toggle is drawn in the same row as the arrows at every size,
+   because the row is, but it belongs to one screen only: a phone held
+   sideways, the one place there are two layouts to choose between. Upright,
+   on a tablet and on a desktop there is nothing for it to do, so it is not
+   there. The landscape block below turns it on. */
+#bg-focus-toggle { display: none; }
 /* The picker's chevron turns over while the list is open. */
 .bg-theme-chevron { transition: transform 0.18s ease; }
 #bg-theme-button[aria-expanded="true"] .bg-theme-chevron { transform: rotate(180deg); }
@@ -1434,15 +1565,18 @@ a.bg-match-door:hover { background: var(--paper-2); }
     /* Air above and below the board, so a sideways phone does not read as
        a board jammed against the bezel. */
     --bg-edge: 10px;
+    --bg-tray-gap: 7px; /* the wood between the felt and the tray, a phone's share of it */
     /* The height is what drives the board -- unless the screen is too
        narrow to be proportionate to it (a squarish landscape), in which
        case the width has the last word and the board merely fits. The
        ratio is the board's own: a point is 0.21 of its height wide, and
        the board is 12 points, the bar and its frame across, with the
-       chrome's column to fit beside it. */
+       chrome's column to fit beside it. The tray column at the home boards'
+       end is 0.8 of a point and 7px of wood more: 0.168 of the height, so
+       3.07 rather than 2.9, and the chrome keeps the width it had. */
     --bg-point-h: min(
       calc((var(--page-h) - var(--bg-band-h) - 2 * var(--bg-lip) - 2 * var(--bg-edge)) / 2),
-      calc((100vw - 10rem) / 2.9)
+      calc((100vw - 10rem - 7px) / 3.07)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
     --bg-half: calc(var(--bg-pw) * 6 + 5px + 6px); /* six points, their hairlines, the felt's inset */
@@ -1491,6 +1625,8 @@ a.bg-match-door:hover { background: var(--paper-2); }
   }
   .bg-page #bg-theme-button .bg-theme-chip { margin: 0; }
   .bg-page .bg-match { max-height: 88dvh; }
+  /* The way to the other layout, in both of them. */
+  .bg-page #bg-focus-toggle { display: inline-flex; }
   /* Sideways there is no room under the board: the row sits in the chrome
      column, in the air between the header and my bar, and wraps. */
   .bg-page .bg-actions { grid-column: 2; grid-row: 4; align-self: start; justify-self: start; width: 100%; max-width: 16rem; padding-top: 0.4rem; flex-wrap: wrap; gap: 0.4rem; }
@@ -1512,7 +1648,7 @@ a.bg-match-door:hover { background: var(--paper-2); }
   .bg-page .bg-grid {
     /* The halves are exactly six points wide, so no button and no message
        in a centre band can ever widen the board or shift its points. */
-    grid-template-columns: var(--bg-half) auto var(--bg-half);
+    grid-template-columns: var(--bg-tray-l,) var(--bg-half) auto var(--bg-half) var(--bg-tray-r,);
   }
   .bg-page .bg-points { gap: 1px; }
   .bg-page .bg-band {
@@ -1545,6 +1681,276 @@ a.bg-match-door:hover { background: var(--paper-2); }
   .bg-page .bg-band .die .grid > div > div { width: 4px; height: 4px; }
 }
 
+/* Focus mode: a sideways phone, expanded.
+   ------------------------------------------------------------------
+   The block above is the *compressed* layout -- the board at the height
+   the screen allows and the whole table beside it -- and it is what a
+   sideways phone used to be, unchanged. This block is the other mode, and
+   the one a turned phone gets by default (`Page.Play`'s `landscapeKey`,
+   kept in this browser's `localStorage` alone). `#bg-focus-toggle`, the
+   one plate left on the board in focus mode, moves between them.
+
+   What focus mode does:
+
+     - The board takes the whole screen. Its height was already the
+       viewport's; what is new is the width. A backgammon board is nearly
+       square -- a point has to hold five checkers, which fixes the ratio --
+       and a phone on its side is twice as wide as it is tall, so a felt
+       that fills the height can never fill the width too. What is left
+       over is not dead paper: it is the board's own **rails**, and
+       `--bg-frame-w`, the wood the board is already painted in, takes
+       exactly half of it on each side. The felt sits in the middle of a
+       board that reaches both edges.
+     - Almost nothing else is drawn. What stays is what you cannot play a
+       turn without: the **clock**, the **score**, the bear-off trays
+       (a tap target, not a readout: a column on the rail beside the home
+       boards, as on every board off a portrait phone), the small name that says which side
+       of a bot game you are looking at, and the board's own centre band --
+       the dice, UNDO and PLAY, READY between games. Everything else is one
+       tap away in compressed mode, which is the point of having two: the
+       wordmark, the match label, the board picker, the pips, the ratings,
+       the presence dots, the identity badges, the turn arrow, the four
+       step arrows, the match panel and resign all live there. CRAWFORD
+       stays, because it changes how the cube may be used and a player
+       needs to know.
+     - The chrome that does stay is on the rails, never on the play. The
+       grid's outer columns are exactly `--bg-frame-w` wide, so a plate put
+       in one of them is on wood by construction rather than by a number
+       somebody has to keep true. Left rail: who is playing. Right rail:
+       the trays beside the felt, and the one control at its edge.
+     - Nothing hides behind a tap. Games here are played on a clock, and a
+       clock you have to tap for is a clock you lose on.
+
+   Safe areas: the document does not ask for the unsafe one (no
+   `viewport-fit=cover` in the root layout), so on iOS the viewport is
+   already inside the notch and the home indicator and every `env()` here
+   reads 0. They are written anyway, and written as reserves in the sizing
+   rather than as padding on the plates, so that the day the document does
+   go edge to edge a rail still has room for its plate instead of quietly
+   shrinking to nothing under the notch. */
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
+  /* Focus mode is the whole screen: the site's bar steps aside (it is back
+     the moment the toggle goes to the fuller layout), and the page is the
+     full height the board below is sized from, not what the bar leaves. */
+  body:has(.bg-page.is-expanded) .lh-bar { display: none; }
+  .bg-page.is-expanded {
+    height: 100vh;
+    height: 100dvh;
+    --bg-lip: 5px;
+    --bg-band-h: 2.75rem;
+    /* What a plate needs of a rail -- a name over a score and a clock on
+       the left, the tray column and the toggle on the right -- and so what the width cap has to leave
+       over on each side before the board may take any more height. It
+       binds on nothing a phone is shaped like: sideways, the height runs
+       out long before the width does, so this is the squarish-screen case
+       (a small tablet) and nothing else -- and there it is kept small
+       enough that focus mode is never the smaller board of the two. A
+       plate's own floor is its clock chip, since the name gives way to an
+       ellipsis. */
+    --bg-rail-min: 5rem;
+    --bg-inset-x: calc(env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px));
+    /* The bottom lip swallows the home indicator where there is one, so the
+       board can be the screen's whole height without a point's tip ending
+       up under it. */
+    --bg-lip-b: max(var(--bg-lip), env(safe-area-inset-bottom, 0px));
+    /* The height is what drives the board -- unless the screen is too
+       narrow to be proportionate to it (a squarish landscape), in which
+       case the width has the last word and the board merely fits. */
+    --bg-point-h: min(
+      calc((100dvh - var(--bg-band-h) - var(--bg-lip) - var(--bg-lip-b)) / 2),
+      calc((100vw - 2 * var(--bg-rail-min) - 2 * var(--bg-inset-x)) / 2.9)
+    );
+    --bg-pw: calc(var(--bg-point-h) * 0.21);
+    --bg-half: calc(var(--bg-pw) * 6 + 5px + 6px); /* six points, their hairlines, the felt's inset */
+    --bg-bar-w: calc(var(--bg-pw) * 1.15);
+    /* The playing surface, and then the wood either side of it: the frame
+       is everything the screen has left, so the board is exactly as wide as
+       the screen and the felt sits in the middle of it. The 6px floor is
+       only a floor -- the width cap above guarantees the rails their
+       `--bg-rail-min`. */
+    --bg-felt-w: calc(2 * var(--bg-half) + var(--bg-bar-w));
+    --bg-frame-w: max(6px, calc((100vw - var(--bg-felt-w)) / 2));
+    display: grid;
+    /* The two rails, and the felt between them. */
+    grid-template-columns: var(--bg-frame-w) minmax(0, 1fr) var(--bg-frame-w);
+    /* One row, the board's; a screen too square for the board letterboxes
+       it and the plates go with it, because they are in the same row. */
+    grid-template-rows: auto;
+    align-content: center;
+    gap: 0;
+    padding: 0;
+  }
+  .bg-page.is-expanded .bg-main,
+  .bg-page.is-expanded .bg-stack { display: contents; }
+  /* The board is the screen. Its own padding is the rails, so the felt is
+     centred in it and every plate the grid puts in an outer column is on
+     wood. */
+  .bg-page.is-expanded .bg-board {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    justify-self: stretch;
+    width: 100%;
+    max-width: none;
+    padding: var(--bg-lip) var(--bg-frame-w) var(--bg-lip-b);
+    border-radius: 0;
+    box-shadow: none;
+    z-index: 0;
+  }
+  .bg-page.is-expanded .bg-grid {
+    /* Every track is spelled out, so a button or a message in a centre band
+       can never widen the board or shift its points, and no rounding slack
+       can leak into the bar. */
+    grid-template-columns: var(--bg-tray-l,) var(--bg-half) var(--bg-bar-w) var(--bg-half) var(--bg-tray-r,);
+    justify-content: center;
+  }
+  /* The tray column goes on the rail beside the home boards: the rail on
+     that side gives up its width, so the felt stays exactly where it was,
+     in the middle of the screen, and the same size. */
+  .bg-page.is-expanded .bg-board:has(> .bg-grid.has-tray-col) {
+    padding-right: calc(var(--bg-frame-w) - var(--bg-tray-w) - var(--bg-tray-gap));
+  }
+  .bg-page.is-expanded .bg-board:has(> .bg-grid.has-tray-col.tray-left) {
+    padding-right: var(--bg-frame-w);
+    padding-left: calc(var(--bg-frame-w) - var(--bg-tray-w) - var(--bg-tray-gap));
+  }
+  .bg-page.is-expanded .bg-points { gap: 1px; }
+  /* The stack is `display: contents` here and paints no outline, so a past
+     turn marks the felt itself -- not the board, which is now the screen. */
+  .bg-page.is-expanded.is-viewing .bg-board { outline: none; }
+  .bg-page.is-expanded.is-viewing .bg-grid { outline: 3px dashed var(--bg-accent); outline-offset: 2px; }
+
+  /* ---- the left rail: who is playing ---- */
+  .bg-page.is-expanded .player-bar {
+    grid-column: 1;
+    grid-row: 1;
+    /* In its own corner, out of the way, and only as wide as the little it
+       has to say -- a plate stretched across the rail would be a bar again. */
+    justify-self: start;
+    max-width: calc(100% - 10px);
+    z-index: 2;
+    width: auto;
+    max-width: none;
+    /* A plate is read, not pressed, so it may not take a tap the board was
+       meant to get. (The bear-off trays, which are taps, are not on the
+       plates here: they are the column on the right rail.) */
+    pointer-events: none;
+    flex-wrap: wrap;
+    gap: 2px 5px;
+    padding: 4px 6px;
+    margin: 7px 5px 7px max(5px, env(safe-area-inset-left, 0px));
+    border-width: 2px;
+    border-radius: 8px;
+    /* The plate keeps the bar's own colour, not a white one: the text on it
+       is white (set on .player-bar, and right for every one of the sixteen
+       board themes), so a white plate made the name unreadable against it.
+       --bg-frame is what the bar is painted in already; all focus mode does
+       is let the board show through. */
+    background: color-mix(in oklab, var(--bg-frame) 88%, transparent);
+    box-shadow: 0 3px 10px rgba(20, 14, 8, 0.4);
+    backdrop-filter: blur(3px);
+  }
+  .bg-page.is-expanded .player-bar.active {
+    border-color: var(--bg-sky);
+    background: color-mix(in oklab, var(--bg-sky) 26%, color-mix(in oklab, var(--bg-frame) 90%, transparent));
+  }
+  .bg-page.is-expanded .player-bar:not(.is-me) { align-self: start; }
+  .bg-page.is-expanded .player-bar.is-me { align-self: end; flex-wrap: wrap-reverse; }
+  /* What a plate is: a small name, the score and the clock. Everything else on the bar is something you can
+     read in compressed mode -- the pips, the ratings, the swatch, the
+     identity badge, the presence dot, the turn arrow -- and focus mode is
+     for playing, not for reading about the table. The elastic gap goes too,
+     or it would push the score and the clock onto a line of their own. */
+  .bg-page.is-expanded .player-bar .bar-pips,
+  .bg-page.is-expanded .player-bar .bar-pr,
+  .bg-page.is-expanded .player-bar .bar-turn,
+  .bg-page.is-expanded .player-bar .bar-gap,
+  .bg-page.is-expanded .player-bar .bar-dot,
+  .bg-page.is-expanded .player-bar .swatch,
+  .bg-page.is-expanded .player-bar .identity-icon { display: none; }
+  /* `min-width: 0` so the name gives way to its own ellipsis rather than
+     holding the plate open wider than its rail. */
+  .bg-page.is-expanded .player-bar .bar-name { font-size: 11px; line-height: 1.2; min-width: 0; }
+  .bg-page.is-expanded .player-bar .score-chip { font-size: 9px; padding: 1px 4px; }
+  .bg-page.is-expanded .player-bar .clock-chip { font-size: 10px; padding: 0 4px; }
+
+  /* ---- the right rail: the one control ---- */
+  .bg-page.is-expanded .bg-actions,
+  .bg-page.is-expanded .bg-header {
+    grid-column: 3;
+    grid-row: 1;
+    z-index: 2;
+    width: auto;
+    max-width: none;
+    justify-self: end;
+    margin: 7px max(5px, env(safe-area-inset-right, 0px)) 7px 5px;
+    padding: 0;
+  }
+  .bg-page.is-expanded .bg-actions { align-self: start; }
+  /* Everything in the row but the way out of focus mode; the arrows, the
+     match panel and the flag are all in compressed mode, one tap away. */
+  .bg-page.is-expanded .bg-scrub > .bg-scrub-btn { display: none; }
+  .bg-page.is-expanded #bg-focus-toggle {
+    display: inline-flex;
+    width: 1.7rem;
+    height: 1.6rem;
+    /* Small and quiet: it is the only thing on this rail, and a player who
+       is thinking should not be looking at it. */
+    opacity: 0.55;
+    border-width: 2px;
+    box-shadow: none;
+    transition: opacity 0.12s;
+  }
+  .bg-page.is-expanded #bg-focus-toggle:hover,
+  .bg-page.is-expanded #bg-focus-toggle:focus-visible { opacity: 1; }
+  .bg-page.is-expanded #bg-focus-toggle svg { width: 13px; height: 13px; }
+  /* The header is the wordmark, the match label and the board picker, and
+     none of them is play. What is left of it is CRAWFORD, which changes
+     what the cube may do and so has to be on the screen it applies to. */
+  .bg-page.is-expanded .bg-header { align-self: end; justify-content: flex-end; }
+  .bg-page.is-expanded .bg-header .oskol-mark,
+  .bg-page.is-expanded .bg-header .bg-match-tag,
+  .bg-page.is-expanded .bg-themes { display: none; }
+  .bg-page.is-expanded .bg-crawford { font-size: 7px; padding: 2px 4px; }
+
+  /* ---- the centre band ---- */
+  .bg-page.is-expanded .bg-band {
+    height: var(--bg-band-h);
+    min-height: var(--bg-band-h);
+    flex-wrap: nowrap;
+    gap: 0.3rem;
+    padding: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .bg-page.is-expanded .bg-band .pixel { line-height: 1.25; }
+  .bg-page.is-expanded #bg-no-moves { font-size: 7px; min-width: 0; }
+  .bg-page.is-expanded .bg-band .btn-arcade { padding: 0.3rem 0.45rem; }
+  /* four dice (doubles) and a message have to share one half-band */
+  .bg-page.is-expanded .bg-band .dice-row { --dice-gap: 0.3rem; }
+  /* The dice grow with the board, within what a double's four of them can
+     share with a message in one half-band. */
+  .bg-page.is-expanded .bg-band .die { --die-size: clamp(1.5rem, calc(var(--bg-pw) * 0.72), 2.1rem); box-shadow: 2px 2px 0 0 var(--bg-checker-edge); }
+  .bg-page.is-expanded .bg-band .die.black { box-shadow: 2px 2px 0 0 var(--bg-checker-edge), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
+  .bg-page.is-expanded .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }
+  .bg-page.is-expanded .bg-band .die .grid > div > div { width: calc(var(--die-size) * 0.15); height: calc(var(--die-size) * 0.15); }
+
+  /* Between games the band holds the result card and READY. In focus mode
+     the card is cut to two things: who won and by how much, and the door
+     into this game's mistakes. The score line under the headline is
+     already on both plates, and REPLAY and the offer to save the game are
+     two more things to read in a mode whose whole point is that there is
+     nothing to read -- both are still in compressed mode, one tap away,
+     and on the game-over card, which is a sheet over the screen either
+     way. PRACTICE THIS GAME'S N MISTAKES stays because a game just
+     finished is the moment it exists for, and losing it on the layout a
+     turned phone gets by default would quietly cost the thing this site
+     is for. */
+  .bg-page.is-expanded.is-between { --bg-band-h: 4rem; }
+  .bg-page.is-expanded .bg-game-result { gap: 3px; font-size: 8px; }
+  .bg-page.is-expanded .bg-game-result > *:not(:first-child) { display: none; }
+  .bg-page.is-expanded .bg-game-result > #practice-game { display: inline-block; font-size: 7px; padding: 0.3rem 0.45rem; }
+}
+
 /* Backgammon on a desktop screen: the table takes the window. Below `lg`
    the board is sized by width and capped at a fixed point height; on a
    big monitor that left it small in the middle of the page. From 1024px
@@ -1569,11 +1975,11 @@ a.bg-match-door:hover { background: var(--paper-2); }
     --bg-drop: 1.5rem;       /* room under the slab for its shadow */
     --bg-scrub-h: 2.6rem;    /* the arrows under the board */
     /* The width cap is the board's own ratio (a point is 0.21 of its
-       height wide; 12 points, the bar and the frame across) against the
-       window less the page's padding. */
+       height wide; 12 points, the bar, the tray column and the frame
+       across) against the window less the page's padding. */
     --bg-point-h: min(
       calc((var(--page-h) - var(--bg-page-py) - var(--bg-header-h) - var(--bg-bars-h) - var(--bg-band-h) - 2 * var(--bg-lip) - var(--bg-drop) - var(--bg-scrub-h)) / 2),
-      calc((100vw - 8rem) / 2.9)
+      calc((100vw - 8rem - 14px) / 3.07)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
     --bg-half: calc(var(--bg-pw) * 6 + 5 * 0.25rem + 6px); /* six points, their sm:gap-1, the felt's inset */
@@ -1598,10 +2004,12 @@ a.bg-match-door:hover { background: var(--paper-2); }
   .bg-page .bg-grid {
     /* The halves are exactly six points wide, so no button and no message
        in a centre band can ever widen the board or shift its points. */
-    grid-template-columns: var(--bg-half) auto var(--bg-half);
+    grid-template-columns: var(--bg-tray-l,) var(--bg-half) auto var(--bg-half) var(--bg-tray-r,);
   }
   .bg-page .player-bar { padding: 10px 16px; }
   .bg-page .bg-tray { --holder-h: 1.4rem; --stick-w: 4px; }
+  .bg-page { --off-pad: 3px; --off-gap: 2px; --off-divider: 5px; }
+  .bg-page .off-plate { font-size: 9px; padding: 3px; }
   /* The dice grow with the board, within reason. */
   .bg-page .bg-band .die { --die-size: clamp(2.5rem, calc(var(--bg-pw) * 0.7), 3.5rem); }
   .bg-page .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }

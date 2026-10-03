@@ -230,8 +230,17 @@ node playwright/review-themes/test.js           # every board theme, shot on a p
                                                # survives a reload
 node playwright/test-backgammon-dance/test.js   # backgammon: a danced turn (it arranges the
                                                # room itself), the roll animation, the delay
-node playwright/test-backgammon-landscape/test.js  # backgammon on a sideways phone: the board
-                                               # fits the screen height exactly, nothing scrolls
+node playwright/test-backgammon-landscape/test.js  # backgammon on a sideways phone, both layouts:
+                                               # expanded (the board is the screen, the chrome on its
+                                               # rails and never on the play) and compressed (the
+                                               # board fits the screen height exactly, nothing scrolls);
+                                               # the bear-off trays (a column at the home boards' end
+                                               # off a portrait phone, strips upright) through a real
+                                               # bear-off at six sizes with every box held still
+                                               # (bearoff.exs arranges the room; playwright/lib/trays.js);
+                                               # the clock as one line, AA on all twelve boards
+node playwright/review-landscape-focus/test.js  # the review tour of focus mode at the phone sizes,
+                                               # the trays asserted and a bear-off shot on each
 node playwright/test-backgammon-replay/test.js  # the replay of a finished match (it arranges
                                                # the room): steps, keys, swipes, analysis
                                                # pending -> done, retry, phones, OPEN IN

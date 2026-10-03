@@ -343,7 +343,32 @@ assets/src/Games/Backgammon/View.elm  the backgammon board (and the two
                                  player bars: name, presence dot, match PR
                                  with the account's career under it);
                                  `viewStill` draws one position, `viewPlay` the
-                                 same slab with its taps switched on
+                                 same slab with its taps switched on. Sideways
+                                 on a phone the table has two layouts, and
+                                 `#bg-focus-toggle` between them: expanded
+                                 (focus mode, the default) gives the board the
+                                 whole screen, the site's bar included, and
+                                 draws only the clock, the score, the tray, the
+                                 band and the practice door between games, on
+                                 the board's own rails; compressed is the
+                                 layout a sideways phone always had.
+                                 `model.expanded` is the state; `Page.Play`
+                                 keeps the choice in this browser's
+                                 localStorage (`backgammon_landscape`) and the
+                                 visit's session, nowhere else. The table only:
+                                 the replay, puzzles and analysis are unchanged.
+                                 Off a portrait phone (sideways, tablet,
+                                 desktop) the table's bear-off trays are
+                                 `viewTrayColumn`: one column at the end of
+                                 the home boards (the side `homeOnRight` reads
+                                 off `rows`), three bins of five a side, the
+                                 other side's on top and the viewer's below
+                                 (the tap that bears off), sized for fifteen
+                                 from the start; app.css hides the bar strips
+                                 there. Any slab can draw it with the Board's
+                                 `trayColumn` flag; only `view` sets it today.
+                                 The clock chip is one line ("10:00 +8"), the
+                                 running one ink on yellow
 assets/src/View/Clock.elm        clock display
 assets/css/app.css               the multicade/notebook design system (paper, pixel,
                                  pix, btn-arcade, tile, bg-board...)

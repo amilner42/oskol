@@ -113,6 +113,42 @@ backgammonThemeKey =
     "backgammon_theme"
 
 
+{-| How this browser wants a sideways phone laid out: `focus` (the board
+takes the screen) or `full` (the rest of the table beside it). Focus is
+what a turned phone does with nothing stored.
+
+It is **this browser's**, not this guest's: it is about the screen in their
+hand, not about them, so it is kept in `localStorage` alone and never sent
+to `/papi/me/prefs` -- which would 422 it anyway, since Gleam's whitelist
+(`oskol/guests/prefs.gleam`) knows nothing about it and should not.
+
+-}
+landscapeKey : String
+landscapeKey =
+    "backgammon_landscape"
+
+
+landscapeExpanded : Dict String String -> Bool
+landscapeExpanded prefs =
+    Dict.get landscapeKey prefs /= Just "full"
+
+
+landscapeValue : Bool -> String
+landscapeValue expanded =
+    if expanded then
+        "focus"
+
+    else
+        "full"
+
+
+{-| The board's own state before this page's preferences are laid on it.
+-}
+initialBackgammon : Backgammon.Model
+initialBackgammon =
+    Backgammon.init
+
+
 type alias Model =
     { origin : String -- scheme, host and port of this page, for the invite link
     , gameId : String
@@ -162,7 +198,7 @@ init session config =
       , payload = Nothing
       , lobby = Nothing
       , legal = []
-      , backgammon = Backgammon.init
+      , backgammon = { initialBackgammon | expanded = landscapeExpanded session.prefs }
       , clockReceivedAt = 0
       , nowMs = 0
       , connectionStatus = Connecting
@@ -325,6 +361,10 @@ type Out
       -- PRACTICE THIS GAME'S N MISTAKES: the shell runs these puzzles, and
       -- brings the player back here at the end.
     | StartRun (List String) (Maybe Practice.Today)
+      -- A preference just picked on the table (focus mode on a sideways
+      -- phone): the shell's session keeps it for the rest of the visit, so
+      -- leaving the table and coming back does not undo it.
+    | Remember String String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg, Out )
@@ -403,6 +443,16 @@ update msg model =
 
                         Nothing ->
                             stay updated Cmd.none
+
+                Backgammon.ChoseLandscape expanded ->
+                    -- Two places keep it, and deliberately not a third: the
+                    -- page (instantly) and this browser (so the next first
+                    -- paint is the layout they chose). Not the guest's row:
+                    -- see `landscapeKey`.
+                    ( { updated | prefs = Dict.insert landscapeKey (landscapeValue expanded) updated.prefs }
+                    , storePref { key = landscapeKey, value = landscapeValue expanded }
+                    , Remember landscapeKey (landscapeValue expanded)
+                    )
 
         ClockSynced posix ->
             let

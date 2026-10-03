@@ -927,6 +927,11 @@ update msg model =
                     startRun (Route.href (Route.play newPageModel.gameSlug newPageModel.gameId)) ids today Nothing { model | page = Play newPageModel }
                         |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map PlayMsg cmd, more ])
 
+                Page.Play.Remember key value ->
+                    ( { model | page = Play newPageModel, session = Session.withPref key value model.session }
+                    , Cmd.map PlayMsg cmd
+                    )
+
                 _ ->
                     ( { model | page = Play newPageModel }
                     , Cmd.batch
