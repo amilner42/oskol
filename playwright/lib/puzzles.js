@@ -3,7 +3,7 @@
  * sign-in mail the dev server "sent", staging a roll on the puzzle board,
  * and playing a whole run to its end screen.
  */
-const { BASE } = require('./flows');
+const { BASE, hold } = require('./flows');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -65,7 +65,7 @@ async function playRun(page, { onReveal = async () => {}, onCelebration = async 
     }
     if (await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').count()) {
       // a cube question, answered in the board's band: DOUBLE or TAKE will do
-      await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').first().click();
+      await hold(page, '#pz-board #bg-action-double, #pz-board #bg-action-take');
     } else {
       await stageATurn(page);
       await page.click('#bg-action-play');

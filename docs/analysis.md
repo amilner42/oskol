@@ -671,7 +671,8 @@ come from the browser (`elm/random`), since it is a sandbox. Tests:
   becomes the cube question); the table's hint; for a cube step "Double,
   or roll?" / "Take, or drop?", answered in the board's band with the
   live table's buttons (`cubeBoard`, `View.viewCubeAsk`: DOUBLE / ROLL,
-  TAKE (CUBE TO n) / DROP; a double on offer drawn on the taker's side
+  TAKE / DROP, the cube's three held as at the table (`CubeHold`,
+  `View.stepHold`); a double on offer drawn on the taker's side
   at the new value; the step's answer kept shown, the other faded); or
   the sentence the line ended in (`#an-line-end`). A cube answer's panel
   opens on what was asked, with its stakes, in the board's colours

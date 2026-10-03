@@ -1324,6 +1324,31 @@ a.q-card:hover, a.q-card:focus-visible {
 }
 .btn-arcade.sky { background: var(--bg-accent); color: var(--bg-frame); }
 .btn-arcade.plain { background: #fff; color: var(--ink); }
+/* DOUBLE, TAKE and DROP are held, not tapped (`View.holdButton`). While
+   one is down a bar fills inside it, left to right, in the button's own
+   ink, for exactly `View.holdMs` (350ms); let go and it is gone at once.
+   A tap too short says HOLD over the word, once, and fades. Both are laid
+   over the button, so it never changes size. A long press is no callout,
+   selection or context menu, and a finger may still scroll the page. */
+.hold-btn {
+  position: relative; isolation: isolate;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.hold-btn > span { pointer-events: none; }
+.hold-fill {
+  position: absolute; inset: 0; z-index: -1;
+  background: currentColor; opacity: 0.3;
+  transform: scaleX(0); transform-origin: left center;
+}
+.hold-btn.is-holding .hold-fill { transform: scaleX(1); transition: transform 350ms linear; }
+.hold-nudge {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  opacity: 0; animation: hold-nudge 1.4s ease-out;
+}
+.hold-btn.is-nudged .hold-word { animation: hold-word 1.4s ease-out; }
+@keyframes hold-nudge { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes hold-word { 0%, 70% { opacity: 0; } 100% { opacity: 1; } }
 /* Identity bars: the top and bottom of the slab. White on ink; the player
    to act carries the sky treatment. Scoped to the backgammon page: the
    generic and chess tables draw their bars on paper. */
@@ -2047,16 +2072,6 @@ a.bg-match-door:hover { background: var(--paper-2); }
 }
 .bg-still .bg-stack { border-radius: 12px; box-shadow: 0 10px 26px rgba(40, 24, 12, 0.32); }
 .bg-still .player-bar { padding: 4px 8px; }
-/* A take asked on a still board (a cube puzzle, the analysis board in
-   PLAY): the table's TAKE (CUBE TO n) and DROP, one over the other in the
-   left half, sized to the half so neither wraps or spills and the band
-   keeps its height. */
-.bg-still .bg-band:has(> #bg-action-take) { row-gap: 4px; }
-.bg-still .bg-band #bg-action-take,
-.bg-still .bg-band #bg-action-drop {
-  white-space: nowrap; padding: 0.25rem 0.5rem; line-height: 1.25;
-  font-size: clamp(6px, calc((var(--bg-pw) * 6 - 24px) / 16), 9px);
-}
 @media (max-width: 639px) {
   .bg-still .bg-band .dice-row { --dice-gap: 0.4rem; }
   .bg-still .bg-band .die { --die-size: clamp(1.4rem, calc(var(--bg-pw) * 1.2), 2.3rem); }
@@ -2732,10 +2747,9 @@ a.rp-match-row:hover { color: var(--ink); }
   .bg-still .bg-band .die { --die-size: 1.5rem; box-shadow: 2px 2px 0 0 var(--bg-checker-edge); }
   .bg-still .bg-band .die .grid { width: 1.15rem; height: 1.15rem; }
   .bg-still .bg-band .die .grid > div > div { width: 4px; height: 4px; }
-  /* TAKE (CUBE TO n) over DROP still fits the short band, one per row. */
-  .bg-still .bg-band:has(> #bg-action-take) { flex-wrap: wrap; align-content: center; row-gap: 2px; }
-  .bg-still .bg-band #bg-action-take,
-  .bg-still .bg-band #bg-action-drop { padding: 0.15rem 0.4rem; }
+  /* TAKE and DROP share the left half on one row, as the table's band
+     does sideways. */
+  .bg-still .bg-band .btn-arcade { padding: 0.3rem 0.45rem; }
 }
 
 /* The same phone sideways with one panel: the column beside the board

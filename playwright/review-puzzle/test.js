@@ -12,7 +12,7 @@
 const playwright = require('playwright');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
-const { resultLine } = require('../lib/flows');
+const { hold, resultLine } = require('../lib/flows');
 
 const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const OUT = process.env.SHOTS_DIR || 'playwright/screenshots/review-puzzle';
@@ -83,7 +83,7 @@ async function stageATurn(page) {
       await page.waitForSelector('#pz-board #bg-action-double, #pz-board #bg-action-take');
       await page.waitForTimeout(300);
       await page.screenshot({ path: `${OUT}/cube-${size.name}.png` });
-      await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').first().click();
+      await hold(page, '#pz-board #bg-action-double, #pz-board #bg-action-take');
       await page.waitForSelector('#pz-reveal');
       await page.waitForTimeout(300);
       await page.screenshot({ path: `${OUT}/cube-reveal-${size.name}.png`, fullPage: size.name !== 'landscape' });

@@ -61,7 +61,9 @@ server's cube call on equities at, above and below each line,
   tokens the viewer can see).
 - `BackgammonViewTest`: the view on real scenes, pure update logic, and
   rendered DOM facts (30 checkers, sources marked only for legal moves,
-  buttons follow the legal actions).
+  buttons follow the legal actions), and the cube's hold: a tap shorter
+  than `holdMs` sends nothing, a full hold sends once, leaving or a scroll
+  cancels, Enter or Space held is the keyboard's way.
 - `PlayUpdateTest`: fixture payloads replayed through `Page.Play.applyPayload`.
 - `RouteTest`, `SessionTest`, `CatalogTest`: the client's routes round-trip,
   the boot flags, and the `/papi` envelope and decoders (which are lax about
@@ -190,7 +192,10 @@ play them; review scripts take screenshots for eyeballing. The ways into a
 game live once, in `playwright/lib/flows.js`: `createGame` (a guest says it
 in the home's sentence and presses PLAY NOW; an account uses ☰'s PLAY
 and its dialog; by element id), `barItem` (anything in ☰), `joinByLink`, `joinByCode` and
-`openSeat`, and `seatedContext` for a browser that already holds a seat. A
+`openSeat`, and `seatedContext` for a browser that already holds a seat.
+DOUBLE, TAKE and DROP are held, not clicked: `hold(page, selector,
+{ touch, ms })` presses past the 350 ms hold (a finger through CDP's touch
+events with `touch`), and a short `ms` is the tap that must do nothing. A
 smoke uses those rather than clicking through the home page itself, so a
 change to the home page or the invite touches that one file. Two players
 are two browser contexts: a seat is held by the browser's guest cookie, so
@@ -225,6 +230,10 @@ node playwright/review-home/test.js             # screenshots of the signed-in h
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
 node playwright/test-backgammon-board/test.js   # the classic board: cube fixture, centre band,
                                                # full-height bar, auto-roll
+node playwright/test-cube-hold/test.js         # DOUBLE against Sage is held: a quick tap, click
+                                               # or Enter does nothing, the bar fills with nothing
+                                               # moving, a hold offers the cube once; one word at
+                                               # five sizes (setup.exs arranges the room)
 node playwright/test-guest-prefill/test.js      # the site remembers a guest's name (friend dialog,
                                                # PLAY NOW against Sage)
 node playwright/test-clock-tiers/test.js        # the clock tiers at four sizes: the sentence's

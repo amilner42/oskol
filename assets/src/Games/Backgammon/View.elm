@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, CubeAsk, EditBoard, EditEvent(..), Model, Move, Msg(..), Out(..), PlayBoard, PlayOut(..), Presence(..), Roll, Save(..), Side, Snapshot, Step, StillBoard, TapContext, Turn, autoRoll, cubeAnswers, defaultTheme, init, noteEvents, presenceFlashMs, presenceOf, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewCubeAsk, viewEdit, viewPlay, viewStill, viewStillTurn)
+module Games.Backgammon.View exposing (Ctx, CubeAsk, EditBoard, EditEvent(..), Hold, HoldStep(..), Model, Move, Msg(..), Out(..), PlayBoard, PlayOut(..), Presence(..), Roll, Save(..), Side, Snapshot, Step, StillBoard, TapContext, Turn, autoRoll, cubeAnswers, defaultTheme, holdMs, init, noHold, noteEvents, presenceFlashMs, presenceOf, resolveTap, sideDecoder, snapshotDecoder, stepHold, themeBoard, themeClass, themes, tumbleFaces, update, view, viewCubeAsk, viewEdit, viewPlay, viewStill, viewStillTurn)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -53,6 +53,13 @@ the dice first chooses the other one; later moves in the turn use the newly
 staged position. Legal moves come from the `move` schemas the server sends,
 so the board never invents legality.
 
+The cube is the one thing at the table with no undo, so DOUBLE, TAKE and
+DROP are held, not tapped (`holdButton`): a bar fills inside the button for
+`holdMs` and the action goes when it is full. Letting go sooner, sliding
+off, or a scroll taking the touch does nothing. Enter or Space held for the
+same time is the keyboard's way; a screen reader's activation (a click no
+pointer pressed) goes at once, since it is already a deliberate gesture.
+
 -}
 
 import Dict
@@ -81,6 +88,7 @@ type alias Model =
     , still : Bool -- a board drawn for the replay (`viewStill`): no live game behind it, so no way back to one
     , turnMark : Bool -- a still board that says whose turn it is: the mover's bar is drawn as the live game's to-move bar (`viewEdit`, `viewStillTurn`)
     , expanded : Bool -- sideways on a phone: focus mode, the board taking the screen (see `is-expanded` in app.css)
+    , hold : Hold -- a cube button being held down (`holdButton`)
     }
 
 
@@ -119,6 +127,11 @@ type Msg
     | PracticeGame Int -- a result card's PRACTICE THIS GAME'S N MISTAKES, by game number
     | Edit String EditEvent -- a pointer on one of an editor board's places (`viewEdit`)
     | ToggleExpanded -- sideways on a phone: between focus mode and the fuller layout
+    | Press String -- a cube button (by its action) went down: pointer or key
+    | Release String -- it came up: the action goes only if the hold was already full
+    | Cancel String -- the pointer slid off, a scroll took the touch, focus left
+    | Held Int -- `holdMs` after a press (by its number): full, if it is still down
+    | Activate String -- a screen reader's activation of a cube button: no pointer, no key
     | Ignore
 
 
@@ -132,6 +145,7 @@ type Out
     | ForSave Ui.SignIn.Msg -- the sign-in on a result card, for the page to run
     | Practice Int -- start a run of this finished game's mistakes (the page holds the ids)
     | ChoseLandscape Bool -- focus mode on or off: this browser's own, never the room's and never the server's
+    | After Float Msg -- hand this back to `update` in so many ms (a cube button's hold)
 
 
 init : Model
@@ -153,6 +167,7 @@ init =
     -- Focus mode is what a turned phone does unless this browser has said
     -- otherwise; `Page.Play` reads that from the prefs it boots with.
     , expanded = True
+    , hold = noHold
     }
 
 
@@ -162,7 +177,7 @@ replay the tumble on every tap.
 -}
 reset : Model -> Model
 reset model =
-    { init | roll = model.roll, swaps = model.swaps, matchOpen = model.matchOpen, viewing = model.viewing, stale = model.stale, expanded = model.expanded }
+    { init | roll = model.roll, swaps = model.swaps, matchOpen = model.matchOpen, viewing = model.viewing, stale = model.stale, expanded = model.expanded, hold = letGo model.hold }
 
 
 {-| Watch the channel for dice landing. A `dice_rolled` event is this client
@@ -290,7 +305,7 @@ update msg model =
             -- unrotated, which is the one thing `reset` keeps and this does
             -- not. The layout is kept, like every other thing about this
             -- screen rather than about this turn.
-            ( { init | roll = model.roll, matchOpen = model.matchOpen, viewing = model.viewing, stale = model.stale, expanded = model.expanded }, Send (Protocol.encodeAction name []) )
+            ( { init | roll = model.roll, matchOpen = model.matchOpen, viewing = model.viewing, stale = model.stale, expanded = model.expanded, hold = letGo model.hold }, Send (Protocol.encodeAction name []) )
 
         Rematch ->
             ( model, WantRematch )
@@ -328,8 +343,43 @@ update msg model =
             -- nothing goes to the room and nothing goes to the server.
             ( { model | expanded = not model.expanded }, ChoseLandscape (not model.expanded) )
 
+        Press _ ->
+            holding msg model
+
+        Release _ ->
+            holding msg model
+
+        Cancel _ ->
+            holding msg model
+
+        Held _ ->
+            holding msg model
+
+        Activate _ ->
+            holding msg model
+
         Ignore ->
             ( model, NoOut )
+
+
+{-| A cube button's hold on the live table: the timer is the page's to
+run (`After`), and a full hold is the tap it replaces (`Simple`).
+-}
+holding : Msg -> Model -> ( Model, Out )
+holding msg model =
+    let
+        ( hold, step ) =
+            stepHold msg model.hold
+    in
+    case step of
+        Commit name ->
+            update (Simple name) { model | hold = hold }
+
+        Wait ms later ->
+            ( { model | hold = hold }, After ms later )
+
+        Idle ->
+            ( { model | hold = hold }, NoOut )
 
 
 encodeMove : String -> String -> Int -> E.Value
@@ -2782,16 +2832,286 @@ actionButton : Ctx -> String -> String -> Maybe (Html Msg)
 actionButton ctx name variant =
     if hasAction name ctx.legal then
         Just
-            (button
-                [ class ("btn-arcade pixel text-[9px] px-2 py-3 sm:px-4 text-center leading-relaxed " ++ variant)
-                , Html.Attributes.id ("bg-action-" ++ name)
-                , onClick (Simple name)
-                ]
-                [ text (String.toUpper (labelOf name ctx.legal)) ]
+            (if List.member name heldActions then
+                holdButton ctx.model.hold name variant
+
+             else
+                button
+                    [ class (actionClass variant)
+                    , Html.Attributes.id ("bg-action-" ++ name)
+                    , onClick (Simple name)
+                    ]
+                    [ text (actionWord name ctx.legal) ]
             )
 
     else
         Nothing
+
+
+actionClass : String -> String
+actionClass variant =
+    "btn-arcade pixel text-[9px] px-2 py-3 sm:px-4 text-center leading-relaxed " ++ variant
+
+
+{-| What a band button says. The cube's four are one word each wherever
+they appear -- DOUBLE / ROLL, TAKE / DROP -- whatever the engine's label
+adds: the cube on offer is drawn on the taker's side at its new value, so
+"(cube to 4)" would say it twice.
+-}
+actionWord : String -> List Schema -> String
+actionWord name legal =
+    if List.member name [ "double", "roll", "take", "drop" ] then
+        String.toUpper name
+
+    else
+        String.toUpper (labelOf name legal)
+
+
+
+-- HOLD TO CONFIRM
+--
+-- A checker play is staged and committed with PLAY, so a slip costs a tap.
+-- A cube action is answered at once and cannot be taken back, so its three
+-- buttons want a deliberate press: held for `holdMs`, with a bar filling
+-- inside the button while it is (`.hold-fill` in app.css, driven by the
+-- `is-holding` class; the Elm timer only says when it is full). The button
+-- never changes size: the fill, and the HOLD a too-short tap shows, are
+-- laid over it.
+
+
+{-| The actions that are held rather than tapped. ROLL and everything else
+are not: they are either undoable or harmless.
+-}
+heldActions : List String
+heldActions =
+    [ "double", "take", "drop" ]
+
+
+{-| How long a cube button is held before it acts. Long enough to mean it,
+short enough not to notice -- on the clock, it is paid at the worst moment
+of a game. `.hold-btn.is-holding .hold-fill` in app.css runs for the same
+time.
+-}
+holdMs : Float
+holdMs =
+    350
+
+
+{-| A cube button's hold: which action is down now, how many presses there
+have been (a timer answers only the press that started it), and the press
+let go too soon, which the button answers with a quiet HOLD.
+-}
+type alias Hold =
+    { pressing : Maybe String
+    , seq : Int
+    , nudge : Maybe ( String, Int )
+    }
+
+
+noHold : Hold
+noHold =
+    { pressing = Nothing, seq = 0, nudge = Nothing }
+
+
+{-| Nothing held, nothing to say; the count of presses goes on, so a timer
+still running for an earlier press never mistakes a new one for its own.
+-}
+letGo : Hold -> Hold
+letGo hold =
+    { hold | pressing = Nothing, nudge = Nothing }
+
+
+{-| What a message does to a hold: nothing yet, a timer to start (hand the
+message back in so many ms), or an action to take now.
+-}
+type HoldStep
+    = Idle
+    | Wait Float Msg
+    | Commit String
+
+
+{-| The hold, for the table and for every board that reuses its band (a
+cube puzzle, the analysis board in PLAY: `viewCubeAsk`). A full hold
+commits exactly once; letting go, sliding off or losing focus before it is
+full does nothing. A tap on a button that is not held (ROLL) is its action
+at once.
+-}
+stepHold : Msg -> Hold -> ( Hold, HoldStep )
+stepHold msg hold =
+    case msg of
+        Press name ->
+            if hold.pressing == Just name then
+                -- the same press again (a key repeating): nothing new
+                ( hold, Idle )
+
+            else
+                ( { pressing = Just name, seq = hold.seq + 1, nudge = Nothing }, Wait holdMs (Held (hold.seq + 1)) )
+
+        -- Letting go and cancelling are the held button's own: a press on
+        -- DROP moves focus off the DOUBLE before it, and that blur is not
+        -- DROP's to cancel.
+        Release name ->
+            if hold.pressing == Just name then
+                ( { hold | pressing = Nothing, nudge = Just ( name, hold.seq ) }, Idle )
+
+            else
+                ( hold, Idle )
+
+        Cancel name ->
+            if hold.pressing == Just name then
+                ( { hold | pressing = Nothing }, Idle )
+
+            else
+                ( hold, Idle )
+
+        Held seq ->
+            case hold.pressing of
+                Just name ->
+                    if seq == hold.seq then
+                        ( letGo hold, Commit name )
+
+                    else
+                        ( hold, Idle )
+
+                Nothing ->
+                    ( hold, Idle )
+
+        Activate name ->
+            ( letGo hold, Commit name )
+
+        Simple name ->
+            ( letGo hold, Commit name )
+
+        _ ->
+            ( hold, Idle )
+
+
+{-| A cube button. Phone first: pointer events, the primary button only.
+Lifting before the bar is full does nothing, and so does sliding off it (a
+mouse leaves it; a finger, which the button keeps while it is down, is
+checked against its box) or a scroll taking the touch (`pointercancel`). A
+long press is no context menu, callout or text selection here (app.css and
+`contextmenu`). The keyboard holds Enter or Space, and neither ever clicks
+it. A click with no pointer behind it (`detail` 0: a screen reader's
+activation) acts at once.
+-}
+holdButton : Hold -> String -> String -> Html Msg
+holdButton hold name variant =
+    let
+        pressing =
+            hold.pressing == Just name
+
+        nudge =
+            case hold.nudge of
+                Just ( n, seq ) ->
+                    if n == name then
+                        Just seq
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Nothing
+
+        hint =
+            "Hold to " ++ name
+
+        key decode =
+            D.field "key" D.string
+                |> D.andThen
+                    (\k ->
+                        if k == "Enter" || k == " " then
+                            D.map (\repeat -> ( decode repeat, True )) (D.oneOf [ D.field "repeat" D.bool, D.succeed False ])
+
+                        else
+                            D.fail "not a hold key"
+                    )
+
+        down =
+            D.map2 (\which primary -> which == 0 && primary)
+                (D.oneOf [ D.field "button" D.int, D.succeed 0 ])
+                (D.oneOf [ D.field "isPrimary" D.bool, D.succeed True ])
+                |> D.andThen
+                    (\ok ->
+                        if ok then
+                            D.succeed (Press name)
+
+                        else
+                            D.fail "not a primary press"
+                    )
+
+        -- a finger keeps the button it went down on, so leaving it is a
+        -- position: a little past the edge, so a wobble is not a slide
+        slid =
+            D.map4 (\x y w h -> x < -8 || y < -8 || x > w + 8 || y > h + 8)
+                (D.field "offsetX" D.float)
+                (D.field "offsetY" D.float)
+                (D.at [ "currentTarget", "offsetWidth" ] D.float)
+                (D.at [ "currentTarget", "offsetHeight" ] D.float)
+                |> D.andThen
+                    (\off ->
+                        if off then
+                            D.succeed (Cancel name)
+
+                        else
+                            D.fail "still on the button"
+                    )
+
+        assistive =
+            D.field "detail" D.int
+                |> D.andThen
+                    (\detail ->
+                        if detail == 0 then
+                            D.succeed (Activate name)
+
+                        else
+                            D.fail "a pointer's click: the hold decides"
+                    )
+    in
+    Keyed.node "button"
+        ([ Html.Attributes.type_ "button"
+         , class (actionClass variant ++ " hold-btn")
+         , classList [ ( "is-holding", pressing ), ( "is-nudged", nudge /= Nothing ) ]
+         , Html.Attributes.id ("bg-action-" ++ name)
+         , title hint
+         , attribute "aria-description" hint
+         , Html.Events.on "pointerdown" down
+         , Html.Events.on "pointerup" (D.succeed (Release name))
+         , Html.Events.on "pointerleave" (D.succeed (Cancel name))
+         , Html.Events.on "pointercancel" (D.succeed (Cancel name))
+         , preventDefaultOn "contextmenu" (D.succeed ( Ignore, True ))
+         , preventDefaultOn "keydown"
+            (key
+                (\repeat ->
+                    if repeat then
+                        Ignore
+
+                    else
+                        Press name
+                )
+            )
+         , preventDefaultOn "keyup" (key (\_ -> Release name))
+         , Html.Events.on "blur" (D.succeed (Cancel name))
+         , Html.Events.on "click" assistive
+         ]
+            ++ (if pressing then
+                    [ Html.Events.on "pointermove" slid ]
+
+                else
+                    []
+               )
+        )
+        [ ( "fill", span [ class "hold-fill", attribute "aria-hidden" "true" ] [] )
+        , ( "word", span [ class "hold-word" ] [ text (String.toUpper name) ] )
+
+        -- keyed by the press, so each too-short tap plays it again
+        , case nudge of
+            Just seq ->
+                ( "nudge-" ++ String.fromInt seq, span [ class "hold-nudge", attribute "aria-hidden" "true" ] [ text "HOLD" ] )
+
+            Nothing ->
+                ( "nudge", text "" )
+        ]
 
 
 
@@ -3289,56 +3609,46 @@ viewStill noop s =
 {-| A cube question on the table's own slab, answered where the table
 answers it: in the centre band, with the live game's own buttons and
 words. The player on roll is offered DOUBLE beside ROLL (ROLL is no
-double); the player doubled TAKE (CUBE TO n) beside DROP -- the labels
-`backgammon/engine.legal` gives them at the table (`cubeAnswers`). The
-still board says where the cube is: for a take, its `offer` puts it on the
+double); the player doubled TAKE beside DROP (`cubeAnswers`). The still
+board says where the cube is: for a take, its `offer` puts it on the
 taker's side at the value on offer, as the table draws a pending double.
 
-What it hears back is the action's name: "double", "roll", "take" or
-"drop". The buttons stay once an answer is given, so the band does not
-move; the page dims the one not chosen (`.cube-chose-*` in app.css).
+DOUBLE, TAKE and DROP are held, as at the table: the page keeps the
+`Hold`, runs every message through `stepHold` (starting the timer a `Wait`
+asks for), and takes a `Commit`'s action -- "double", "roll", "take" or
+"drop" -- as the answer. The buttons stay once an answer is given, so the
+band does not move; the page dims the one not chosen (`.cube-chose-*` in
+app.css).
 
 -}
 type alias CubeAsk =
     { still : StillBoard
     , take : Bool -- the player at the bottom has been doubled; else they are on roll
+    , hold : Hold -- the page's: a cube button being held down
     }
 
 
-viewCubeAsk : CubeAsk -> Html (Maybe String)
+viewCubeAsk : CubeAsk -> Html Msg
 viewCubeAsk ask =
-    Html.map
-        (\msg ->
-            case msg of
-                Simple name ->
-                    Just name
-
-                _ ->
-                    Nothing
-        )
-        (slab ask.still
-            { stillOnly
-                | playable = True
-                , legal = cubeAnswers ask.take ask.still.position.cube.value
-            }
-        )
+    slab ask.still
+        { stillOnly
+            | playable = True
+            , legal = cubeAnswers ask.take
+            , hold = ask.hold
+        }
 
 
-{-| The table's answers to a cube decision, as `backgammon/engine.legal`
-labels them: on roll with the cube to turn, ROLL and DOUBLE; doubled, TAKE
-(with the value the cube is turned to) and DROP. `value` is the cube as it
-stands before the offer.
+{-| The table's answers to a cube decision: on roll with the cube to turn,
+ROLL and DOUBLE; doubled, TAKE and DROP.
 -}
-cubeAnswers : Bool -> Int -> List Schema
-cubeAnswers take value =
+cubeAnswers : Bool -> List Schema
+cubeAnswers take =
     let
         action name label =
             { name = name, label = label, params = [] }
     in
     if take then
-        [ action "take" ("Take (cube to " ++ String.fromInt (value * 2) ++ ")")
-        , action "drop" "Drop"
-        ]
+        [ action "take" "Take", action "drop" "Drop" ]
 
     else
         [ action "roll" "Roll", action "double" "Double" ]
@@ -3357,6 +3667,7 @@ type alias Taps =
     , honours : Msg -> Bool -- a tap the caller can actually carry out
     , zone : String -> List (Html.Attribute Msg) -- an editor board's places (`viewEdit`)
     , turnMark : Bool -- the mover's bar drawn as the one to move, on a board nobody is playing
+    , hold : Hold -- a cube button being held down (`viewCubeAsk`)
     }
 
 
@@ -3370,6 +3681,7 @@ stillOnly =
     , honours = \_ -> False
     , zone = \_ -> []
     , turnMark = False
+    , hold = noHold
     }
 
 
@@ -3451,6 +3763,7 @@ slab s taps =
                     | still = True
                     , turnMark = taps.turnMark
                     , swaps = taps.swaps
+                    , hold = taps.hold
                     , roll = { seq = -1 - s.key, watched = False }
 
                     -- a still board is a past turn with no way back to a
@@ -3759,6 +4072,7 @@ viewPlay pb =
             , honours = \msg -> playSteps pb msg /= Nothing
             , zone = \_ -> []
             , turnMark = False
+            , hold = noHold
             }
         )
 

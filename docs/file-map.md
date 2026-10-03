@@ -368,7 +368,22 @@ assets/src/Games/Backgammon/View.elm  the backgammon board (and the two
                                  there. Any slab can draw it with the Board's
                                  `trayColumn` flag; only `view` sets it today.
                                  The clock chip is one line ("10:00 +8"), the
-                                 running one ink on yellow
+                                 running one ink on yellow.
+                                 DOUBLE, TAKE and DROP are held, not tapped
+                                 (`holdButton`, `holdMs` = 350 ms): pointer
+                                 events, a bar filling inside the button
+                                 (`.hold-fill`, CSS on `is-holding`), the
+                                 Elm timer only committing; letting go early,
+                                 sliding off or a scroll does nothing, and a
+                                 too-short tap says HOLD over the word.
+                                 Enter or Space held is the keyboard's way; a
+                                 screen reader's click (no pointer) acts at
+                                 once. `Hold` and `stepHold` are the state;
+                                 the table keeps it in `model.hold` (the timer
+                                 is `Out.After`, run by `Page.Play`), a puzzle
+                                 and the analysis board keep their own for
+                                 `viewCubeAsk`. The cube's four buttons say
+                                 one word each (`actionWord`).
 assets/src/View/Clock.elm        clock display
 assets/css/app.css               the multicade/notebook design system (paper, pixel,
                                  pix, btn-arcade, tile, bg-board...)

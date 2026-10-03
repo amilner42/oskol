@@ -33,7 +33,7 @@ const playwright = require('playwright');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { BASE, resultLine, seatedContext } = require('../lib/flows');
+const { BASE, hold, resultLine, seatedContext } = require('../lib/flows');
 const { stageATurn } = require('../lib/puzzles');
 
 const OUT = process.env.SHOTS_DIR || 'playwright/screenshots/review-celebration';
@@ -122,7 +122,7 @@ async function playBest(page) {
 async function playAny(page) {
   await page.waitForSelector('#pz-board #bg-action-double, #pz-board #bg-action-take, #bg-action-play, .bg-point.source, [data-move-source]', { timeout: 15000 });
   if (await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').count()) {
-    await page.locator('#pz-board #bg-action-double, #pz-board #bg-action-take').first().click();
+    await hold(page, '#pz-board #bg-action-double, #pz-board #bg-action-take');
   } else {
     await stageATurn(page);
     await page.click('#bg-action-play');

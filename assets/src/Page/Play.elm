@@ -418,6 +418,10 @@ update msg model =
                     -- promises no order.
                     stay updated (sendToChannel (E.object [ ( "type", E.string "actions" ), ( "actions", E.list identity values ) ]))
 
+                -- a cube button's hold: the board says when it is full
+                Backgammon.After ms later ->
+                    stay updated (Process.sleep ms |> Task.perform (\_ -> BackgammonMsg later))
+
                 Backgammon.WantRematch ->
                     update RequestRematch updated
 

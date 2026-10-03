@@ -192,6 +192,7 @@ type alias Model =
     , swaps : Int -- taps on the dice: which one a tap on a checker plays
     , fetching : List String -- nodes of a lazy tree on their way
     , band : Maybe Int -- the cube answer picked, before it is sent
+    , cubeHold : Board.Hold -- a cube button being held down (`Board.stepHold`)
     , key : String -- the attempt's idempotency key: one per page load, kept for a retry
     , playWhenKeyed : Bool -- PLAY was pressed before the key was minted
     , attempt : Attempt
@@ -336,6 +337,7 @@ type Msg
     | GotKey String
     | BoardOut Puzzle.Out
     | PickedBand Int
+    | CubeHold Board.Msg -- a cube button: held, let go, or full
     | Submit
     | GotReveal (Result Api.Error Reveal)
     | RevealedAt ( Time.Posix, Time.Zone )
@@ -427,6 +429,7 @@ init session config =
       , swaps = 0
       , fetching = []
       , band = Nothing
+      , cubeHold = Board.noHold
       , key = ""
       , playWhenKeyed = False
       , attempt = NotYet
@@ -546,6 +549,24 @@ update msg model =
 
                 _ ->
                     board out model
+
+        CubeHold boardMsg ->
+            let
+                ( hold, step ) =
+                    Board.stepHold boardMsg model.cubeHold
+
+                held =
+                    { model | cubeHold = hold }
+            in
+            case step of
+                Board.Commit action ->
+                    update (pickedCube action) held
+
+                Board.Wait ms later ->
+                    stay held (Process.sleep ms |> Task.perform (\_ -> CubeHold later))
+
+                Board.Idle ->
+                    stay held Cmd.none
 
         PickedBand band ->
             case model.attempt of
@@ -2134,13 +2155,15 @@ viewPuzzle model puzzle =
                         )
 
                 -- A cube question: the position, answered in the board's
-                -- own band with the table's buttons. They stay once
-                -- answered, the one not chosen dimmed, so nothing moves.
+                -- own band with the table's buttons, held as at the table.
+                -- They stay once answered, the one not chosen dimmed, so
+                -- nothing moves.
                 ( Nothing, Nothing, _ ) ->
-                    Html.map (Maybe.map pickedCube >> Maybe.withDefault NoOp)
+                    Html.map CubeHold
                         (Board.viewCubeAsk
                             { still = still model puzzle puzzle.question.board []
                             , take = puzzle.kind == "take"
+                            , hold = model.cubeHold
                             }
                         )
 

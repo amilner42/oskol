@@ -23,7 +23,8 @@ import Ui.SignIn
 suite : Test
 suite =
     describe "backgammon board"
-        [ describe "update"
+        [ cubeHold
+        , describe "update"
             [ test "playing a move sends it and leaves the model as it started" <|
                 \_ ->
                     View.update (PlayMove "13" "8" 5) View.init
@@ -364,20 +365,20 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True }
+                            ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True, hold = View.noHold }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True }
-                        |> Expect.equal ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True }, Nothing )
+                    View.autoRoll [ schema "roll" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True, hold = View.noHold }
+                        |> Expect.equal ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True, hold = View.noHold }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
                         |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True }
+                    View.autoRoll [ schema "move" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True, hold = View.noHold }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -1400,7 +1401,7 @@ suite =
                     withDice [ 6, 4 ] u
 
                 model swaps =
-                    { swaps = swaps, autoRolled = False, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True }
+                    { swaps = swaps, autoRolled = False, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True, hold = View.noHold }
 
                 rendered swaps u =
                     View.view (ctx "p1" (twoDice u) (model swaps)) |> Query.fromHtml
@@ -2941,3 +2942,154 @@ allPass expectations =
 
         _ ->
             Expect.all (List.map always expectations) ()
+
+
+
+{-| DOUBLE, TAKE and DROP are held for `holdMs`, not tapped: the cube has
+no undo. The timer is the page's (`After`); here it is handed back by hand.
+-}
+cubeHold : Test
+cubeHold =
+    let
+        run msgs =
+            List.foldl
+                (\msg ( model, outs ) ->
+                    let
+                        ( next, out ) =
+                            View.update msg model
+                    in
+                    ( next, outs ++ [ out ] )
+                )
+                ( View.init, [] )
+                msgs
+
+        sent msgs =
+            run msgs |> Tuple.second |> List.filter (\o -> o /= NoOut)
+
+        double =
+            Send (Protocol.encodeAction "double" [])
+
+        firstUpdate =
+            FixtureLoader.byGame "backgammon"
+                |> List.head
+                |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
+
+        schema name label =
+            { name = name, label = label, params = [] }
+
+        band legal model =
+            case firstUpdate of
+                Just u ->
+                    View.view (ctx "p1" { u | legal = legal } model) |> Query.fromHtml
+
+                Nothing ->
+                    Html.text "no backgammon fixture" |> Query.fromHtml
+
+        doubling =
+            [ schema "roll" "Roll", schema "double" "Double" ]
+
+        pointer name fields =
+            Event.custom name (E.object fields)
+
+        primary =
+            [ ( "button", E.int 0 ), ( "isPrimary", E.bool True ) ]
+
+        key name k repeat =
+            Event.custom name (E.object [ ( "key", E.string k ), ( "repeat", E.bool repeat ) ])
+    in
+    describe "the cube buttons are held, not tapped"
+        [ test "a press asks for the hold's timer, and sends nothing yet" <|
+            \_ ->
+                run [ Press "double" ]
+                    |> Tuple.second
+                    |> Expect.equal [ After View.holdMs (Held 1) ]
+        , test "a tap shorter than the hold sends nothing" <|
+            \_ -> sent [ Press "double", Release "double", Held 1 ] |> Expect.equal [ After View.holdMs (Held 1) ]
+        , test "a full hold sends exactly once, however it ends" <|
+            \_ -> sent [ Press "double", Held 1, Held 1, Release "double", Held 1 ] |> Expect.equal [ After View.holdMs (Held 1), double ]
+        , test "the pointer leaving the button cancels it" <|
+            \_ -> sent [ Press "take", Cancel "take", Held 1 ] |> Expect.equal [ After View.holdMs (Held 1) ]
+        , test "another button letting go or losing focus does not cancel the one held" <|
+            \_ ->
+                sent [ Press "drop", Cancel "double", Release "take", Held 1 ]
+                    |> Expect.equal [ After View.holdMs (Held 1), Send (Protocol.encodeAction "drop" []) ]
+        , test "a timer from an earlier press never completes a later one" <|
+            \_ ->
+                sent [ Press "drop", Release "drop", Press "drop", Held 1, Held 2 ]
+                    |> Expect.equal [ After View.holdMs (Held 1), After View.holdMs (Held 2), Send (Protocol.encodeAction "drop" []) ]
+        , test "a key repeating is the same press, not a new one" <|
+            \_ -> sent [ Press "double", Press "double", Held 1 ] |> Expect.equal [ After View.holdMs (Held 1), double ]
+        , test "a screen reader's activation acts at once" <|
+            \_ -> sent [ Activate "double" ] |> Expect.equal [ double ]
+        , test "a too-short tap says HOLD on the button it was" <|
+            \_ ->
+                band doubling (run [ Press "double", Release "double" ] |> Tuple.first)
+                    |> Query.find [ id "bg-action-double" ]
+                    |> Expect.all [ Query.has [ class "is-nudged", text "HOLD" ], Query.hasNot [ class "is-holding" ] ]
+        , test "while held the button fills, and stays the button it was" <|
+            \_ ->
+                band doubling (run [ Press "double" ] |> Tuple.first)
+                    |> Query.find [ id "bg-action-double" ]
+                    |> Expect.all [ Query.has [ class "is-holding", class "hold-btn", text "DOUBLE" ], Query.has [ tag "span", class "hold-fill" ] ]
+        , test "the button answers the pointer, the keyboard and a screen reader, and never a plain click" <|
+            \_ ->
+                let
+                    button =
+                        band doubling View.init |> Query.find [ id "bg-action-double" ]
+                in
+                Expect.all
+                    [ \_ -> button |> Event.simulate (pointer "pointerdown" primary) |> Event.expect (Press "double")
+                    , \_ -> button |> Event.simulate (pointer "pointerdown" [ ( "button", E.int 2 ), ( "isPrimary", E.bool True ) ]) |> Event.toResult |> Expect.err
+                    , \_ -> button |> Event.simulate (pointer "pointerup" []) |> Event.expect (Release "double")
+                    , \_ -> button |> Event.simulate (pointer "pointerleave" []) |> Event.expect (Cancel "double")
+                    , \_ -> button |> Event.simulate (pointer "pointercancel" []) |> Event.expect (Cancel "double")
+                    , \_ -> button |> Event.simulate (key "keydown" "Enter" False) |> Event.expect (Press "double")
+                    , \_ -> button |> Event.simulate (key "keydown" " " False) |> Event.expect (Press "double")
+                    , \_ -> button |> Event.simulate (key "keydown" "Enter" True) |> Event.expect Ignore
+                    , \_ -> button |> Event.simulate (key "keyup" " " False) |> Event.expect (Release "double")
+                    , \_ -> button |> Event.simulate (key "keydown" "a" False) |> Event.toResult |> Expect.err
+                    , \_ -> button |> Event.simulate Event.blur |> Event.expect (Cancel "double")
+                    , \_ -> button |> Event.simulate (pointer "click" [ ( "detail", E.int 1 ) ]) |> Event.toResult |> Expect.err
+                    , \_ -> button |> Event.simulate (pointer "click" [ ( "detail", E.int 0 ) ]) |> Event.expect (Activate "double")
+                    ]
+                    ()
+        , test "a finger sliding off a held button cancels it; one wobbling on it does not" <|
+            \_ ->
+                let
+                    held =
+                        band doubling (run [ Press "double" ] |> Tuple.first) |> Query.find [ id "bg-action-double" ]
+
+                    move x y =
+                        pointer "pointermove"
+                            [ ( "offsetX", E.float x )
+                            , ( "offsetY", E.float y )
+                            , ( "currentTarget", E.object [ ( "offsetWidth", E.float 80 ), ( "offsetHeight", E.float 40 ) ] )
+                            ]
+                in
+                Expect.all
+                    [ \_ -> held |> Event.simulate (move 120 20) |> Event.expect (Cancel "double")
+                    , \_ -> held |> Event.simulate (move 84 20) |> Event.toResult |> Expect.err
+                    ]
+                    ()
+        , test "the keyboard holds as the pointer does" <|
+            \_ -> sent [ Press "take", Held 1 ] |> Expect.equal [ After View.holdMs (Held 1), Send (Protocol.encodeAction "take" []) ]
+        , test "ROLL is still a tap" <|
+            \_ ->
+                band doubling View.init
+                    |> Query.find [ id "bg-action-roll" ]
+                    |> Event.simulate Event.click
+                    |> Event.expect (Simple "roll")
+        , test "the cube's buttons say one word, whatever the engine's label adds" <|
+            \_ ->
+                band [ schema "take" "Take (cube to 4)", schema "drop" "Drop" ] View.init
+                    |> Expect.all
+                        [ Query.find [ id "bg-action-take" ] >> Query.has [ text "TAKE" ]
+                        , Query.find [ id "bg-action-take" ] >> Query.hasNot [ text "CUBE" ]
+                        , Query.find [ id "bg-action-drop" ] >> Query.has [ text "DROP" ]
+                        ]
+        , test "a hold starts on a still board's band too (a cube puzzle, the analysis board)" <|
+            \_ ->
+                View.stepHold (Press "take") View.noHold
+                    |> Tuple.second
+                    |> Expect.equal (View.Wait View.holdMs (Held 1))
+        ]

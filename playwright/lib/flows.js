@@ -206,4 +206,39 @@ function resultLine(out) {
   return line;
 }
 
-module.exports = { resultLine, BASE, dismissResume, barItem, openHome, openCreateDialog, pickWord, createGame, joinByLink, joinByCode, openSeat, takeSeat, seatedContext, guestId };
+/**
+ * DOUBLE, TAKE and DROP are held, not tapped (`View.holdButton`, 350 ms): a
+ * press on the button, kept down past the hold, then let go. A finger
+ * (`touch`, for a context made with hasTouch) presses through CDP's touch
+ * events, which is the path a phone takes; anything else uses the mouse.
+ * An `ms` shorter than the hold is a tap that must do nothing.
+ *
+ *   await hold(page, '#bg-action-double');
+ *   await hold(page, '#bg-action-take', { touch: true });
+ *   await hold(page, '#bg-action-double', { ms: 120 });   // too short
+ */
+async function hold(page, target, { ms = 600, touch = false } = {}) {
+  const loc = typeof target === 'string' ? page.locator(target).first() : target;
+  await loc.scrollIntoViewIfNeeded();
+  const box = await loc.boundingBox();
+  if (!box) throw new Error(`hold: ${target} is not on the page`);
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  if (touch) {
+    const cdp = await page.context().newCDPSession(page);
+    try {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      await page.waitForTimeout(ms);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    } finally {
+      await cdp.detach();
+    }
+  } else {
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.waitForTimeout(ms);
+    await page.mouse.up();
+  }
+}
+
+module.exports = { hold, resultLine, BASE, dismissResume, barItem, openHome, openCreateDialog, pickWord, createGame, joinByLink, joinByCode, openSeat, takeSeat, seatedContext, guestId };
